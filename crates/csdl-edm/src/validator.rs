@@ -473,6 +473,9 @@ impl ValidationRule for UniqueSchemaChildNamesRule {
 
     fn visit_model(&self, model: &Model, ctx: &mut ValidationContext) {
         let mut seen = std::collections::HashMap::new();
+        for container in model.containers() {
+            seen.insert(container.name.as_str(), 0);
+        }
         for element in &model.elements {
             let name = schema_element_name(element);
             let kind = match element.as_ref() {

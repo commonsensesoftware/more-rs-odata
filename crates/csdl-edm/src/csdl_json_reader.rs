@@ -242,9 +242,9 @@ fn emit_entity_type(
     namespace: &str,
 ) -> Result<()> {
     let base_type = take_string(&mut obj, "$BaseType");
-    let abstract_ = take_bool(&mut obj, "$Abstract");
-    let open_type = take_bool(&mut obj, "$OpenType");
-    let has_stream = take_bool(&mut obj, "$HasStream");
+    let abstract_ = take_bool(&mut obj, "$Abstract")?;
+    let open_type = take_bool(&mut obj, "$OpenType")?;
+    let has_stream = take_bool(&mut obj, "$HasStream")?;
     let key = obj.shift_remove("$Key");
 
     let mut attrs = vec![("Name".into(), name.into())];
@@ -295,8 +295,8 @@ fn emit_complex_type(
     namespace: &str,
 ) -> Result<()> {
     let base_type = take_string(&mut obj, "$BaseType");
-    let abstract_ = take_bool(&mut obj, "$Abstract");
-    let open_type = take_bool(&mut obj, "$OpenType");
+    let abstract_ = take_bool(&mut obj, "$Abstract")?;
+    let open_type = take_bool(&mut obj, "$OpenType")?;
 
     let mut attrs = vec![("Name".into(), name.into())];
     if let Some(bt) = base_type {
@@ -322,7 +322,7 @@ fn emit_enum_type(
         return Err(Error::Csdl("$UnderlyingType must be a string".into()));
     }
     let underlying = take_string(&mut obj, "$UnderlyingType");
-    let is_flags = take_bool(&mut obj, "$IsFlags");
+    let is_flags = take_bool(&mut obj, "$IsFlags")?;
 
     let mut attrs = vec![("Name".into(), name.into())];
     if let Some(t) = underlying {
@@ -424,14 +424,14 @@ fn emit_property(
     namespace: &str,
 ) -> Result<()> {
     validate_callable_type(&obj)?;
-    let is_collection = take_bool(&mut obj, "$Collection").unwrap_or(false);
+    let is_collection = take_bool(&mut obj, "$Collection")?.unwrap_or(false);
     let raw_type = take_string(&mut obj, "$Type").or_else(|| Some("Edm.String".into()));
-    let nullable = Some(take_bool(&mut obj, "$Nullable").unwrap_or(false));
+    let nullable = Some(take_bool(&mut obj, "$Nullable")?.unwrap_or(false));
     let max_length = take_string_or_number(&mut obj, "$MaxLength");
     let precision = take_string_or_number(&mut obj, "$Precision");
     let scale = take_string_or_number(&mut obj, "$Scale");
     let srid = take_string_or_number(&mut obj, "$SRID");
-    let unicode = take_bool(&mut obj, "$Unicode");
+    let unicode = take_bool(&mut obj, "$Unicode")?;
     let default_value = take_default_value(&mut obj)?;
 
     // Materialize JSON's default type: the shared model cannot otherwise
@@ -495,11 +495,11 @@ fn emit_navigation_property(
             "$ReferentialConstraint must be an object".into(),
         ));
     }
-    let is_collection = take_bool(&mut obj, "$Collection").unwrap_or(false);
+    let is_collection = take_bool(&mut obj, "$Collection")?.unwrap_or(false);
     let raw_type = take_string(&mut obj, "$Type");
-    let nullable = take_bool(&mut obj, "$Nullable").or_else(|| (!is_collection).then_some(false));
+    let nullable = take_bool(&mut obj, "$Nullable")?.or_else(|| (!is_collection).then_some(false));
     let partner = take_string(&mut obj, "$Partner");
-    let contains_target = take_bool(&mut obj, "$ContainsTarget");
+    let contains_target = take_bool(&mut obj, "$ContainsTarget")?;
     let on_delete = take_string(&mut obj, "$OnDelete");
     let referential = obj.shift_remove("$ReferentialConstraint");
 
@@ -629,12 +629,12 @@ fn emit_container_child(
     }
     let function_ref = take_string(&mut obj, "$Function");
     let action_ref = take_string(&mut obj, "$Action");
-    let is_collection = take_bool(&mut obj, "$Collection").unwrap_or(false);
+    let is_collection = take_bool(&mut obj, "$Collection")?.unwrap_or(false);
     let raw_type = take_string(&mut obj, "$Type");
     let entity_set = take_string(&mut obj, "$EntitySet");
-    let include_in_service_doc = take_bool(&mut obj, "$IncludeInServiceDocument");
+    let include_in_service_doc = take_bool(&mut obj, "$IncludeInServiceDocument")?;
     let bindings = obj.shift_remove("$NavigationPropertyBinding");
-    let nullable = take_bool(&mut obj, "$Nullable");
+    let nullable = take_bool(&mut obj, "$Nullable")?;
 
     if let Some(func) = function_ref {
         let mut attrs = vec![("Name".into(), name.into())];
@@ -745,8 +745,8 @@ fn emit_callable(
             return Err(Error::Csdl(format!("Invalid operation {key} value")));
         }
     }
-    let is_bound = take_bool(&mut obj, "$IsBound");
-    let is_composable = take_bool(&mut obj, "$IsComposable");
+    let is_bound = take_bool(&mut obj, "$IsBound")?;
+    let is_composable = take_bool(&mut obj, "$IsComposable")?;
     let entity_set_path = take_string(&mut obj, "$EntitySetPath");
     let parameters = obj.shift_remove("$Parameter");
     let return_type = obj.shift_remove("$ReturnType");
@@ -769,15 +769,15 @@ fn emit_callable(
                 return Err(Error::Csdl("Parameter requires a string $Name".into()));
             }
             let pname = take_string(&mut p, "$Name").unwrap_or_default();
-            let is_collection = take_bool(&mut p, "$Collection").unwrap_or(false);
+            let is_collection = take_bool(&mut p, "$Collection")?.unwrap_or(false);
             let raw_type = take_string(&mut p, "$Type").or_else(|| Some("Edm.String".into()));
             let nullable =
-                take_bool(&mut p, "$Nullable").or_else(|| (!is_collection).then_some(false));
+                take_bool(&mut p, "$Nullable")?.or_else(|| (!is_collection).then_some(false));
             let max_length = take_string_or_number(&mut p, "$MaxLength");
             let precision = take_string_or_number(&mut p, "$Precision");
             let scale = take_string_or_number(&mut p, "$Scale");
             let srid = take_string_or_number(&mut p, "$SRID");
-            let unicode = take_bool(&mut p, "$Unicode");
+            let unicode = take_bool(&mut p, "$Unicode")?;
 
             let default_value = take_default_value(&mut p)?;
 
@@ -813,15 +813,15 @@ fn emit_callable(
 
     if let Some(Value::Object(mut rt)) = return_type {
         validate_callable_type(&rt)?;
-        let is_collection = take_bool(&mut rt, "$Collection").unwrap_or(false);
+        let is_collection = take_bool(&mut rt, "$Collection")?.unwrap_or(false);
         let raw_type = take_string(&mut rt, "$Type").or_else(|| Some("Edm.String".into()));
         let nullable =
-            take_bool(&mut rt, "$Nullable").or_else(|| (!is_collection).then_some(false));
+            take_bool(&mut rt, "$Nullable")?.or_else(|| (!is_collection).then_some(false));
         let max_length = take_string_or_number(&mut rt, "$MaxLength");
         let precision = take_string_or_number(&mut rt, "$Precision");
         let scale = take_string_or_number(&mut rt, "$Scale");
         let srid = take_string_or_number(&mut rt, "$SRID");
-        let unicode = take_bool(&mut rt, "$Unicode");
+        let unicode = take_bool(&mut rt, "$Unicode")?;
 
         let mut attrs = Vec::new();
         push_type_attrs(&mut attrs, raw_type.as_deref(), is_collection, namespace);
@@ -863,7 +863,7 @@ fn emit_type_definition(
     let precision = take_string_or_number(&mut obj, "$Precision");
     let scale = take_string_or_number(&mut obj, "$Scale");
     let srid = take_string_or_number(&mut obj, "$SRID");
-    let unicode = take_bool(&mut obj, "$Unicode");
+    let unicode = take_bool(&mut obj, "$Unicode")?;
 
     let mut attrs = vec![
         ("Name".into(), name.into()),
@@ -946,16 +946,16 @@ fn emit_term(
     namespace: &str,
 ) -> Result<()> {
     validate_callable_type(&obj)?;
-    let is_collection = take_bool(&mut obj, "$Collection").unwrap_or(false);
+    let is_collection = take_bool(&mut obj, "$Collection")?.unwrap_or(false);
     let raw_type = take_string(&mut obj, "$Type");
     let base_term = take_string(&mut obj, "$BaseTerm");
     let default_value = take_default_value(&mut obj)?;
-    let nullable = take_bool(&mut obj, "$Nullable");
+    let nullable = take_bool(&mut obj, "$Nullable")?;
     let max_length = take_string_or_number(&mut obj, "$MaxLength");
     let precision = take_string_or_number(&mut obj, "$Precision");
     let scale = take_string_or_number(&mut obj, "$Scale");
     let srid = take_string_or_number(&mut obj, "$SRID");
-    let unicode = take_bool(&mut obj, "$Unicode");
+    let unicode = take_bool(&mut obj, "$Unicode")?;
     let applies_to = obj.shift_remove("$AppliesTo");
 
     let mut attrs = vec![("Name".into(), name.into())];
@@ -1319,16 +1319,13 @@ fn take_string_or_number(map: &mut Map<String, Value>, key: &str) -> Option<Stri
     }
 }
 
-fn take_bool(map: &mut Map<String, Value>, key: &str) -> Option<bool> {
-    match map.shift_remove(key)? {
-        Value::Bool(b) => Some(b),
-        other => {
-            map.insert(key.to_string(), other);
-            None
-        }
+fn take_bool(map: &mut Map<String, Value>, key: &str) -> Result<Option<bool>> {
+    match map.shift_remove(key) {
+        None => Ok(None),
+        Some(Value::Bool(b)) => Ok(Some(b)),
+        Some(_) => Err(Error::Csdl(format!("{key} must be boolean"))),
     }
 }
-
 fn string_or_default(v: Value) -> String {
     match v {
         Value::String(s) => s,

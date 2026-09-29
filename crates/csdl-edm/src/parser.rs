@@ -243,9 +243,9 @@ fn parse_schema(raw: &RawElement) -> io::Result<Schema> {
 fn parse_entity_type(raw: &RawElement) -> io::Result<EntityType> {
     let name = raw_attr(raw, "Name").unwrap_or("").to_string();
     let base_type = raw_attr(raw, "BaseType").map(str::to_string);
-    let abstract_ = raw_attr_bool(raw, "Abstract");
-    let open_type = raw_attr_bool(raw, "OpenType");
-    let has_stream = raw_attr_bool(raw, "HasStream");
+    let abstract_ = checked_bool(raw, "Abstract")?;
+    let open_type = checked_bool(raw, "OpenType")?;
+    let has_stream = checked_bool(raw, "HasStream")?;
 
     let key = raw
         .children
@@ -284,8 +284,8 @@ fn parse_entity_type(raw: &RawElement) -> io::Result<EntityType> {
 fn parse_complex_type(raw: &RawElement) -> io::Result<ComplexType> {
     let name = raw_attr(raw, "Name").unwrap_or("").to_string();
     let base_type = raw_attr(raw, "BaseType").map(str::to_string);
-    let abstract_ = raw_attr_bool(raw, "Abstract");
-    let open_type = raw_attr_bool(raw, "OpenType");
+    let abstract_ = checked_bool(raw, "Abstract")?;
+    let open_type = checked_bool(raw, "OpenType")?;
 
     let properties = raw
         .children
@@ -425,7 +425,7 @@ fn parse_navigation_property(raw: &RawElement) -> io::Result<NavigationProperty>
     let (type_name, is_collection) = raw_type_attr(raw, "Type");
     let nullable = checked_bool(raw, "Nullable")?;
     let partner = raw_attr(raw, "Partner").map(str::to_string);
-    let contains_target = raw_attr_bool(raw, "ContainsTarget");
+    let contains_target = checked_bool(raw, "ContainsTarget")?;
 
     let mut delete_elements = raw.children.iter().filter(|n| n.name == "OnDelete");
     let on_delete = delete_elements
@@ -527,8 +527,8 @@ fn parse_referential_constraint(raw: &RawElement) -> io::Result<ReferentialConst
 fn parse_function(raw: &RawElement) -> io::Result<Function> {
     validate_operation_syntax(raw)?;
     let name = raw_attr(raw, "Name").unwrap_or("").to_string();
-    let is_bound = raw_attr_bool(raw, "IsBound");
-    let is_composable = raw_attr_bool(raw, "IsComposable");
+    let is_bound = checked_bool(raw, "IsBound")?;
+    let is_composable = checked_bool(raw, "IsComposable")?;
     let entity_set_path = raw_attr(raw, "EntitySetPath").map(str::to_string);
 
     let parameters = raw
@@ -559,7 +559,7 @@ fn parse_function(raw: &RawElement) -> io::Result<Function> {
 fn parse_action(raw: &RawElement) -> io::Result<Action> {
     validate_operation_syntax(raw)?;
     let name = raw_attr(raw, "Name").unwrap_or("").to_string();
-    let is_bound = raw_attr_bool(raw, "IsBound");
+    let is_bound = checked_bool(raw, "IsBound")?;
     let entity_set_path = raw_attr(raw, "EntitySetPath").map(str::to_string);
     let parameters = raw
         .children
@@ -772,7 +772,7 @@ fn parse_action_import(raw: &RawElement) -> io::Result<ActionImport> {
         name: raw_attr(raw, "Name").unwrap_or("").to_string(),
         action: raw_attr(raw, "Action").map(str::to_string),
         entity_set: raw_attr(raw, "EntitySet").map(str::to_string),
-        include_in_service_document: raw_attr_bool(raw, "IncludeInServiceDocument"),
+        include_in_service_document: checked_bool(raw, "IncludeInServiceDocument")?,
         annotations: parse_annotations(raw)?,
     })
 }
@@ -796,7 +796,7 @@ fn parse_entity_set(raw: &RawElement) -> io::Result<EntitySet> {
     Ok(EntitySet {
         name,
         entity_type,
-        include_in_service_document: raw_attr_bool(raw, "IncludeInServiceDocument"),
+        include_in_service_document: checked_bool(raw, "IncludeInServiceDocument")?,
         navigation_property_bindings,
         annotations,
     })
@@ -822,7 +822,7 @@ fn parse_singleton(raw: &RawElement) -> io::Result<Singleton> {
         name,
         type_name,
         nullable: checked_bool(raw, "Nullable")?,
-        include_in_service_document: raw_attr_bool(raw, "IncludeInServiceDocument"),
+        include_in_service_document: checked_bool(raw, "IncludeInServiceDocument")?,
         navigation_property_bindings,
         annotations,
     })
@@ -833,7 +833,7 @@ fn parse_function_import(raw: &RawElement) -> io::Result<FunctionImport> {
         name: raw_attr(raw, "Name").unwrap_or("").to_string(),
         entity_set: raw_attr(raw, "EntitySet").map(str::to_string),
         function: raw_attr(raw, "Function").map(str::to_string),
-        include_in_service_document: raw_attr_bool(raw, "IncludeInServiceDocument"),
+        include_in_service_document: checked_bool(raw, "IncludeInServiceDocument")?,
         annotations: parse_annotations(raw)?,
     })
 }
