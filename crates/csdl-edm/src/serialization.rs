@@ -19,7 +19,11 @@ pub enum CsdlFormat {
 impl CsdlDocument {
     pub fn to_json_value(&self) -> Value {
         match &self.edmx {
-            Some(edmx) => edmx_to_json(edmx),
+            Some(edmx) => {
+                let mut edmx = edmx.clone();
+                defaults::materialize_annotations(&mut edmx);
+                edmx_to_json(&edmx)
+            }
             None => {
                 let mut out = Map::new();
                 out.insert("$Version".to_string(), Value::String("4.01".to_string()));
@@ -844,13 +848,6 @@ fn write_annotation<W: io::Write>(
     }
 
     if let Some(expr) = &annotation.expression {
-        // Bool(true) is the canonical marker value (CSDL spec: marker = true).
-        // Emit the bare `<Annotation Term="..."/>` form rather than
-        // `Bool="true"` — both round-trip back to Bool(true) through the
-        // reader, and the marker form is more idiomatic XML CSDL.
-        if matches!(expr, CsdlAnnotationExpression::Bool(true)) {
-            return write_empty(xml, "Annotation", &attrs);
-        }
         if let Some((key, value)) = inline_attr_expr(expr) {
             attrs.push((key.to_string(), value));
             return write_empty(xml, "Annotation", &attrs);
@@ -1935,7 +1932,7 @@ fn annotation_member(annotation: &Annotation) -> Option<(String, Value)> {
 
     let value = match &annotation.expression {
         Some(expr) => expr_to_annotation_json(expr),
-        None => Value::Bool(true),
+        None => Value::Null,
     };
 
     Some((key, value))

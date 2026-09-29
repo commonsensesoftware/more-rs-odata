@@ -138,3 +138,24 @@ fn resolves_annotations_on_record_and_property_value_expressions() {
         );
     }
 }
+
+#[test]
+fn omitted_xml_expression_uses_the_declared_term_default() {
+    let body = r#"<Term Name="Enabled" Type="Edm.Boolean" DefaultValue="false"/><Term Name="Label" Type="Edm.String" DefaultValue="Unnamed"/><Term Name="Values" Type="Collection(Edm.String)"/><ComplexType Name="Owner"><Annotation Term="D.Enabled"/><Annotation Term="D.Label"/><Annotation Term="D.Values"/></ComplexType>"#;
+    for document in documents(body) {
+        let json = document.to_json_value();
+        assert_eq!(json["Demo"]["Owner"]["@D.Enabled"], false);
+        assert_eq!(json["Demo"]["Owner"]["@D.Label"], "Unnamed");
+        assert_eq!(json["Demo"]["Owner"]["@D.Values"], serde_json::json!([]));
+        let model = Resolver::resolve_document(document.edmx.unwrap()).unwrap();
+        assert!(matches!(
+            model.schemas[0].annotations.get().unwrap()[0].expression,
+            Some(csdl_edm::expr::CsdlAnnotationExpression::Bool(false))
+        ));
+        assert!(
+            validate_annotations(&model).is_empty(),
+            "{:?}",
+            validate_annotations(&model)
+        );
+    }
+}

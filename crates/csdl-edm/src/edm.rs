@@ -462,6 +462,27 @@ pub struct OperationReturnType {
 }
 
 impl Term {
+    pub fn default_expression(&self) -> Option<crate::expr::CsdlAnnotationExpression> {
+        use crate::expr::CsdlAnnotationExpression as E;
+        if self.is_collection {
+            return Some(E::Collection(Vec::new()));
+        }
+        Some(match self.ty()? {
+            TermType::Complex(_) | TermType::Entity(_) => E::Record {
+                type_: None,
+                properties: Vec::new(),
+                annotations: Vec::new(),
+            },
+            TermType::Primitive(p) => {
+                crate::expr::default_literal(&format!("Edm.{p:?}"), self.default_value.as_deref())
+            }
+            TermType::TypeDefinition(t) => crate::expr::default_literal(
+                &format!("Edm.{:?}", t.underlying_type),
+                self.default_value.as_deref(),
+            ),
+            _ => crate::expr::default_literal("Edm.String", self.default_value.as_deref()),
+        })
+    }
     pub fn ty(&self) -> Option<&TermType> {
         self.ty.get()
     }

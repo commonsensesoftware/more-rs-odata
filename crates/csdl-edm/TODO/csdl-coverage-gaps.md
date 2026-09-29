@@ -102,7 +102,9 @@ Related detailed design TODO:
 
 - [x] Scalar defaults: JSON numbers/booleans, type-definition representation,
       integer/enum ranges, string facets, decimal facets, and temporal literals.
-- [ ] Spatial default representations and annotation default-expression semantics.
+- [ ] Spatial default representations.
+- [x] Omitted XML annotation expressions use the declared term default;
+      JSON serialization materializes explicit values without fabricating true.
 
 - [x] Enumeration underlying integer types, flags, explicit/implicit values,
       numeric range checks, and XML implicit-to-JSON numeric serialization.

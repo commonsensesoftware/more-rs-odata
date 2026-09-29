@@ -22,3 +22,8 @@ explicit annotation diagnostic API.
 The authored expression remains available alongside resolved paths. This API
 does not execute dynamic expressions or evaluate service data. Value-shape
 checks do not replace a runtime expression evaluator.
+
+An omitted XML expression uses the term's default (or an empty collection or
+default-valued record). Explicit Boolean true remains explicit. JSON requires
+an explicit annotation value, so serialization expands locally available term
+defaults. If the term is unavailable, the unknown value is represented as null.

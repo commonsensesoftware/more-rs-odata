@@ -3,9 +3,9 @@ use std::io::{self, BufRead, Read};
 
 use quick_xml::events::{BytesStart, Event};
 
+use crate::csdl::Annotation;
 use crate::error::{Error, Result};
 use crate::expr::{BinaryOperator, CsdlAnnotationExpression, PropertyValue};
-use crate::csdl::Annotation;
 
 /// Token stream produced by [`CsdlReader`]. The reader normalizes CSDL's
 /// inline-attribute vs nested-element duality (see CSDL 14.2 and following)
@@ -161,19 +161,14 @@ impl<R: BufRead> CsdlReader<R> {
                     if name == "Annotation" {
                         // Inline-attribute expression (if any) + every nested
                         // expression in the body — all emitted as a sequence.
-                        // A marker Annotation (no inline expr, no body expr)
-                        // is canonicalized to Bool(true): CSDL says a marker
-                        // has implicit value true, so both readers agree on
-                        // Some(Bool(true)).
+                        // An omitted expression uses the term's default. Preserve
+                        // absence until the term is resolved.
                         let mut exprs: Vec<CsdlAnnotationExpression> = Vec::new();
                         if let Some(idx) = find_inline_constant_idx(&attrs) {
                             let (k, v) = attrs.swap_remove(idx);
                             exprs.push(constant_attr_to_expr(&k, v));
                         }
                         exprs.extend(self.read_expression_list("Annotation")?);
-                        if exprs.is_empty() {
-                            exprs.push(CsdlAnnotationExpression::Bool(true));
-                        }
                         for ex in exprs {
                             self.deferred
                                 .push_back(SyntaxUnit::AnnotationExpression(ex));
@@ -200,16 +195,12 @@ impl<R: BufRead> CsdlReader<R> {
                     let (name, mut attrs) = parse_start(&e)?;
 
                     if name == "Annotation" {
-                        // Same marker→Bool(true) canonicalization as the
-                        // open-then-close form above.
-                        let expr = if let Some(idx) = find_inline_constant_idx(&attrs) {
+                        if let Some(idx) = find_inline_constant_idx(&attrs) {
                             let (k, v) = attrs.swap_remove(idx);
-                            constant_attr_to_expr(&k, v)
-                        } else {
-                            CsdlAnnotationExpression::Bool(true)
-                        };
-                        self.deferred
-                            .push_back(SyntaxUnit::AnnotationExpression(expr));
+                            self.deferred.push_back(SyntaxUnit::AnnotationExpression(
+                                constant_attr_to_expr(&k, v),
+                            ));
+                        }
                         self.deferred.push_back(SyntaxUnit::EndElement {
                             name: "Annotation".to_string(),
                         });
@@ -447,10 +438,7 @@ impl<R: BufRead> CsdlReader<R> {
     /// PropertyValue carries its own annotation expression(s) and optional
     /// nested `<Annotation>` elements; Record itself can also carry
     /// `<Annotation>` children.
-    fn read_record_body(
-        &mut self,
-        parent: &str,
-    ) -> Result<(Vec<PropertyValue>, Vec<Annotation>)> {
+    fn read_record_body(&mut self, parent: &str) -> Result<(Vec<PropertyValue>, Vec<Annotation>)> {
         let mut properties = Vec::new();
         let mut annotations = Vec::new();
         loop {
@@ -567,10 +555,7 @@ impl<R: BufRead> CsdlReader<R> {
     /// Build a model `Annotation` from a `<Annotation Term="..." [Target=..]
     /// [Qualifier=..] [InlineConstantAttr=..]> ... </Annotation>` element.
     /// Body may carry one value expression (taken as `expression`).
-    fn read_annotation_start(
-        &mut self,
-        attrs: &mut Vec<(String, String)>,
-    ) -> Result<Annotation> {
+    fn read_annotation_start(&mut self, attrs: &mut Vec<(String, String)>) -> Result<Annotation> {
         let term = attr_value(attrs, "Term").unwrap_or_default();
         let qualifier = attr_value(attrs, "Qualifier");
         let target = attr_value(attrs, "Target");
@@ -582,7 +567,7 @@ impl<R: BufRead> CsdlReader<R> {
         let body = self.read_expression_list("Annotation")?;
         let expression = match inline {
             Some(e) => Some(e),
-            None if body.is_empty() => Some(CsdlAnnotationExpression::Bool(true)),
+            None if body.is_empty() => None,
             None => Some(body.into_iter().next().unwrap()),
         };
         Ok(Annotation {
@@ -594,7 +579,7 @@ impl<R: BufRead> CsdlReader<R> {
     }
 
     /// Empty-element form (`<Annotation Term=".."/>`). Marker form
-    /// (no inline constant attr) becomes `Some(Bool(true))` per §5.
+    /// (no inline constant attr) preserves the absence of an expression.
     fn read_annotation_empty(&mut self, attrs: &mut Vec<(String, String)>) -> Annotation {
         let term = attr_value(attrs, "Term").unwrap_or_default();
         let qualifier = attr_value(attrs, "Qualifier");
@@ -604,7 +589,7 @@ impl<R: BufRead> CsdlReader<R> {
                 let (k, v) = attrs.swap_remove(idx);
                 Some(constant_attr_to_expr(&k, v))
             }
-            None => Some(CsdlAnnotationExpression::Bool(true)),
+            None => None,
         };
         Annotation {
             term,

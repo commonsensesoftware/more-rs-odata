@@ -99,3 +99,38 @@ pub struct PropertyValue {
 // (model uses CsdlAnnotationExpression from here, we use Annotation from
 // model) — Rust handles that fine.
 use crate::csdl::Annotation;
+
+/// Convert a scalar default's lexical representation to an annotation value.
+/// Invalid lexical values remain strings for authoring diagnostics to report.
+pub(crate) fn default_literal(type_name: &str, value: Option<&str>) -> CsdlAnnotationExpression {
+    use CsdlAnnotationExpression as E;
+    let Some(value) = value else {
+        return E::Null;
+    };
+    match type_name {
+        "Edm.Boolean" => value
+            .parse()
+            .map(E::Bool)
+            .unwrap_or_else(|_| E::String(value.into())),
+        "Edm.Byte" | "Edm.SByte" | "Edm.Int16" | "Edm.Int32" | "Edm.Int64" => value
+            .parse()
+            .map(E::Int)
+            .unwrap_or_else(|_| E::String(value.into())),
+        "Edm.Single" | "Edm.Double" => match value {
+            "INF" => E::Float(f64::INFINITY),
+            "-INF" => E::Float(f64::NEG_INFINITY),
+            "NaN" => E::Float(f64::NAN),
+            _ => value
+                .parse()
+                .map(E::Float)
+                .unwrap_or_else(|_| E::String(value.into())),
+        },
+        "Edm.Decimal" => E::Decimal(value.into()),
+        "Edm.Date" => E::Date(value.into()),
+        "Edm.DateTimeOffset" => E::DateTimeOffset(value.into()),
+        "Edm.Duration" => E::Duration(value.into()),
+        "Edm.Guid" => E::Guid(value.into()),
+        "Edm.TimeOfDay" => E::TimeOfDay(value.into()),
+        _ => E::String(value.into()),
+    }
+}

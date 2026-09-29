@@ -1,5 +1,199 @@
 use super::*;
 
+pub(super) fn materialize_annotations(edmx: &mut Edmx) {
+    let mut terms = BTreeMap::new();
+    let mut types = BTreeMap::new();
+    let mut aliases = BTreeMap::new();
+    for schema in &edmx.schemas {
+        if let Some(alias) = &schema.alias {
+            aliases.insert(alias.clone(), schema.namespace.clone());
+        }
+        for element in &schema.elements {
+            match element {
+                SchemaElement::Term(t) => {
+                    terms.insert(format!("{}.{}", schema.namespace, t.name), t.clone());
+                }
+                SchemaElement::TypeDefinition(t) => {
+                    types.insert(
+                        format!("{}.{}", schema.namespace, t.name),
+                        t.underlying_type.clone(),
+                    );
+                }
+                SchemaElement::ComplexType(t) => {
+                    types.insert(format!("{}.{}", schema.namespace, t.name), "Complex".into());
+                }
+                SchemaElement::EntityType(t) => {
+                    types.insert(format!("{}.{}", schema.namespace, t.name), "Complex".into());
+                }
+                _ => {}
+            }
+        }
+    }
+    fn qualified(name: &str, ns: &str, aliases: &BTreeMap<String, String>) -> String {
+        match name.rsplit_once('.') {
+            Some((prefix, short)) => format!(
+                "{}.{short}",
+                aliases.get(prefix).map(String::as_str).unwrap_or(prefix)
+            ),
+            None => format!("{ns}.{name}"),
+        }
+    }
+    for schema in &mut edmx.schemas {
+        let ns = schema.namespace.clone();
+        let materialize = |annotation: &mut Annotation| {
+            if annotation.expression.is_none() {
+                let term = terms.get(&qualified(&annotation.term, &ns, &aliases));
+                annotation.expression = Some(match term {
+                    Some(t) if t.is_collection => CsdlAnnotationExpression::Collection(Vec::new()),
+                    Some(t) => {
+                        let name = qualified(
+                            t.type_name.as_deref().unwrap_or("Edm.String"),
+                            &ns,
+                            &aliases,
+                        );
+                        let underlying = types.get(&name).map(String::as_str).unwrap_or(&name);
+                        if underlying == "Complex" {
+                            CsdlAnnotationExpression::Record {
+                                type_: None,
+                                properties: Vec::new(),
+                                annotations: Vec::new(),
+                            }
+                        } else {
+                            crate::expr::default_literal(underlying, t.default_value.as_deref())
+                        }
+                    }
+                    None => CsdlAnnotationExpression::Null,
+                });
+            }
+        };
+        let apply =
+            |annotations: &mut Vec<Annotation>| visit_annotations(annotations, &materialize);
+        apply(&mut schema.annotations);
+        for group in &mut schema.external_annotations {
+            apply(&mut group.annotations);
+        }
+        for element in &mut schema.elements {
+            match element {
+                SchemaElement::EntityType(t) => {
+                    apply(&mut t.annotations);
+                    for p in &mut t.properties {
+                        apply(&mut p.annotations);
+                    }
+                    for n in &mut t.navigation_properties {
+                        apply(&mut n.annotations);
+                        for c in &mut n.referential_constraints {
+                            apply(&mut c.annotations);
+                        }
+                    }
+                }
+                SchemaElement::ComplexType(t) => {
+                    apply(&mut t.annotations);
+                    for p in &mut t.properties {
+                        apply(&mut p.annotations);
+                    }
+                    for n in &mut t.navigation_properties {
+                        apply(&mut n.annotations);
+                        for c in &mut n.referential_constraints {
+                            apply(&mut c.annotations);
+                        }
+                    }
+                }
+                SchemaElement::EnumType(t) => {
+                    apply(&mut t.annotations);
+                    for m in &mut t.members {
+                        apply(&mut m.annotations);
+                    }
+                }
+                SchemaElement::TypeDefinition(t) => apply(&mut t.annotations),
+                SchemaElement::Term(t) => apply(&mut t.annotations),
+                SchemaElement::Function(t) => {
+                    apply(&mut t.annotations);
+                    for p in &mut t.parameters {
+                        apply(&mut p.annotations);
+                    }
+                    if let Some(r) = &mut t.return_type {
+                        apply(&mut r.annotations);
+                    }
+                }
+                SchemaElement::Action(t) => {
+                    apply(&mut t.annotations);
+                    for p in &mut t.parameters {
+                        apply(&mut p.annotations);
+                    }
+                    if let Some(r) = &mut t.return_type {
+                        apply(&mut r.annotations);
+                    }
+                }
+                SchemaElement::EntityContainer(c) => {
+                    apply(&mut c.annotations);
+                    for s in &mut c.entity_sets {
+                        apply(&mut s.annotations);
+                    }
+                    for s in &mut c.singletons {
+                        apply(&mut s.annotations);
+                    }
+                    for s in &mut c.function_imports {
+                        apply(&mut s.annotations);
+                    }
+                    for s in &mut c.action_imports {
+                        apply(&mut s.annotations);
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn visit_annotations(annotations: &mut [Annotation], apply: &impl Fn(&mut Annotation)) {
+    for annotation in annotations {
+        apply(annotation);
+        if let Some(expression) = &mut annotation.expression {
+            visit_expression(expression, apply);
+        }
+    }
+}
+
+fn visit_expression(expression: &mut CsdlAnnotationExpression, apply: &impl Fn(&mut Annotation)) {
+    use CsdlAnnotationExpression as E;
+    match expression {
+        E::Record {
+            annotations,
+            properties,
+            ..
+        } => {
+            visit_annotations(annotations, apply);
+            for property in properties {
+                visit_annotations(&mut property.annotations, apply);
+                if let Some(value) = &mut property.value {
+                    visit_expression(value, apply);
+                }
+            }
+        }
+        E::Collection(values) | E::Apply { args: values, .. } => {
+            for value in values {
+                visit_expression(value, apply);
+            }
+        }
+        E::Not(e)
+        | E::UrlRef(e)
+        | E::Cast { expr: e, .. }
+        | E::IsOf { expr: e, .. }
+        | E::LabeledElement { expr: e, .. } => visit_expression(e, apply),
+        E::BinaryExpression { lhs, rhs, .. } => {
+            visit_expression(lhs, apply);
+            visit_expression(rhs, apply);
+        }
+        E::If { test, then_, else_ } => {
+            visit_expression(test, apply);
+            visit_expression(then_, apply);
+            if let Some(e) = else_ {
+                visit_expression(e, apply);
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Convert lexical defaults to their JSON primitive representation, including
 /// alias-qualified type definitions, without requiring semantic resolution.
 pub(super) fn normalize(out: &mut Map<String, Value>, edmx: &Edmx) {

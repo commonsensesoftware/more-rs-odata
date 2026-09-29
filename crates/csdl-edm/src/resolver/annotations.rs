@@ -418,11 +418,15 @@ impl Scope<'_> {
             }
             output.push(ResolvedAnnotation {
                 term: self.terms.get(&term_name).cloned(),
-                term_name,
+                term_name: term_name.clone(),
                 qualifier: annotation.qualifier.clone(),
                 target_path,
                 targets,
-                expression: annotation.expression.clone(),
+                expression: annotation.expression.clone().or_else(|| {
+                    self.terms
+                        .get(&term_name)
+                        .and_then(|term| term.default_expression())
+                }),
                 expression_paths,
             });
             if let Some(expression) = &annotation.expression {
@@ -547,11 +551,13 @@ impl Scope<'_> {
                 .collect::<Vec<Path>>();
             out.push(ResolvedAnnotation {
                 term: self.terms.get(&term_name).cloned(),
-                term_name,
+                term_name: term_name.clone(),
                 qualifier: annotation.qualifier.clone(),
                 target_path: format!("{owner}/expression[{index}]"),
                 targets,
-                expression: annotation.expression.clone(),
+                expression: annotation.expression.clone().or_else(|| {
+                    self.terms.get(&term_name).and_then(|term| term.default_expression())
+                }),
                 expression_paths: Vec::new(),
             });
         }
