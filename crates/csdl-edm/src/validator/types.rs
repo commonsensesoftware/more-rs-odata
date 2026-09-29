@@ -2,20 +2,97 @@ use super::ValidationError;
 use crate::csdl::{MaxLengthFacet, ScaleFacet};
 use crate::edm::*;
 
+fn property_type(ty: &ResolvedType) -> TermType {
+    match ty {
+        ResolvedType::Builtin(t) => TermType::Builtin(*t),
+        ResolvedType::Primitive(t) => TermType::Primitive(t.clone()),
+        ResolvedType::Complex(t) => TermType::Complex(t.clone()),
+        ResolvedType::Enum(t) => TermType::Enum(t.clone()),
+        ResolvedType::TypeDefinition(t) => TermType::TypeDefinition(t.clone()),
+    }
+}
+
+fn has_vocabulary_path(
+    ty: &TermType,
+    seen: &mut std::collections::HashSet<*const ComplexType>,
+) -> bool {
+    match ty {
+        TermType::Builtin(t) => *t != BuiltinType::Untyped,
+        TermType::Complex(t) if seen.insert(std::sync::Arc::as_ptr(t)) => t
+            .properties()
+            .iter()
+            .any(|p| has_vocabulary_path(&property_type(&p.ty), seen)),
+        _ => false,
+    }
+}
+
+fn usage(
+    name: &str,
+    ty: &TermType,
+    collection: bool,
+    vocabulary: bool,
+    stream: bool,
+    version: &str,
+    errors: &mut Vec<ValidationError>,
+) {
+    let mut fail = |reason| {
+        errors.push(ValidationError::InvalidTypeUse {
+            element: name.into(),
+            reason,
+        })
+    };
+    let primitive = match ty {
+        TermType::Primitive(p) => Some(p),
+        TermType::TypeDefinition(t) => Some(&t.underlying_type),
+        _ => None,
+    };
+    if collection && primitive == Some(&PrimitiveType::PrimitiveType) {
+        fail("Collections of Edm.PrimitiveType are not permitted");
+    }
+    if primitive == Some(&PrimitiveType::Stream) && (collection || !stream) {
+        fail("Stream requires a single property, binding parameter, or return value");
+    }
+    if matches!(ty, TermType::Builtin(BuiltinType::Untyped)) && version == "4.0" {
+        fail("Edm.Untyped requires CSDL 4.01");
+    }
+    if !vocabulary && has_vocabulary_path(ty, &mut std::collections::HashSet::new()) {
+        fail("Vocabulary path types are restricted to terms and their complex values");
+    }
+}
+
 pub(super) fn validate(model: &Model, version: &str) -> Vec<ValidationError> {
     let mut errors = Vec::new();
     for element in &model.elements {
         match element.as_ref() {
             SchemaElement::EnumType(t) => enumeration(t, &mut errors),
-            SchemaElement::TypeDefinition(t) => check(
-                &t.name,
-                Some(&t.underlying_type),
-                None,
-                &t.facets,
-                version,
-                &mut errors,
-            ),
+            SchemaElement::TypeDefinition(t) => {
+                if t.underlying_type == PrimitiveType::PrimitiveType && version == "4.0" {
+                    errors.push(ValidationError::InvalidTypeUse {
+                        element: t.name.clone(),
+                        reason: "Abstract primitive type definitions require CSDL 4.01",
+                    });
+                }
+                check(
+                    &t.name,
+                    Some(&t.underlying_type),
+                    None,
+                    &t.facets,
+                    version,
+                    &mut errors,
+                );
+            }
             SchemaElement::EntityType(t) => {
+                for p in t.properties() {
+                    usage(
+                        &format!("{}/{}", t.name, p.name),
+                        &property_type(&p.ty),
+                        p.is_collection,
+                        false,
+                        true,
+                        version,
+                        &mut errors,
+                    );
+                }
                 properties(&t.name, t.properties(), version, &mut errors)
             }
             SchemaElement::ComplexType(t) => {
@@ -23,11 +100,21 @@ pub(super) fn validate(model: &Model, version: &str) -> Vec<ValidationError> {
             }
             SchemaElement::Term(t) => {
                 if let Some(ty) = t.ty() {
+                    usage(
+                        &t.name,
+                        ty,
+                        t.is_collection,
+                        true,
+                        false,
+                        version,
+                        &mut errors,
+                    );
                     check_term(&t.name, ty, &t.facets, version, &mut errors);
                 }
             }
             SchemaElement::Function(f) => operation(
                 &f.name,
+                f.is_bound,
                 &f.parameters,
                 f.return_type.as_ref(),
                 version,
@@ -35,6 +122,7 @@ pub(super) fn validate(model: &Model, version: &str) -> Vec<ValidationError> {
             ),
             SchemaElement::Action(a) => operation(
                 &a.name,
+                a.is_bound,
                 &a.parameters,
                 a.return_type.as_ref(),
                 version,
@@ -46,7 +134,7 @@ pub(super) fn validate(model: &Model, version: &str) -> Vec<ValidationError> {
 }
 
 fn enumeration(t: &EnumType, errors: &mut Vec<ValidationError>) {
-    use PrimitiveType::*;
+    use crate::edm::PrimitiveType::*;
     let mut fail = |reason| {
         errors.push(ValidationError::InvalidEnum {
             name: t.name.clone(),
@@ -96,6 +184,15 @@ fn properties(
 ) {
     for p in properties {
         let name = format!("{owner}/{}", p.name);
+        usage(
+            &name,
+            &property_type(&p.ty),
+            p.is_collection,
+            true,
+            true,
+            version,
+            errors,
+        );
         let (primitive, definition) = match &p.ty {
             ResolvedType::Primitive(p) => (Some(p), None),
             ResolvedType::TypeDefinition(t) => (Some(&t.underlying_type), Some(t.as_ref())),
@@ -107,12 +204,22 @@ fn properties(
 
 fn operation(
     name: &str,
+    is_bound: bool,
     parameters: &[OperationParameter],
     return_type: Option<&OperationReturnType>,
     version: &str,
     errors: &mut Vec<ValidationError>,
 ) {
-    for p in parameters {
+    for (index, p) in parameters.iter().enumerate() {
+        usage(
+            &format!("{name}/{}", p.name),
+            &p.ty,
+            p.is_collection,
+            false,
+            is_bound && index == 0,
+            version,
+            errors,
+        );
         check_term(
             &format!("{name}/{}", p.name),
             &p.ty,
@@ -122,6 +229,15 @@ fn operation(
         );
     }
     if let Some(r) = return_type {
+        usage(
+            &format!("{name}/$ReturnType"),
+            &r.ty,
+            r.is_collection,
+            false,
+            true,
+            version,
+            errors,
+        );
         check_term(
             &format!("{name}/$ReturnType"),
             &r.ty,
@@ -155,7 +271,10 @@ fn check(
     version: &str,
     errors: &mut Vec<ValidationError>,
 ) {
-    use PrimitiveType::*;
+    use crate::edm::PrimitiveType::*;
+    if primitive == Some(&PrimitiveType) {
+        return; // CSDL requires clients to ignore facets on this abstract type.
+    }
     let mut fail = |facet, reason| {
         errors.push(ValidationError::InvalidFacet {
             element: name.into(),

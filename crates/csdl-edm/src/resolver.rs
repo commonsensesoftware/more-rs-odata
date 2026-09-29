@@ -134,6 +134,8 @@ impl Resolver {
 
         let mut entities: HashMap<String, Arc<EntityType>> = HashMap::new();
         let mut complexes: HashMap<String, Arc<ComplexType>> = HashMap::new();
+        entities.insert("Edm.EntityType".into(), abstract_entity_type().clone());
+        complexes.insert("Edm.ComplexType".into(), abstract_complex_type().clone());
         let mut enums: HashMap<String, Arc<EnumType>> = HashMap::new();
         let mut type_definitions: HashMap<String, Arc<TypeDefinition>> = HashMap::new();
         let mut terms: HashMap<String, Arc<Term>> = HashMap::new();
@@ -376,6 +378,9 @@ impl Resolver {
         // Late pass: every entity/complex type now has its properties, so the
         // effective key declarations can be resolved into typed paths.
         for (name, arc) in &entities {
+            if name == "Edm.EntityType" {
+                continue;
+            }
             let keys = &entity_key_cache[name];
             let mut typed_keys = Vec::new();
             for key in keys {
@@ -795,6 +800,9 @@ fn resolve_type(
     ns: &str,
     aliases: &HashMap<String, String>,
 ) -> Result<ResolvedType, ResolveError> {
+    if let Some(builtin) = BuiltinType::parse(type_name) {
+        return Ok(ResolvedType::Builtin(builtin));
+    }
     if let Some(primitive) = resolve_primitive(type_name) {
         return Ok(ResolvedType::Primitive(primitive));
     }
@@ -852,6 +860,9 @@ fn resolve_properties(
 }
 
 fn entity_is_strict_subtype(derived: &Arc<EntityType>, base: &Arc<EntityType>) -> bool {
+    if Arc::ptr_eq(base, abstract_entity_type()) {
+        return !Arc::ptr_eq(derived, base);
+    }
     let mut current = derived
         .base_type
         .get()
@@ -875,6 +886,9 @@ fn entity_is_strict_subtype(derived: &Arc<EntityType>, base: &Arc<EntityType>) -
 }
 
 fn complex_is_strict_subtype(derived: &Arc<ComplexType>, base: &Arc<ComplexType>) -> bool {
+    if Arc::ptr_eq(base, abstract_complex_type()) {
+        return !Arc::ptr_eq(derived, base);
+    }
     let mut current = derived
         .base_type
         .get()
@@ -1124,6 +1138,9 @@ fn resolve_term_type(
     ns: &str,
     aliases: &HashMap<String, String>,
 ) -> Result<TermType, ResolveError> {
+    if let Some(builtin) = BuiltinType::parse(type_name) {
+        return Ok(TermType::Builtin(builtin));
+    }
     if let Some(primitive) = resolve_primitive(type_name) {
         return Ok(TermType::Primitive(primitive));
     }
@@ -1401,6 +1418,7 @@ fn resolve_operation_return_type(
 fn resolve_primitive(type_name: &str) -> Option<PrimitiveType> {
     let rest = type_name.strip_prefix("Edm.")?;
     match rest {
+        "PrimitiveType" => Some(PrimitiveType::PrimitiveType),
         "Stream" => Some(PrimitiveType::Stream),
         "Geography" => Some(PrimitiveType::Geography),
         "GeographyPoint" => Some(PrimitiveType::GeographyPoint),

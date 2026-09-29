@@ -663,7 +663,7 @@ impl Builder {
             ResolvedType::Complex(a) => self.lookup(arc_ptr(a)),
             ResolvedType::Enum(a) => self.lookup(arc_ptr(a)),
             ResolvedType::TypeDefinition(a) => self.lookup(arc_ptr(a)),
-            ResolvedType::Primitive(_) => None,
+            ResolvedType::Primitive(_) | ResolvedType::Builtin(_) => None,
         }
     }
 
@@ -673,7 +673,7 @@ impl Builder {
             TermType::Enum(a) => self.lookup(arc_ptr(a)),
             TermType::TypeDefinition(a) => self.lookup(arc_ptr(a)),
             TermType::Entity(a) => self.lookup(arc_ptr(a)),
-            TermType::Primitive(_) => None,
+            TermType::Primitive(_) | TermType::Builtin(_) => None,
         }
     }
 }

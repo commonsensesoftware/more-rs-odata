@@ -98,8 +98,8 @@ Related detailed design TODO:
 - [x] Enumeration underlying integer types, flags, explicit/implicit values,
       numeric range checks, and XML implicit-to-JSON numeric serialization.
 
-- [ ] Expand primitive support beyond the currently implemented subset where
-      CSDL inputs require it.
+- [x] All concrete primitives, including Stream and spatial families, plus
+      built-in abstract and vocabulary path types with usage restrictions.
 - [x] Track unsupported primitive names as explicit expected failures with clear
       diagnostics.
 - [x] Introduce typed facet/value unions in parse+serialize+resolver model:

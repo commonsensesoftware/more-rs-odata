@@ -70,6 +70,12 @@ impl<'a> Containers<'a> {
                     element_name: set.name.clone(),
                 })?;
             let target = resolve_entity_ref(ty, self.entities, ns, self.aliases)?;
+            if Arc::ptr_eq(&target, abstract_entity_type()) {
+                return Err(ResolveError::UnsupportedCsdlFeature {
+                    feature: "EntitySet cannot use Edm.EntityType",
+                    location: set.name.clone(),
+                });
+            }
             let element = Arc::new(EntityContainerElement::EntitySet(Arc::new(EntitySet {
                 name: set.name.clone(),
                 target,
@@ -87,6 +93,12 @@ impl<'a> Containers<'a> {
                     element_name: singleton.name.clone(),
                 })?;
             let target = resolve_entity_ref(ty, self.entities, ns, self.aliases)?;
+            if Arc::ptr_eq(&target, abstract_entity_type()) {
+                return Err(ResolveError::UnsupportedCsdlFeature {
+                    feature: "Singleton cannot use Edm.EntityType",
+                    location: singleton.name.clone(),
+                });
+            }
             let element = Arc::new(EntityContainerElement::Singleton(Arc::new(Singleton {
                 name: singleton.name.clone(),
                 target,

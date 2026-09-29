@@ -21,6 +21,10 @@ enum KeyPathClassification {
 
 #[derive(Debug, Clone)]
 pub enum ValidationError {
+    InvalidTypeUse {
+        element: String,
+        reason: &'static str,
+    },
     InvalidEnum {
         name: String,
         reason: &'static str,
@@ -957,6 +961,7 @@ fn constraint_types_match(left: &ConstraintEndpoint, right: &ConstraintEndpoint)
             left.is_collection == right.is_collection
                 && match (&left.ty, &right.ty) {
                     (ResolvedType::Primitive(a), ResolvedType::Primitive(b)) => a == b,
+                    (ResolvedType::Builtin(a), ResolvedType::Builtin(b)) => a == b,
                     (ResolvedType::Enum(a), ResolvedType::Enum(b)) => Arc::ptr_eq(a, b),
                     (ResolvedType::TypeDefinition(a), ResolvedType::TypeDefinition(b)) => {
                         Arc::ptr_eq(a, b)
@@ -1070,6 +1075,9 @@ impl ValidationRule for ReferentialConstraintConsistencyRule {
 struct NavigationSemanticsRule;
 
 fn entity_derives_from(entity: &EntityType, base: &EntityType) -> bool {
+    if std::ptr::eq(base, crate::edm::abstract_entity_type().as_ref()) {
+        return true;
+    }
     if std::ptr::eq(entity, base) {
         return true;
     }
@@ -1130,7 +1138,11 @@ fn validate_navigation_members(
         let Some(target) = nav.target.upgrade() else {
             continue;
         };
-        if nav.is_collection && nav.contains_target.unwrap_or(false) && target.keys().is_empty() {
+        if nav.is_collection
+            && nav.contains_target.unwrap_or(false)
+            && target.keys().is_empty()
+            && !std::sync::Arc::ptr_eq(&target, crate::edm::abstract_entity_type())
+        {
             invalid_navigation(
                 owner,
                 nav,
@@ -1264,6 +1276,7 @@ fn same_term_type(left: &crate::edm::TermType, right: &crate::edm::TermType) -> 
     use std::sync::Arc;
     match (left, right) {
         (TermType::Primitive(a), TermType::Primitive(b)) => a == b,
+        (TermType::Builtin(a), TermType::Builtin(b)) => a == b,
         (TermType::Entity(a), TermType::Entity(b)) => Arc::ptr_eq(a, b),
         (TermType::Complex(a), TermType::Complex(b)) => Arc::ptr_eq(a, b),
         (TermType::Enum(a), TermType::Enum(b)) => Arc::ptr_eq(a, b),
@@ -1754,6 +1767,7 @@ fn classify_key_path(key: &[KeyPathSegment]) -> KeyPathClassification {
         None => KeyPathClassification::Unknown,
         Some(property) => match property.ty {
             ResolvedType::Complex(_) => KeyPathClassification::Complex,
+            ResolvedType::Builtin(_) => KeyPathClassification::Complex,
             ResolvedType::Primitive(_)
             | ResolvedType::Enum(_)
             | ResolvedType::TypeDefinition(_) => KeyPathClassification::Scalar,

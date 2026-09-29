@@ -97,6 +97,8 @@ impl AnnotationTargetKind {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum PrimitiveType {
+    /// Abstract root of all primitive, enumeration, and defined scalar types.
+    PrimitiveType,
     Binary,
     Stream,
     Geography,
@@ -134,6 +136,7 @@ pub enum PrimitiveType {
 
 #[derive(Debug, Clone)]
 pub enum ResolvedType {
+    Builtin(BuiltinType),
     Primitive(PrimitiveType),
     Enum(Arc<EnumType>),
     Complex(Arc<ComplexType>),
@@ -142,11 +145,69 @@ pub enum ResolvedType {
 
 #[derive(Debug, Clone)]
 pub enum TermType {
+    Builtin(BuiltinType),
     Primitive(PrimitiveType),
     TypeDefinition(Arc<TypeDefinition>),
     Enum(Arc<EnumType>),
     Complex(Arc<ComplexType>),
     Entity(Arc<EntityType>),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum BuiltinType {
+    Untyped,
+    AnnotationPath,
+    PropertyPath,
+    NavigationPropertyPath,
+    AnyPropertyPath,
+    ModelElementPath,
+}
+
+impl BuiltinType {
+    pub fn parse(name: &str) -> Option<Self> {
+        Some(match name {
+            "Edm.Untyped" => Self::Untyped,
+            "Edm.AnnotationPath" => Self::AnnotationPath,
+            "Edm.PropertyPath" => Self::PropertyPath,
+            "Edm.NavigationPropertyPath" => Self::NavigationPropertyPath,
+            "Edm.AnyPropertyPath" => Self::AnyPropertyPath,
+            "Edm.ModelElementPath" => Self::ModelElementPath,
+            _ => return None,
+        })
+    }
+}
+
+/// Canonical built-in abstract entity node. It is never a declared schema child.
+pub fn abstract_entity_type() -> &'static Arc<EntityType> {
+    static TYPE: OnceLock<Arc<EntityType>> = OnceLock::new();
+    TYPE.get_or_init(|| {
+        Arc::new(EntityType {
+            name: "Edm.EntityType".into(),
+            is_abstract: true,
+            is_open: false,
+            has_stream: false,
+            base_type: OnceLock::from(None),
+            keys: OnceLock::from(Vec::new()),
+            key_aliases: OnceLock::from(Vec::new()),
+            properties: OnceLock::from(Vec::new()),
+            navigation_properties: OnceLock::from(Vec::new()),
+        })
+    })
+}
+
+/// Canonical built-in abstract complex node.
+pub fn abstract_complex_type() -> &'static Arc<ComplexType> {
+    static TYPE: OnceLock<Arc<ComplexType>> = OnceLock::new();
+    TYPE.get_or_init(|| {
+        Arc::new(ComplexType {
+            name: "Edm.ComplexType".into(),
+            is_abstract: true,
+            is_open: false,
+            base_type: OnceLock::from(None),
+            properties: OnceLock::from(Vec::new()),
+            navigation_properties: OnceLock::from(Vec::new()),
+        })
+    })
 }
 
 #[derive(Debug)]
