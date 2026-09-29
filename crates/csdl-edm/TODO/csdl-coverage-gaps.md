@@ -126,8 +126,10 @@ Related detailed design TODO:
       operations, nav constraints, imports/bindings).
 - [x] Add snapshot tests for XML<->JSON round-trip deltas to make serializer
       changes explicit.
-- [ ] Add parity tests for `examples/` entrypoints so API-level behavior is
-      stable.
+- [x] Add parity tests for all five `examples/` entrypoints: format comparisons,
+      pipeline loading, graph export, and XML/JSON URL expansion. Examples run
+      as test targets. The pipeline default now uses the valid example89 fixture;
+      URL expansion declares non-nullable keys.
 
 ## 5. Packaging Backlog
 

@@ -11,15 +11,32 @@ fn main() {
             project_root
                 .join("data")
                 .join("inputs")
-                .join("fields_sample.csdl.xml")
+                .join("example89.csdl.xml")
         },
         |value| project_root.join(value),
     );
 
-    let parsed = CsdlDocument::from_path(&input).expect("parse CSDL input");
+    load(&input);
+    println!("Parsed, resolved, and validated {}", input.display());
+}
+
+fn load(input: &Path) -> csdl_edm::edm::DocumentModel {
+    let parsed = CsdlDocument::from_path(input).expect("parse CSDL input");
     let edmx = parsed.edmx.expect("missing Edmx document");
     let edm = Resolver::resolve_edmx_document(edmx).expect("resolve to EDM");
     validate_document(&edm).expect("validate EDM");
 
-    println!("Parsed, resolved, and validated {}", input.display());
+    edm
+}
+
+#[test]
+fn pipeline_accepts_both_formats() {
+    let inputs = Path::new(env!("CARGO_MANIFEST_DIR")).join("data/inputs");
+    let xml = load(&inputs.join("example89.csdl.xml"));
+    let json = load(&inputs.join("example89.csdl.json"));
+    assert_eq!(xml.schemas.len(), json.schemas.len());
+    assert_eq!(
+        xml.schemas[0].elements.len(),
+        json.schemas[0].elements.len()
+    );
 }

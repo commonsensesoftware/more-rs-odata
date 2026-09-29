@@ -30,6 +30,16 @@ fn main() -> Result<()> {
     )))
 }
 
+#[test]
+fn comparisons_report_equivalence_and_known_mismatches() {
+    let inputs = Path::new(env!("CARGO_MANIFEST_DIR")).join("data/inputs");
+    assert_eq!(sample_names(&inputs).unwrap().len(), 8);
+    compare_sample("enum_sample", &inputs).unwrap();
+    compare_sample("extras_sample", &inputs).unwrap();
+    let mismatch = compare_sample("reporting_line", &inputs).unwrap_err();
+    assert!(mismatch.to_string().contains("not equivalent"));
+}
+
 fn compare_sample(sample: &str, inputs: &Path) -> Result<()> {
     let xml_in = inputs.join(format!("{sample}.csdl.xml"));
     let json_in = inputs.join(format!("{sample}.csdl.json"));
@@ -51,7 +61,11 @@ fn compare_sample(sample: &str, inputs: &Path) -> Result<()> {
     )))
 }
 
-fn report_model_diff(sample: &str, from_xml: &CsdlDocument, from_json: &CsdlDocument) -> Result<()> {
+fn report_model_diff(
+    sample: &str,
+    from_xml: &CsdlDocument,
+    from_json: &CsdlDocument,
+) -> Result<()> {
     let xml_json = serialize_json(from_xml)?;
     let json_json = serialize_json(from_json)?;
     if xml_json != json_json {

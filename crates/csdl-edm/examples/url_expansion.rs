@@ -23,6 +23,45 @@ fn main() {
     print_spawned_paths(&spawned_paths, 3);
 }
 
+#[test]
+fn demo_paths_survive_xml_and_json_serialization() {
+    let document = CsdlDocument {
+        edmx: Some(Edmx {
+            version: Some("4.01".into()),
+            references: vec![],
+            schemas: vec![build_demo_schema()],
+        }),
+    };
+    let paths = |document: CsdlDocument| {
+        let model = Resolver::resolve_document(document.edmx.unwrap()).unwrap();
+        validate_document(&model).unwrap();
+        PathExpander::new(3)
+            .collect_paths(&model.schemas[0])
+            .into_iter()
+            .map(|p| {
+                (
+                    p.segments.join("/"),
+                    p.terminal_type.name.clone(),
+                    p.is_collection,
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    let expected = paths(document.clone());
+    assert!(expected.iter().any(|p| p.0 == "customers" && p.2));
+    assert!(expected.iter().any(|p| p.0 == "me" && !p.2));
+    for format in [csdl_edm::CsdlFormat::Xml, csdl_edm::CsdlFormat::Json] {
+        let mut bytes = Vec::new();
+        document.write_as(&mut bytes, format).unwrap();
+        let parsed = match format {
+            csdl_edm::CsdlFormat::Xml => csdl_edm::parser::from_xml_reader(bytes.as_slice()),
+            csdl_edm::CsdlFormat::Json => csdl_edm::parser::from_json_reader(bytes.as_slice()),
+        }
+        .unwrap();
+        assert_eq!(paths(parsed), expected);
+    }
+}
+
 fn build_demo_schema() -> Schema {
     Schema {
         external_annotations: Vec::new(),
@@ -116,7 +155,7 @@ fn build_demo_schema() -> Schema {
                         name: "id".to_owned(),
                         type_name: Some("Edm.Int32".to_owned()),
                         is_collection: false,
-                        nullable: None,
+                        nullable: Some(false),
                         max_length: None,
                         precision: None,
                         scale: None,
@@ -181,7 +220,7 @@ fn build_demo_schema() -> Schema {
                     name: "id".to_owned(),
                     type_name: Some("Edm.Int32".to_owned()),
                     is_collection: false,
-                    nullable: None,
+                    nullable: Some(false),
                     max_length: None,
                     precision: None,
                     scale: None,
