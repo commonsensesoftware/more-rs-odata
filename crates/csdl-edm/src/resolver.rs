@@ -1233,7 +1233,7 @@ fn resolve_function(
         entity_set_path: function
             .entity_set_path
             .as_deref()
-            .map(|path| resolve_entity_set_path(&parameters, path)),
+            .map(|path| resolve_entity_set_path(&parameters, path, entities, ns, aliases)),
         return_type: resolve_operation_return_type(
             function.return_type.as_ref(),
             entities,
@@ -1277,7 +1277,7 @@ fn resolve_action(
         entity_set_path: action
             .entity_set_path
             .as_deref()
-            .map(|path| resolve_entity_set_path(&parameters, path)),
+            .map(|path| resolve_entity_set_path(&parameters, path, entities, ns, aliases)),
         return_type: resolve_operation_return_type(
             action.return_type.as_ref(),
             entities,
@@ -1301,66 +1301,53 @@ fn resolve_action(
 fn resolve_entity_set_path(
     parameters: &[OperationParameter],
     path: &str,
+    entities: &HashMap<String, Arc<EntityType>>,
+    ns: &str,
+    aliases: &HashMap<String, String>,
 ) -> Arc<[EntitySetPathSegment]> {
-    enum Ctx {
-        Entity(Arc<EntityType>),
-        Complex(Arc<ComplexType>),
-    }
-
-    let parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
-    let mut out: Vec<EntitySetPathSegment> = Vec::new();
-    let Some((head, rest)) = parts.split_first() else {
-        return Arc::from(out);
-    };
-    out.push(EntitySetPathSegment::BindingParameter((*head).to_owned()));
-
-    // Walk the remainder against the named parameter's type, if it resolves to a
-    // structured type.
-    let mut ctx = parameters
-        .iter()
-        .find(|parameter| parameter.name == *head)
-        .and_then(|parameter| match &parameter.ty {
-            TermType::Entity(entity) => Some(Ctx::Entity(entity.clone())),
-            TermType::Complex(complex) => Some(Ctx::Complex(complex.clone())),
-            _ => None,
+    let parts: Vec<_> = path.split('/').collect();
+    let mut out = vec![EntitySetPathSegment::BindingParameter(parts[0].into())];
+    let mut current = parameters
+        .first()
+        .filter(|p| p.name == parts[0])
+        .and_then(|p| {
+            if let TermType::Entity(entity) = &p.ty {
+                Some(entity.clone())
+            } else {
+                None
+            }
         });
-
-    for part in rest {
-        // Qualified segment ⇒ type-cast; not resolved in v1.
+    for part in &parts[1..] {
+        let Some(entity) = current.take() else {
+            out.push(EntitySetPathSegment::Unresolved((*part).into()));
+            break;
+        };
         if part.contains('.') {
-            out.push(EntitySetPathSegment::Unresolved((*part).to_owned()));
-            break;
-        }
-
-        let Some(current) = ctx.take() else {
-            out.push(EntitySetPathSegment::Unresolved((*part).to_owned()));
-            break;
-        };
-
-        let (navs, props): (&[Arc<NavigationProperty>], &[Arc<Property>]) = match &current {
-            Ctx::Entity(e) => (e.navigation_properties(), e.properties()),
-            Ctx::Complex(c) => (c.navigation_properties(), c.properties()),
-        };
-
-        if let Some(nav) = navs.iter().find(|n| n.name == *part) {
+            let name = qualify_name(part, ns, aliases).expect("qualified segment");
+            if let Some(derived) = entities.get(name.as_ref()).filter(|derived| {
+                Arc::ptr_eq(derived, &entity) || entity_is_strict_subtype(derived, &entity)
+            }) {
+                out.push(EntitySetPathSegment::EntityTypeCast(Arc::downgrade(
+                    derived,
+                )));
+                current = Some(derived.clone());
+                continue;
+            }
+        } else if let Some(nav) = entity
+            .navigation_properties()
+            .iter()
+            .find(|n| n.name == *part)
+        {
             out.push(EntitySetPathSegment::NavigationProperty(Arc::downgrade(
                 nav,
             )));
-            if let Some(target) = nav.target.upgrade() {
-                ctx = Some(Ctx::Entity(target));
-            }
-        } else if let Some(prop) = props.iter().find(|p| p.name == *part) {
-            out.push(EntitySetPathSegment::Property(Arc::downgrade(prop)));
-            if let ResolvedType::Complex(complex) = &prop.ty {
-                ctx = Some(Ctx::Complex(complex.clone()));
-            }
-        } else {
-            out.push(EntitySetPathSegment::Unresolved((*part).to_owned()));
-            break;
+            current = nav.target.upgrade();
+            continue;
         }
+        out.push(EntitySetPathSegment::Unresolved((*part).into()));
+        break;
     }
-
-    Arc::from(out)
+    out.into()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1402,6 +1389,7 @@ fn resolve_operation_parameters(
                 name: parameter.name.clone(),
                 ty,
                 is_collection: parameter.is_collection,
+                nullable: parameter.nullable,
             })
         })
         .collect()
@@ -1442,6 +1430,7 @@ fn resolve_operation_return_type(
     Ok(Some(OperationReturnType {
         ty,
         is_collection: return_type.is_collection,
+        nullable: return_type.nullable,
     }))
 }
 

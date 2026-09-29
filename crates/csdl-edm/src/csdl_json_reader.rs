@@ -648,6 +648,29 @@ fn emit_callable(
     mut obj: Map<String, Value>,
     namespace: &str,
 ) -> Result<()> {
+    for key in ["$IsBound", "$IsComposable"] {
+        if obj.get(key).is_some_and(|value| !value.is_boolean()) {
+            return Err(Error::Csdl(format!("Operation {key} must be boolean")));
+        }
+    }
+    for (key, valid) in [
+        (
+            "$Parameter",
+            obj.get("$Parameter").is_none_or(Value::is_array),
+        ),
+        (
+            "$ReturnType",
+            obj.get("$ReturnType").is_none_or(Value::is_object),
+        ),
+        (
+            "$EntitySetPath",
+            obj.get("$EntitySetPath").is_none_or(Value::is_string),
+        ),
+    ] {
+        if !valid {
+            return Err(Error::Csdl(format!("Invalid operation {key} value")));
+        }
+    }
     let is_bound = take_bool(&mut obj, "$IsBound");
     let is_composable = take_bool(&mut obj, "$IsComposable");
     let entity_set_path = take_string(&mut obj, "$EntitySetPath");
@@ -667,10 +690,15 @@ fn emit_callable(
     if let Some(Value::Array(arr)) = parameters {
         for p in arr {
             let mut p = expect_object(p, "$Parameter[i]")?;
+            validate_callable_type(&p)?;
+            if p.get("$Name").is_none_or(|value| !value.is_string()) {
+                return Err(Error::Csdl("Parameter requires a string $Name".into()));
+            }
             let pname = take_string(&mut p, "$Name").unwrap_or_default();
             let is_collection = take_bool(&mut p, "$Collection").unwrap_or(false);
-            let raw_type = take_string(&mut p, "$Type");
-            let nullable = take_bool(&mut p, "$Nullable");
+            let raw_type = take_string(&mut p, "$Type").or_else(|| Some("Edm.String".into()));
+            let nullable =
+                take_bool(&mut p, "$Nullable").or_else(|| (!is_collection).then_some(false));
             let max_length = take_string_or_number(&mut p, "$MaxLength");
             let precision = take_string_or_number(&mut p, "$Precision");
             let scale = take_string_or_number(&mut p, "$Scale");
@@ -710,9 +738,11 @@ fn emit_callable(
     }
 
     if let Some(Value::Object(mut rt)) = return_type {
+        validate_callable_type(&rt)?;
         let is_collection = take_bool(&mut rt, "$Collection").unwrap_or(false);
-        let raw_type = take_string(&mut rt, "$Type");
-        let nullable = take_bool(&mut rt, "$Nullable");
+        let raw_type = take_string(&mut rt, "$Type").or_else(|| Some("Edm.String".into()));
+        let nullable =
+            take_bool(&mut rt, "$Nullable").or_else(|| (!is_collection).then_some(false));
         let max_length = take_string_or_number(&mut rt, "$MaxLength");
         let precision = take_string_or_number(&mut rt, "$Precision");
         let scale = take_string_or_number(&mut rt, "$Scale");
@@ -782,6 +812,18 @@ fn emit_type_definition(
     start(out, "TypeDefinition", attrs);
     emit_inline_annotations(out, obj)?;
     end(out, "TypeDefinition");
+    Ok(())
+}
+
+fn validate_callable_type(value: &Map<String, Value>) -> Result<()> {
+    if value.get("$Type").is_some_and(|value| !value.is_string()) {
+        return Err(Error::Csdl("Operation type must be a string".into()));
+    }
+    for key in ["$Nullable", "$Collection"] {
+        if value.get(key).is_some_and(|value| !value.is_boolean()) {
+            return Err(Error::Csdl(format!("Operation {key} must be boolean")));
+        }
+    }
     Ok(())
 }
 

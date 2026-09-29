@@ -484,6 +484,7 @@ fn parse_referential_constraint(raw: &RawElement) -> io::Result<ReferentialConst
 }
 
 fn parse_function(raw: &RawElement) -> io::Result<Function> {
+    validate_operation_syntax(raw)?;
     let name = raw_attr(raw, "Name").unwrap_or("").to_string();
     let is_bound = raw_attr_bool(raw, "IsBound");
     let is_composable = raw_attr_bool(raw, "IsComposable");
@@ -515,6 +516,7 @@ fn parse_function(raw: &RawElement) -> io::Result<Function> {
 }
 
 fn parse_action(raw: &RawElement) -> io::Result<Action> {
+    validate_operation_syntax(raw)?;
     let name = raw_attr(raw, "Name").unwrap_or("").to_string();
     let is_bound = raw_attr_bool(raw, "IsBound");
     let entity_set_path = raw_attr(raw, "EntitySetPath").map(str::to_string);
@@ -538,6 +540,30 @@ fn parse_action(raw: &RawElement) -> io::Result<Action> {
         return_type,
         annotations: parse_annotations(raw)?,
     })
+}
+
+fn validate_operation_syntax(raw: &RawElement) -> io::Result<()> {
+    if raw
+        .children
+        .iter()
+        .filter(|child| child.name == "ReturnType")
+        .count()
+        > 1
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Operation permits at most one ReturnType",
+        ));
+    }
+    for attribute in ["IsBound", "IsComposable"] {
+        if raw_attr(raw, attribute).is_some_and(|value| !matches!(value, "true" | "false")) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Operation {attribute} must be true or false"),
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn parse_type_definition(raw: &RawElement) -> io::Result<TypeDefinition> {

@@ -526,6 +526,13 @@ impl Builder {
                         }
                     }
                 }
+                EntitySetPathSegment::EntityTypeCast(w) => {
+                    if let Some(ty) = w.upgrade() {
+                        if let Some(id) = self.lookup(arc_ptr(&ty)) {
+                            nodes.push(id);
+                        }
+                    }
+                }
                 EntitySetPathSegment::Unresolved(_) => {}
             }
         }

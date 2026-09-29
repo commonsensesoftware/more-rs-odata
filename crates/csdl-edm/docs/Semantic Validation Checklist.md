@@ -96,14 +96,18 @@ and execution of delete actions require service data, not schema-only validation
 
 ### H. Function semantics
 
-- [ ] Overloads differ by parameter signature.
-- [ ] Bound functions declare a valid binding parameter.
-- [ ] Parameter names are unique.
+- [x] Overloads have distinct unordered parameter-name sets and ordered type
+      signatures, grouped by binding type; return types agree within each group.
+- [x] Bound functions declare a binding parameter (any type is permitted).
+- [x] Parameter names are non-empty and unique.
+- [x] EntitySetPath starts at the binding parameter, traverses navigation/casts,
+      and ends at an entity type compatible with the entity-valued return.
+- [x] Entity collection returns cannot specify Nullable.
 
 ### I. Action semantics
 
-- [ ] Overloads differ by parameter signature.
-- [ ] Bound actions declare a valid binding parameter.
-- [ ] Parameter names are unique.
+- [x] Bound overloads differ by binding type; unbound actions cannot overload.
+- [x] Bound actions declare a binding parameter (any type is permitted).
+- [x] Parameter names are non-empty and unique.
 
 ================================================

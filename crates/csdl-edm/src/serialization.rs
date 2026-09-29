@@ -1523,7 +1523,7 @@ fn callable_to_json(
             &mut rt_obj,
             rt.type_name.as_deref(),
             rt.is_collection,
-            rt.nullable,
+            rt.nullable.or_else(|| (!rt.is_collection).then_some(true)),
             rt.max_length,
             namespace,
         );
@@ -1674,7 +1674,9 @@ fn parameter_to_json(parameter: &Parameter, namespace: &str) -> Value {
         &mut obj,
         parameter.type_name.as_deref(),
         parameter.is_collection,
-        parameter.nullable,
+        parameter
+            .nullable
+            .or_else(|| (!parameter.is_collection).then_some(true)),
         parameter.max_length,
         namespace,
     );

@@ -19,6 +19,10 @@ enum KeyPathClassification {
 
 #[derive(Debug, Clone)]
 pub enum ValidationError {
+    InvalidOperation {
+        operation: String,
+        reason: &'static str,
+    },
     InvalidContainmentProperty {
         owner: String,
         property: String,
@@ -219,6 +223,7 @@ impl Default for ValidatorEngine {
                 Box::new(ReferentialConstraintConsistencyRule),
                 Box::new(TermBaseTermCycleRule),
                 Box::new(BoundOperationBindingParameterRule),
+                Box::new(OperationSemanticsRule),
                 Box::new(OperationEntitySetPathRule),
                 Box::new(DuplicateEntityKeyRule),
                 Box::new(UnknownEntityKeyPropertyRule),
@@ -378,18 +383,25 @@ impl ValidationRule for UniqueSchemaChildNamesRule {
     }
 
     fn visit_model(&self, model: &Model, ctx: &mut ValidationContext) {
-        let names = model
-            .elements
-            .iter()
-            .map(|element| schema_element_name(element.as_ref()).to_owned());
-
-        report_duplicate_names(
-            names,
-            "Schema",
-            model.namespace.clone(),
-            "SchemaElement",
-            ctx,
-        );
+        let mut seen = std::collections::HashMap::new();
+        for element in &model.elements {
+            let name = schema_element_name(element);
+            let kind = match element.as_ref() {
+                SchemaElement::Function(_) => 1,
+                SchemaElement::Action(_) => 2,
+                _ => 0,
+            };
+            if let Some(previous) = seen.insert(name, kind) {
+                if kind == 0 || previous != kind {
+                    ctx.push(ValidationError::DuplicateChildName {
+                        parent_kind: "Schema",
+                        parent: model.namespace.clone(),
+                        child_kind: "SchemaElement",
+                        child: name.into(),
+                    });
+                }
+            }
+        }
     }
 }
 
@@ -996,6 +1008,220 @@ impl ValidationRule for TermBaseTermCycleRule {
                 .get()
                 .and_then(|base| base.as_ref())
                 .and_then(|base| base.upgrade());
+        }
+    }
+}
+
+struct OperationSemanticsRule;
+
+fn same_term_type(left: &crate::edm::TermType, right: &crate::edm::TermType) -> bool {
+    use crate::edm::TermType;
+    use std::sync::Arc;
+    match (left, right) {
+        (TermType::Primitive(a), TermType::Primitive(b)) => a == b,
+        (TermType::Entity(a), TermType::Entity(b)) => Arc::ptr_eq(a, b),
+        (TermType::Complex(a), TermType::Complex(b)) => Arc::ptr_eq(a, b),
+        (TermType::Enum(a), TermType::Enum(b)) => Arc::ptr_eq(a, b),
+        (TermType::TypeDefinition(a), TermType::TypeDefinition(b)) => Arc::ptr_eq(a, b),
+        _ => false,
+    }
+}
+
+fn same_parameter_type(
+    left: &crate::edm::OperationParameter,
+    right: &crate::edm::OperationParameter,
+) -> bool {
+    left.is_collection == right.is_collection && same_term_type(&left.ty, &right.ty)
+}
+
+fn same_binding(
+    bound: bool,
+    left: &[crate::edm::OperationParameter],
+    right: &[crate::edm::OperationParameter],
+) -> bool {
+    !bound
+        || match (left.first(), right.first()) {
+            (Some(left), Some(right)) => same_parameter_type(left, right),
+            _ => false,
+        }
+}
+
+fn same_return_type(
+    left: Option<&crate::edm::OperationReturnType>,
+    right: Option<&crate::edm::OperationReturnType>,
+) -> bool {
+    match (left, right) {
+        (Some(left), Some(right)) => {
+            left.is_collection == right.is_collection && same_term_type(&left.ty, &right.ty)
+        }
+        (None, None) => true,
+        _ => false,
+    }
+}
+
+fn invalid_operation(name: &str, reason: &'static str, ctx: &mut ValidationContext) {
+    ctx.push(ValidationError::InvalidOperation {
+        operation: name.into(),
+        reason,
+    });
+}
+
+fn validate_operation_signature(
+    name: &str,
+    parameters: &[crate::edm::OperationParameter],
+    return_type: Option<&crate::edm::OperationReturnType>,
+    path: Option<&[EntitySetPathSegment]>,
+    ctx: &mut ValidationContext,
+) {
+    let mut names = HashSet::new();
+    for parameter in parameters {
+        if parameter.name.is_empty() || !names.insert(&parameter.name) {
+            invalid_operation(name, "Parameter names must be non-empty and unique", ctx);
+        }
+    }
+    if return_type.is_some_and(|ret| {
+        ret.is_collection
+            && matches!(ret.ty, crate::edm::TermType::Entity(_))
+            && ret.nullable.is_some()
+    }) {
+        invalid_operation(
+            name,
+            "Collection-of-entity return type must not specify Nullable",
+            ctx,
+        );
+    }
+    if let Some(path) = path {
+        let Some(crate::edm::OperationReturnType {
+            ty: crate::edm::TermType::Entity(returned),
+            ..
+        }) = return_type
+        else {
+            invalid_operation(
+                name,
+                "EntitySetPath requires an entity-valued return type",
+                ctx,
+            );
+            return;
+        };
+        let mut target = parameters.first().and_then(|p| match &p.ty {
+            crate::edm::TermType::Entity(entity) => Some(entity.clone()),
+            _ => None,
+        });
+        for segment in path.iter().skip(1) {
+            target = match segment {
+                EntitySetPathSegment::NavigationProperty(nav) => {
+                    nav.upgrade().and_then(|n| n.target.upgrade())
+                }
+                EntitySetPathSegment::EntityTypeCast(entity) => entity.upgrade(),
+                _ => None,
+            };
+            if target.is_none() {
+                break;
+            }
+        }
+        if target.is_none_or(|target| !entity_derives_from(returned, &target)) {
+            invalid_operation(
+                name,
+                "EntitySetPath must end at a compatible entity type",
+                ctx,
+            );
+        }
+    }
+}
+
+impl ValidationRule for OperationSemanticsRule {
+    fn name(&self) -> &'static str {
+        "operation_semantics"
+    }
+    fn visit_function(&self, function: &Function, ctx: &mut ValidationContext) {
+        if function.return_type.is_none() {
+            invalid_operation(&function.name, "Function requires a return type", ctx);
+        }
+        validate_operation_signature(
+            &function.name,
+            &function.parameters,
+            function.return_type.as_ref(),
+            function.entity_set_path.as_deref(),
+            ctx,
+        );
+    }
+    fn visit_action(&self, action: &Action, ctx: &mut ValidationContext) {
+        validate_operation_signature(
+            &action.name,
+            &action.parameters,
+            action.return_type.as_ref(),
+            action.entity_set_path.as_deref(),
+            ctx,
+        );
+    }
+    fn visit_model(&self, model: &Model, ctx: &mut ValidationContext) {
+        for (index, element) in model.elements.iter().enumerate() {
+            for previous in &model.elements[..index] {
+                match (element.as_ref(), previous.as_ref()) {
+                    (SchemaElement::Action(action), SchemaElement::Action(other))
+                        if action.name == other.name
+                            && action.is_bound == other.is_bound
+                            && same_binding(
+                                action.is_bound,
+                                &action.parameters,
+                                &other.parameters,
+                            ) =>
+                    {
+                        invalid_operation(
+                            &action.name,
+                            "Action overloads must have distinct binding types; unbound actions cannot overload",
+                            ctx,
+                        );
+                    }
+                    (SchemaElement::Function(function), SchemaElement::Function(other))
+                        if function.name == other.name
+                            && function.is_bound == other.is_bound
+                            && same_binding(
+                                function.is_bound,
+                                &function.parameters,
+                                &other.parameters,
+                            ) =>
+                    {
+                        let skip = usize::from(function.is_bound);
+                        let names = function
+                            .parameters
+                            .iter()
+                            .skip(skip)
+                            .map(|p| &p.name)
+                            .collect::<HashSet<_>>();
+                        let other_names = other
+                            .parameters
+                            .iter()
+                            .skip(skip)
+                            .map(|p| &p.name)
+                            .collect::<HashSet<_>>();
+                        let same_types = function.parameters.len() == other.parameters.len()
+                            && function
+                                .parameters
+                                .iter()
+                                .zip(&other.parameters)
+                                .all(|(a, b)| same_parameter_type(a, b));
+                        if names == other_names || same_types {
+                            invalid_operation(
+                                &function.name,
+                                "Function overloads need distinct parameter-name sets and ordered type signatures",
+                                ctx,
+                            );
+                        }
+                        if !same_return_type(
+                            function.return_type.as_ref(),
+                            other.return_type.as_ref(),
+                        ) {
+                            invalid_operation(
+                                &function.name,
+                                "Function overloads with the same binding type must have the same return type",
+                                ctx,
+                            );
+                        }
+                    }
+                    _ => {}
+                }
+            }
         }
     }
 }

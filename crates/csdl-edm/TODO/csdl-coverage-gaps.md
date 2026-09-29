@@ -65,7 +65,11 @@ Related detailed design TODO:
       type/cardinality/nullability checks, and strict OnDelete parsing. XML/JSON
       nullability defaults and Int32 key serialization are preserved. Built-in
       abstract targets remain part of primitive/type coverage below.
-- [ ] Operations: `Function`, `Action`, and operation binding/composability (signature mapping plus initial binding/entity-set-path validation is implemented; deeper semantics are pending).
+- [x] Operations: `Function`, `Action`, binding/composability, parameter uniqueness,
+      function/action overload rules, consistent overload returns, entity-return
+      nullability, and typed EntitySetPath navigation/casts with return compatibility.
+      JSON default types/nullability and malformed declaration checks are covered.
+      General type/facet coverage remains tracked in sections 2 and 3.
 - [ ] Container features: `FunctionImport`, `ActionImport`, and
       `NavigationPropertyBinding` resolution (initial resolver mapping done; semantic target/operation validation pending).
 - [x] Entity container inheritance (`EntityContainer.Extends`) for same-schema container inheritance in resolver.

@@ -195,12 +195,14 @@ pub struct OperationParameter {
     pub name: String,
     pub ty: TermType,
     pub is_collection: bool,
+    pub nullable: Option<bool>,
 }
 
 #[derive(Debug)]
 pub struct OperationReturnType {
     pub ty: TermType,
     pub is_collection: bool,
+    pub nullable: Option<bool>,
 }
 
 impl Term {
@@ -502,6 +504,7 @@ pub fn key_path_to_string(path: &[KeyPathSegment]) -> String {
 pub enum EntitySetPathSegment {
     /// The binding-parameter head of the path.
     BindingParameter(String),
+    EntityTypeCast(Weak<EntityType>),
     NavigationProperty(Weak<NavigationProperty>),
     Property(Weak<Property>),
     Unresolved(String),
@@ -511,6 +514,10 @@ impl EntitySetPathSegment {
     pub fn display_name(&self) -> String {
         match self {
             Self::BindingParameter(name) => name.clone(),
+            Self::EntityTypeCast(ty) => ty
+                .upgrade()
+                .map(|ty| ty.name.clone())
+                .unwrap_or_else(|| "<dangling-type>".into()),
             Self::NavigationProperty(navigation) => navigation
                 .upgrade()
                 .map(|navigation| navigation.name.clone())
