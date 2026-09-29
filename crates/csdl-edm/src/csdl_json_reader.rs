@@ -432,7 +432,7 @@ fn emit_property(
     let scale = take_string_or_number(&mut obj, "$Scale");
     let srid = take_string_or_number(&mut obj, "$SRID");
     let unicode = take_bool(&mut obj, "$Unicode");
-    let default_value = take_string(&mut obj, "$DefaultValue");
+    let default_value = take_default_value(&mut obj)?;
 
     // Materialize JSON's default type: the shared model cannot otherwise
     // distinguish an omitted JSON type from a missing required XML Type.
@@ -779,7 +779,7 @@ fn emit_callable(
             let srid = take_string_or_number(&mut p, "$SRID");
             let unicode = take_bool(&mut p, "$Unicode");
 
-            let default_value = take_string(&mut p, "$DefaultValue");
+            let default_value = take_default_value(&mut p)?;
 
             let mut attrs = vec![("Name".into(), pname)];
             push_type_attrs(&mut attrs, raw_type.as_deref(), is_collection, namespace);
@@ -922,6 +922,18 @@ fn validate_facets(value: &Map<String, Value>) -> Result<()> {
     Ok(())
 }
 
+fn take_default_value(obj: &mut Map<String, Value>) -> Result<Option<String>> {
+    match obj.shift_remove("$DefaultValue") {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(value)) => Ok(Some(value)),
+        Some(Value::Bool(value)) => Ok(Some(value.to_string())),
+        Some(Value::Number(value)) => Ok(Some(value.to_string())),
+        Some(_) => Err(csdl_err(
+            "$DefaultValue must be a primitive or enumeration value",
+        )),
+    }
+}
+
 fn emit_term(
     out: &mut Vec<SyntaxUnit>,
     name: &str,
@@ -932,7 +944,7 @@ fn emit_term(
     let is_collection = take_bool(&mut obj, "$Collection").unwrap_or(false);
     let raw_type = take_string(&mut obj, "$Type");
     let base_term = take_string(&mut obj, "$BaseTerm");
-    let default_value = take_string(&mut obj, "$DefaultValue");
+    let default_value = take_default_value(&mut obj)?;
     let nullable = take_bool(&mut obj, "$Nullable");
     let max_length = take_string_or_number(&mut obj, "$MaxLength");
     let precision = take_string_or_number(&mut obj, "$Precision");

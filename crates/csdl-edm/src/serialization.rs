@@ -8,6 +8,7 @@ use serde_json::{Map, Number, Value};
 
 use crate::csdl::*;
 use crate::expr::{BinaryOperator, CsdlAnnotationExpression, PropertyValue};
+mod defaults;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CsdlFormat {
@@ -1155,6 +1156,7 @@ fn edmx_to_json(edmx: &Edmx) -> Value {
         }
     }
 
+    defaults::normalize(&mut out, edmx);
     Value::Object(out)
 }
 

@@ -100,6 +100,10 @@ Related detailed design TODO:
 
 ## 3. Primitive and Type Coverage
 
+- [x] Scalar defaults: JSON numbers/booleans, type-definition representation,
+      integer/enum ranges, string facets, decimal facets, and temporal literals.
+- [ ] Spatial default representations and annotation default-expression semantics.
+
 - [x] Enumeration underlying integer types, flags, explicit/implicit values,
       numeric range checks, and XML implicit-to-JSON numeric serialization.
 

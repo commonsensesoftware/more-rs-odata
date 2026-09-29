@@ -21,7 +21,7 @@ fn check(body: &str, valid: bool) {
 fn abstract_types_are_resolved_and_can_be_narrowed() {
     check(
         r#"<EntityType Name="Item"><NavigationProperty Name="Children" Type="Collection(Edm.EntityType)" ContainsTarget="true"/></EntityType>"#,
-        true,
+        false,
     );
     check(
         r#"<EntityType Name="Base"><Property Name="Value" Type="Edm.ComplexType"/><NavigationProperty Name="Target" Type="Edm.EntityType"/></EntityType><EntityType Name="Derived" BaseType="Demo.Base"><Property Name="Value" Type="Demo.Value"/><NavigationProperty Name="Target" Type="Demo.Base"/></EntityType><ComplexType Name="Value"/><Term Name="Anything" Type="Edm.Untyped"/><TypeDefinition Name="Scalar" UnderlyingType="Edm.PrimitiveType"/>"#,

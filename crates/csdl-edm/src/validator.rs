@@ -2,6 +2,7 @@
 
 mod annotations;
 mod types;
+mod values;
 pub use annotations::{
     AnnotationDiagnostic, AnnotationIssue, validate_annotations, validate_model_annotations,
 };
@@ -25,6 +26,10 @@ enum KeyPathClassification {
 
 #[derive(Debug, Clone)]
 pub enum ValidationError {
+    InvalidDefaultValue {
+        element: String,
+        value: String,
+    },
     InvalidTypeUse {
         element: String,
         reason: &'static str,
@@ -320,6 +325,7 @@ impl ValidatorEngine {
         let mut ctx = ValidationContext::default();
         self.walk_model(model, &mut ctx);
         ctx.errors.extend(types::validate(model, version));
+        ctx.errors.extend(values::validate(model));
         ctx.errors
     }
 
@@ -1142,11 +1148,7 @@ fn validate_navigation_members(
         let Some(target) = nav.target.upgrade() else {
             continue;
         };
-        if nav.is_collection
-            && nav.contains_target.unwrap_or(false)
-            && target.keys().is_empty()
-            && !std::sync::Arc::ptr_eq(&target, crate::edm::abstract_entity_type())
-        {
+        if nav.is_collection && nav.contains_target.unwrap_or(false) && target.keys().is_empty() {
             invalid_navigation(
                 owner,
                 nav,
