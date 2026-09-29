@@ -189,3 +189,116 @@ fn legacy_documents_reject_narrowing_and_concrete_keyless_entities() {
         ));
     }
 }
+
+#[test]
+fn resolves_cross_schema_bases_with_forward_aliases_and_shared_identity() {
+    let mut document = documents(r#"
+        <EntityType Name="Item" BaseType="B.Item"/>
+        <ComplexType Name="Value" BaseType="B.Value"/>
+        <EntityContainer Name="Container"><EntitySet Name="Items" EntityType="D.Item"/></EntityContainer>"#).remove(0);
+    let mut base = documents(r#"
+        <EntityType Name="Item"><Key><PropertyRef Name="ID"/></Key><Property Name="ID" Type="Edm.Int32" Nullable="false"/>
+          <NavigationProperty Name="Derived" Type="D.Item"/>
+        </EntityType>
+        <ComplexType Name="Value"><Property Name="Text" Type="Edm.String"/></ComplexType>"#).remove(0).edmx.unwrap().schemas.remove(0);
+    base.namespace = "Base".into();
+    base.alias = Some("B".into());
+    document.edmx.as_mut().unwrap().schemas.push(base);
+    for reverse in [false, true] {
+        let mut document = document.clone();
+        if reverse {
+            document.edmx.as_mut().unwrap().schemas.reverse();
+        }
+        let json = document.to_json_value().to_string();
+        for document in [document, parser::from_json_reader(json.as_bytes()).unwrap()] {
+            let model = Resolver::resolve_document(document.edmx.unwrap()).unwrap();
+            validate_document(&model).unwrap();
+            let derived_schema = model
+                .schemas
+                .iter()
+                .find(|s| s.namespace == "Demo")
+                .unwrap();
+            let base_schema = model
+                .schemas
+                .iter()
+                .find(|s| s.namespace == "Base")
+                .unwrap();
+            let SchemaElement::EntityType(derived) = derived_schema.elements[0].as_ref() else {
+                panic!()
+            };
+            let SchemaElement::EntityType(base) = base_schema.elements[0].as_ref() else {
+                panic!()
+            };
+            assert_eq!(derived.name, "Item");
+            assert!(Arc::ptr_eq(
+                &derived
+                    .base_type
+                    .get()
+                    .unwrap()
+                    .as_ref()
+                    .unwrap()
+                    .upgrade()
+                    .unwrap(),
+                base
+            ));
+            assert!(Arc::ptr_eq(
+                &base.navigation_properties()[0].target.upgrade().unwrap(),
+                derived
+            ));
+            assert!(Arc::ptr_eq(&derived.properties()[0], &base.properties()[0]));
+            assert_eq!(derived.keys().len(), 1);
+            let SchemaElement::ComplexType(derived) = derived_schema.elements[1].as_ref() else {
+                panic!()
+            };
+            let SchemaElement::ComplexType(base) = base_schema.elements[1].as_ref() else {
+                panic!()
+            };
+            assert!(Arc::ptr_eq(
+                &derived
+                    .base_type
+                    .get()
+                    .unwrap()
+                    .as_ref()
+                    .unwrap()
+                    .upgrade()
+                    .unwrap(),
+                base
+            ));
+        }
+    }
+}
+
+#[test]
+fn rejects_cross_schema_inheritance_cycles_and_conflicting_aliases() {
+    let mut document = documents(r#"<EntityType Name="Item" BaseType="B.Item"/>"#).remove(0);
+    let mut base = documents(r#"<EntityType Name="Item" BaseType="D.Item"/>"#)
+        .remove(0)
+        .edmx
+        .unwrap()
+        .schemas
+        .remove(0);
+    base.namespace = "Base".into();
+    base.alias = Some("B".into());
+    document.edmx.as_mut().unwrap().schemas.push(base);
+    assert!(Resolver::resolve_document(document.edmx.clone().unwrap()).is_err());
+    document.edmx.as_mut().unwrap().schemas[1].alias = Some("D".into());
+    assert!(Resolver::resolve_document(document.edmx.unwrap()).is_err());
+}
+
+#[test]
+fn cross_schema_keys_and_terms_use_qualified_identity() {
+    let mut document = documents(r#"
+        <EntityType Name="Item"><Key><PropertyRef Name="Value/ID"/></Key><Property Name="Value" Type="B.Value" Nullable="false"/></EntityType>
+        <Term Name="Label" Type="Edm.String" BaseTerm="B.Label"/>"#).remove(0);
+    let mut base = documents(r#"
+        <ComplexType Name="Value"><Property Name="ID" Type="Edm.Int32" Nullable="false"/></ComplexType>
+        <Term Name="Label" Type="Edm.String"/>"#).remove(0).edmx.unwrap().schemas.remove(0);
+    base.namespace = "Base".into();
+    base.alias = Some("B".into());
+    document.edmx.as_mut().unwrap().schemas.push(base);
+    let json = document.to_json_value().to_string();
+    for document in [document, parser::from_json_reader(json.as_bytes()).unwrap()] {
+        let model = Resolver::resolve_document(document.edmx.unwrap()).unwrap();
+        validate_document(&model).unwrap();
+    }
+}

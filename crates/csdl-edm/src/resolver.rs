@@ -2,6 +2,7 @@
 //! Resolver
 //! ---------------------------------------------------------------------------
 
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, OnceLock, Weak};
 
@@ -35,7 +36,18 @@ impl Resolver {
     pub fn resolve_document(document: csdl::Edmx) -> Result<DocumentModel, ResolveError> {
         let legacy_schemas =
             (document.version.as_deref() == Some("4.0")).then(|| document.schemas.clone());
-        let document_aliases = collect_document_aliases(&document.references);
+        let mut document_aliases = collect_document_aliases(&document.references);
+        for schema in &document.schemas {
+            if let Some(alias) = &schema.alias {
+                if let Some(previous) =
+                    document_aliases.insert(alias.clone(), schema.namespace.clone())
+                {
+                    if previous != schema.namespace {
+                        return Err(ResolveError::DuplicateName(alias.clone()));
+                    }
+                }
+            }
+        }
         let references = document
             .references
             .into_iter()
@@ -61,17 +73,7 @@ impl Resolver {
             })
             .collect();
 
-        let schemas = document
-            .schemas
-            .into_iter()
-            .map(|schema| {
-                let mut aliases = document_aliases.clone();
-                if let Some(alias) = &schema.alias {
-                    aliases.insert(alias.clone(), schema.namespace.clone());
-                }
-                Self::resolve_with_aliases(schema, &aliases)
-            })
-            .collect::<Result<Vec<_>, _>>()?
+        let schemas = Self::resolve_scope(document.schemas, &document_aliases)?
             .into_iter()
             .map(Arc::new)
             .collect::<Vec<_>>();
@@ -102,20 +104,16 @@ impl Resolver {
         if let Some(alias) = &schema.alias {
             aliases.insert(alias.clone(), schema.namespace.clone());
         }
-        Self::resolve_with_aliases(schema, &aliases)
+        Ok(Self::resolve_scope(vec![schema], &aliases)?.remove(0))
     }
 
-    fn resolve_with_aliases(
-        schema: csdl::Schema,
+    fn resolve_scope(
+        schemas: Vec<csdl::Schema>,
         aliases: &HashMap<String, String>,
-    ) -> Result<Model, ResolveError> {
-        let ns = schema.namespace.clone();
-
-        let entity_defs = schema
-            .elements
-            .iter()
-            .filter_map(|el| match el {
-                csdl::SchemaElement::EntityType(e) => Some((e.name.clone(), e)),
+    ) -> Result<Vec<Model>, ResolveError> {
+        let entity_defs = scoped_elements(&schemas)
+            .filter_map(|(ns, el)| match el {
+                csdl::SchemaElement::EntityType(e) => Some((format!("{ns}.{}", e.name), e)),
                 _ => None,
             })
             .collect::<HashMap<_, _>>();
@@ -125,7 +123,7 @@ impl Resolver {
             let _ = resolve_effective_entity_keys(
                 name,
                 &entity_defs,
-                &ns,
+                "",
                 aliases,
                 &mut entity_key_cache,
                 &mut Vec::new(),
@@ -137,24 +135,24 @@ impl Resolver {
         let mut enums: HashMap<String, Arc<EnumType>> = HashMap::new();
         let mut type_definitions: HashMap<String, Arc<TypeDefinition>> = HashMap::new();
         let mut terms: HashMap<String, Arc<Term>> = HashMap::new();
-        let function_defs = schema
-            .elements
-            .iter()
-            .filter_map(|el| match el {
-                csdl::SchemaElement::Function(function) => Some((function.name.clone(), function)),
+        let function_defs = scoped_elements(&schemas)
+            .filter_map(|(ns, el)| match el {
+                csdl::SchemaElement::Function(function) => {
+                    Some((format!("{ns}.{}", function.name), function))
+                }
                 _ => None,
             })
             .collect::<HashMap<String, &csdl::Function>>();
-        let action_defs = schema
-            .elements
-            .iter()
-            .filter_map(|el| match el {
-                csdl::SchemaElement::Action(action) => Some((action.name.clone(), action)),
+        let action_defs = scoped_elements(&schemas)
+            .filter_map(|(ns, el)| match el {
+                csdl::SchemaElement::Action(action) => {
+                    Some((format!("{ns}.{}", action.name), action))
+                }
                 _ => None,
             })
             .collect::<HashMap<String, &csdl::Action>>();
 
-        for el in &schema.elements {
+        for (ns, el) in scoped_elements(&schemas) {
             match el {
                 csdl::SchemaElement::EntityType(e) => {
                     let arc = Arc::new(EntityType {
@@ -167,7 +165,7 @@ impl Resolver {
                         properties: std::sync::OnceLock::new(),
                         navigation_properties: std::sync::OnceLock::new(),
                     });
-                    insert_unique(&mut entities, &e.name, arc, &ns)?;
+                    insert_unique(&mut entities, &e.name, arc, ns)?;
                 }
                 csdl::SchemaElement::ComplexType(c) => {
                     let arc = Arc::new(ComplexType {
@@ -178,7 +176,7 @@ impl Resolver {
                         properties: std::sync::OnceLock::new(),
                         navigation_properties: std::sync::OnceLock::new(),
                     });
-                    insert_unique(&mut complexes, &c.name, arc, &ns)?;
+                    insert_unique(&mut complexes, &c.name, arc, ns)?;
                 }
                 csdl::SchemaElement::EnumType(en) => {
                     let members = en
@@ -195,7 +193,7 @@ impl Resolver {
                         name: en.name.clone(),
                         members,
                     });
-                    insert_unique(&mut enums, &en.name, arc, &ns)?;
+                    insert_unique(&mut enums, &en.name, arc, ns)?;
                 }
                 csdl::SchemaElement::TypeDefinition(td) => {
                     let primitive = resolve_primitive(&td.underlying_type)
@@ -204,7 +202,7 @@ impl Resolver {
                         name: td.name.clone(),
                         underlying_type: primitive,
                     });
-                    insert_unique(&mut type_definitions, &td.name, arc, &ns)?;
+                    insert_unique(&mut type_definitions, &td.name, arc, ns)?;
                 }
                 csdl::SchemaElement::Term(t) => {
                     let arc = Arc::new(Term {
@@ -213,67 +211,65 @@ impl Resolver {
                         ty: std::sync::OnceLock::new(),
                         base_term: std::sync::OnceLock::new(),
                     });
-                    insert_unique(&mut terms, &t.name, arc, &ns)?;
+                    insert_unique(&mut terms, &t.name, arc, ns)?;
                 }
                 csdl::SchemaElement::Function(_) | csdl::SchemaElement::Action(_) => {}
                 csdl::SchemaElement::EntityContainer(_) => {}
             }
         }
 
-        let complex_defs = schema
-            .elements
-            .iter()
-            .filter_map(|el| match el {
-                csdl::SchemaElement::ComplexType(c) => Some((c.name.clone(), c)),
+        let complex_defs = scoped_elements(&schemas)
+            .filter_map(|(ns, el)| match el {
+                csdl::SchemaElement::ComplexType(c) => Some((format!("{ns}.{}", c.name), c)),
                 _ => None,
             })
             .collect::<HashMap<_, _>>();
 
         let mut container_defs: HashMap<String, &csdl::EntityContainer> = HashMap::new();
-        for el in &schema.elements {
+        for (ns, el) in scoped_elements(&schemas) {
             if let csdl::SchemaElement::EntityContainer(container) = el {
-                if container_defs.contains_key(&container.name) {
+                if container_defs.contains_key(&format!("{ns}.{}", container.name)) {
                     return Err(ResolveError::DuplicateName(format!(
                         "{}.{}",
                         ns, container.name
                     )));
                 }
-                container_defs.insert(container.name.clone(), container);
+                container_defs.insert(format!("{ns}.{}", container.name), container);
             }
         }
 
         // Weak base links preserve identity without retaining invalid cyclic inputs.
-        for element in &schema.elements {
+        for (ns, element) in scoped_elements(&schemas) {
             match element {
                 csdl::SchemaElement::EntityType(e) => {
                     let base = e
                         .base_type
                         .as_ref()
                         .map(|name| {
-                            let short = unqualify_to_local(name, &ns, aliases)
+                            let short = qualify_name(name, ns, aliases)
                                 .ok_or_else(|| ResolveError::UnknownType(name.clone()))?;
                             entities
-                                .get(short)
+                                .get(short.as_ref())
                                 .map(Arc::downgrade)
                                 .ok_or_else(|| ResolveError::UnknownType(name.clone()))
                         })
                         .transpose()?;
-                    let _ = entities[&e.name].base_type.set(base);
+                    let _ = entities[&format!("{ns}.{}", e.name)].base_type.set(base);
                 }
                 csdl::SchemaElement::ComplexType(c) => {
                     let base = c
                         .base_type
                         .as_ref()
                         .map(|name| {
-                            let short = unqualify_to_local(name, &ns, aliases)
+                            let short = qualify_name(name, ns, aliases)
                                 .ok_or_else(|| ResolveError::UnknownType(name.clone()))?;
                             complexes
-                                .get(short)
+                                .get(short.as_ref())
                                 .map(Arc::downgrade)
                                 .ok_or_else(|| ResolveError::UnknownType(name.clone()))
                         })
                         .transpose()?;
-                    let _ = complexes[&c.name].base_type.set(base);
+                    let _ = complexes[&format!("{ns}.{}", c.name)].base_type.set(base);
                 }
                 _ => {}
             }
@@ -282,18 +278,20 @@ impl Resolver {
         let mut entity_member_cache: HashMap<String, ResolvedMembers> = HashMap::new();
         let mut complex_member_cache: HashMap<String, ResolvedMembers> = HashMap::new();
 
-        for el in &schema.elements {
+        for (ns, el) in scoped_elements(&schemas) {
             match el {
                 csdl::SchemaElement::EntityType(e) => {
-                    let arc = entities.get(&e.name).expect("inserted above");
+                    let arc = entities
+                        .get(&format!("{ns}.{}", e.name))
+                        .expect("inserted above");
                     let (props, navs) = resolve_entity_members(
-                        &e.name,
+                        &format!("{ns}.{}", e.name),
                         &entity_defs,
                         &complexes,
                         &enums,
                         &type_definitions,
                         &entities,
-                        &ns,
+                        ns,
                         aliases,
                         &mut entity_member_cache,
                         &mut Vec::new(),
@@ -306,7 +304,7 @@ impl Resolver {
                         &enums,
                         &type_definitions,
                         &entities,
-                        &ns,
+                        ns,
                         aliases,
                         &mut complex_member_cache,
                     )?;
@@ -314,15 +312,17 @@ impl Resolver {
                     let _ = arc.navigation_properties.set(navs);
                 }
                 csdl::SchemaElement::ComplexType(c) => {
-                    let arc = complexes.get(&c.name).expect("inserted above");
+                    let arc = complexes
+                        .get(&format!("{ns}.{}", c.name))
+                        .expect("inserted above");
                     let (props, navs) = resolve_complex_members(
-                        &c.name,
+                        &format!("{ns}.{}", c.name),
                         &complex_defs,
                         &complexes,
                         &enums,
                         &type_definitions,
                         &entities,
-                        &ns,
+                        ns,
                         aliases,
                         &mut complex_member_cache,
                         &mut Vec::new(),
@@ -331,7 +331,9 @@ impl Resolver {
                     let _ = arc.navigation_properties.set(navs);
                 }
                 csdl::SchemaElement::Term(t) => {
-                    let arc = terms.get(&t.name).expect("inserted above");
+                    let arc = terms
+                        .get(&format!("{ns}.{}", t.name))
+                        .expect("inserted above");
                     let ty_name = t.type_name.as_deref().unwrap_or("Edm.String");
                     let ty = resolve_term_type(
                         ty_name,
@@ -339,17 +341,17 @@ impl Resolver {
                         &complexes,
                         &enums,
                         &type_definitions,
-                        &ns,
+                        ns,
                         aliases,
                     )?;
                     let _ = arc.ty.set(ty);
 
                     let base = match &t.base_term {
                         Some(name) => {
-                            let short = unqualify_to_local(name, &ns, aliases)
+                            let short = qualify_name(name, ns, aliases)
                                 .ok_or_else(|| ResolveError::UnknownType(name.clone()))?;
                             let base = terms
-                                .get(short)
+                                .get(short.as_ref())
                                 .ok_or_else(|| ResolveError::UnknownType(name.clone()))?;
                             Some(Arc::downgrade(base))
                         }
@@ -381,19 +383,23 @@ impl Resolver {
         // navigation's target entity type and ends at a navigation property.
         // Inherited navigation properties share the same `Arc`, so resolving
         // each owning type's own navigations covers derived types too.
-        for el in &schema.elements {
+        for (ns, el) in scoped_elements(&schemas) {
             let (csdl_navs, resolved_navs): (
                 &[csdl::NavigationProperty],
                 &[Arc<NavigationProperty>],
             ) = match el {
-                csdl::SchemaElement::EntityType(e) => match entities.get(&e.name) {
-                    Some(arc) => (&e.navigation_properties, arc.navigation_properties()),
-                    None => continue,
-                },
-                csdl::SchemaElement::ComplexType(c) => match complexes.get(&c.name) {
-                    Some(arc) => (&c.navigation_properties, arc.navigation_properties()),
-                    None => continue,
-                },
+                csdl::SchemaElement::EntityType(e) => {
+                    match entities.get(&format!("{ns}.{}", e.name)) {
+                        Some(arc) => (&e.navigation_properties, arc.navigation_properties()),
+                        None => continue,
+                    }
+                }
+                csdl::SchemaElement::ComplexType(c) => {
+                    match complexes.get(&format!("{ns}.{}", c.name)) {
+                        Some(arc) => (&c.navigation_properties, arc.navigation_properties()),
+                        None => continue,
+                    }
+                }
                 _ => continue,
             };
 
@@ -412,82 +418,110 @@ impl Resolver {
             }
         }
 
-        let mut elements: Vec<Arc<SchemaElement>> = Vec::new();
-        for el in &schema.elements {
-            let wrapped = match el {
-                csdl::SchemaElement::EntityType(e) => SchemaElement::EntityType(
-                    entities.get(&e.name).cloned().expect("entity exists"),
-                ),
-                csdl::SchemaElement::ComplexType(c) => SchemaElement::ComplexType(
-                    complexes.get(&c.name).cloned().expect("complex exists"),
-                ),
-                csdl::SchemaElement::EnumType(en) => {
-                    SchemaElement::EnumType(enums.get(&en.name).cloned().expect("enum exists"))
-                }
-                csdl::SchemaElement::TypeDefinition(td) => SchemaElement::TypeDefinition(
-                    type_definitions
-                        .get(&td.name)
-                        .cloned()
-                        .expect("type definition exists"),
-                ),
-                csdl::SchemaElement::Term(t) => {
-                    SchemaElement::Term(terms.get(&t.name).cloned().expect("term exists"))
-                }
-                csdl::SchemaElement::Function(function) => {
-                    SchemaElement::Function(Arc::new(resolve_function(
-                        function,
-                        &entities,
-                        &complexes,
-                        &enums,
-                        &type_definitions,
-                        &ns,
-                        aliases,
-                    )?))
-                }
-                csdl::SchemaElement::Action(action) => {
-                    SchemaElement::Action(Arc::new(resolve_action(
-                        action,
-                        &entities,
-                        &complexes,
-                        &enums,
-                        &type_definitions,
-                        &ns,
-                        aliases,
-                    )?))
-                }
-                csdl::SchemaElement::EntityContainer(_) => continue,
-            };
-            elements.push(Arc::new(wrapped));
-        }
+        let mut models = Vec::new();
+        for schema in &schemas {
+            let ns = &schema.namespace;
+            let mut elements: Vec<Arc<SchemaElement>> = Vec::new();
+            for el in &schema.elements {
+                let wrapped = match el {
+                    csdl::SchemaElement::EntityType(e) => SchemaElement::EntityType(
+                        entities
+                            .get(&format!("{ns}.{}", e.name))
+                            .cloned()
+                            .expect("entity exists"),
+                    ),
+                    csdl::SchemaElement::ComplexType(c) => SchemaElement::ComplexType(
+                        complexes
+                            .get(&format!("{ns}.{}", c.name))
+                            .cloned()
+                            .expect("complex exists"),
+                    ),
+                    csdl::SchemaElement::EnumType(en) => SchemaElement::EnumType(
+                        enums
+                            .get(&format!("{ns}.{}", en.name))
+                            .cloned()
+                            .expect("enum exists"),
+                    ),
+                    csdl::SchemaElement::TypeDefinition(td) => SchemaElement::TypeDefinition(
+                        type_definitions
+                            .get(&format!("{ns}.{}", td.name))
+                            .cloned()
+                            .expect("type definition exists"),
+                    ),
+                    csdl::SchemaElement::Term(t) => SchemaElement::Term(
+                        terms
+                            .get(&format!("{ns}.{}", t.name))
+                            .cloned()
+                            .expect("term exists"),
+                    ),
+                    csdl::SchemaElement::Function(function) => {
+                        SchemaElement::Function(Arc::new(resolve_function(
+                            function,
+                            &entities,
+                            &complexes,
+                            &enums,
+                            &type_definitions,
+                            ns,
+                            aliases,
+                        )?))
+                    }
+                    csdl::SchemaElement::Action(action) => {
+                        SchemaElement::Action(Arc::new(resolve_action(
+                            action,
+                            &entities,
+                            &complexes,
+                            &enums,
+                            &type_definitions,
+                            ns,
+                            aliases,
+                        )?))
+                    }
+                    csdl::SchemaElement::EntityContainer(_) => continue,
+                };
+                elements.push(Arc::new(wrapped));
+            }
 
-        let entity_container = schema
+            let entity_container = schema
+                .elements
+                .iter()
+                .find_map(|el| match el {
+                    csdl::SchemaElement::EntityContainer(container) => Some(container),
+                    _ => None,
+                })
+                .map(|c| {
+                    resolve_entity_container(
+                        c,
+                        &container_defs,
+                        &entities,
+                        &function_defs,
+                        &action_defs,
+                        ns,
+                        aliases,
+                        &mut Vec::new(),
+                    )
+                })
+                .transpose()?;
+
+            models.push(Model {
+                namespace: schema.namespace.clone(),
+                alias: schema.alias.clone(),
+                elements,
+                entity_container,
+            });
+        }
+        Ok(models)
+    }
+}
+
+fn scoped_elements(
+    schemas: &[csdl::Schema],
+) -> impl Iterator<Item = (&String, &csdl::SchemaElement)> {
+    schemas.iter().flat_map(|schema| {
+        schema
             .elements
             .iter()
-            .find_map(|el| match el {
-                csdl::SchemaElement::EntityContainer(container) => Some(container),
-                _ => None,
-            })
-            .map(|c| {
-                resolve_entity_container(
-                    c,
-                    &container_defs,
-                    &entities,
-                    &function_defs,
-                    &action_defs,
-                    &ns,
-                    aliases,
-                    &mut Vec::new(),
-                )
-            })
-            .transpose()?;
-
-        Ok(Model {
-            namespace: schema.namespace,
-            alias: schema.alias,
-            elements,
-            entity_container,
-        })
-    }
+            .map(move |element| (&schema.namespace, element))
+    })
 }
 
 fn reject_legacy_member_redefinitions(
@@ -578,21 +612,19 @@ fn collect_document_aliases(references: &[csdl::Reference]) -> HashMap<String, S
     aliases
 }
 
-fn unqualify_to_local<'a>(
+fn qualify_name<'a>(
     name: &'a str,
     namespace: &str,
     aliases: &HashMap<String, String>,
-) -> Option<&'a str> {
-    if let Some((qualifier, short)) = name.split_once('.') {
-        if qualifier == namespace {
-            return Some(short);
+) -> Option<Cow<'a, str>> {
+    if let Some((qualifier, short)) = name.rsplit_once('.') {
+        if let Some(namespace) = aliases.get(qualifier) {
+            return Some(Cow::Owned(format!("{namespace}.{short}")));
         }
-        if aliases.get(qualifier).map(String::as_str) == Some(namespace) {
-            return Some(short);
-        }
-        return None;
+        Some(Cow::Borrowed(name))
+    } else {
+        Some(Cow::Owned(format!("{namespace}.{name}")))
     }
-    Some(name)
 }
 
 fn insert_unique<T>(
@@ -601,10 +633,11 @@ fn insert_unique<T>(
     value: T,
     ns: &str,
 ) -> Result<(), ResolveError> {
-    if map.contains_key(name) {
+    let qualified = format!("{ns}.{name}");
+    if map.contains_key(&qualified) {
         return Err(ResolveError::DuplicateName(format!("{}.{}", ns, name)));
     }
-    map.insert(name.to_string(), value);
+    map.insert(qualified, value);
     Ok(())
 }
 
@@ -616,6 +649,7 @@ fn resolve_effective_entity_keys(
     cache: &mut HashMap<String, Vec<String>>,
     visiting: &mut Vec<String>,
 ) -> Result<Vec<String>, ResolveError> {
+    let ns = name.rsplit_once('.').map(|(ns, _)| ns).unwrap_or(ns);
     if let Some(keys) = cache.get(name) {
         return Ok(keys.clone());
     }
@@ -644,10 +678,16 @@ fn resolve_effective_entity_keys(
         .unwrap_or_default();
 
     let effective_keys = if let Some(base_type) = &entity.base_type {
-        let base_name = unqualify_to_local(base_type, ns, aliases)
+        let base_name = qualify_name(base_type, ns, aliases)
             .ok_or_else(|| ResolveError::UnknownType(base_type.clone()))?;
-        let base_keys =
-            resolve_effective_entity_keys(base_name, entity_defs, ns, aliases, cache, visiting)?;
+        let base_keys = resolve_effective_entity_keys(
+            base_name.as_ref(),
+            entity_defs,
+            ns,
+            aliases,
+            cache,
+            visiting,
+        )?;
 
         if !base_keys.is_empty() && entity.key.is_some() {
             return Err(ResolveError::UnsupportedCsdlFeature {
@@ -681,16 +721,16 @@ fn resolve_type(
     if let Some(primitive) = resolve_primitive(type_name) {
         return Ok(ResolvedType::Primitive(primitive));
     }
-    let Some(short) = unqualify_to_local(type_name, ns, aliases) else {
+    let Some(short) = qualify_name(type_name, ns, aliases) else {
         return Err(ResolveError::UnknownType(type_name.to_string()));
     };
-    if let Some(c) = complexes.get(short) {
+    if let Some(c) = complexes.get(short.as_ref()) {
         return Ok(ResolvedType::Complex(c.clone()));
     }
-    if let Some(e) = enums.get(short) {
+    if let Some(e) = enums.get(short.as_ref()) {
         return Ok(ResolvedType::Enum(e.clone()));
     }
-    if let Some(td) = type_definitions.get(short) {
+    if let Some(td) = type_definitions.get(short.as_ref()) {
         return Ok(ResolvedType::TypeDefinition(td.clone()));
     }
     Err(ResolveError::UnknownType(type_name.to_string()))
@@ -838,6 +878,7 @@ fn resolve_entity_members(
     cache: &mut HashMap<String, ResolvedMembers>,
     visiting: &mut Vec<String>,
 ) -> Result<ResolvedMembers, ResolveError> {
+    let ns = name.rsplit_once('.').map(|(ns, _)| ns).unwrap_or(ns);
     if let Some((props, navs)) = cache.get(name) {
         return Ok((props.clone(), navs.clone()));
     }
@@ -858,10 +899,10 @@ fn resolve_entity_members(
     let mut navs = Vec::new();
 
     if let Some(base_type) = &entity.base_type {
-        let base_name = unqualify_to_local(base_type, ns, aliases)
+        let base_name = qualify_name(base_type, ns, aliases)
             .ok_or_else(|| ResolveError::UnknownType(base_type.clone()))?;
         let (base_props, base_navs) = resolve_entity_members(
-            base_name,
+            base_name.as_ref(),
             entity_defs,
             complexes,
             enums,
@@ -919,6 +960,7 @@ fn resolve_complex_members(
     cache: &mut HashMap<String, ResolvedMembers>,
     visiting: &mut Vec<String>,
 ) -> Result<ResolvedMembers, ResolveError> {
+    let ns = name.rsplit_once('.').map(|(ns, _)| ns).unwrap_or(ns);
     if let Some((props, navs)) = cache.get(name) {
         return Ok((props.clone(), navs.clone()));
     }
@@ -939,10 +981,10 @@ fn resolve_complex_members(
     let mut navs = Vec::new();
 
     if let Some(base_type) = &complex.base_type {
-        let base_name = unqualify_to_local(base_type, ns, aliases)
+        let base_name = qualify_name(base_type, ns, aliases)
             .ok_or_else(|| ResolveError::UnknownType(base_type.clone()))?;
         let (base_props, base_navs) = resolve_complex_members(
-            base_name,
+            base_name.as_ref(),
             complex_defs,
             complexes,
             enums,
@@ -1064,8 +1106,12 @@ fn validate_property_path_from_entity(
             });
         };
 
+        let qualified_name = complexes
+            .iter()
+            .find_map(|(name, candidate)| Arc::ptr_eq(candidate, complex).then_some(name))
+            .expect("resolved complex type is registered in scope");
         let (complex_properties, _) = resolve_complex_members(
-            &complex.name,
+            qualified_name,
             complex_defs,
             complexes,
             enums,
@@ -1104,19 +1150,19 @@ fn resolve_term_type(
         return Ok(TermType::Primitive(primitive));
     }
 
-    let Some(short) = unqualify_to_local(type_name, ns, aliases) else {
+    let Some(short) = qualify_name(type_name, ns, aliases) else {
         return Err(ResolveError::UnknownType(type_name.to_string()));
     };
-    if let Some(td) = type_definitions.get(short) {
+    if let Some(td) = type_definitions.get(short.as_ref()) {
         return Ok(TermType::TypeDefinition(td.clone()));
     }
-    if let Some(e) = enums.get(short) {
+    if let Some(e) = enums.get(short.as_ref()) {
         return Ok(TermType::Enum(e.clone()));
     }
-    if let Some(c) = complexes.get(short) {
+    if let Some(c) = complexes.get(short.as_ref()) {
         return Ok(TermType::Complex(c.clone()));
     }
-    if let Some(e) = entities.get(short) {
+    if let Some(e) = entities.get(short.as_ref()) {
         return Ok(TermType::Entity(e.clone()));
     }
     Err(ResolveError::UnknownType(type_name.to_string()))
@@ -1409,10 +1455,10 @@ fn resolve_navs(
                         element_name: n.name.clone(),
                     })?;
 
-            let short = unqualify_to_local(type_name, ns, aliases)
+            let short = qualify_name(type_name, ns, aliases)
                 .ok_or_else(|| ResolveError::UnknownEntity(type_name.to_string()))?;
             let target = entities
-                .get(short)
+                .get(short.as_ref())
                 .ok_or_else(|| ResolveError::UnknownEntity(type_name.to_string()))?;
 
             Ok(Arc::new(NavigationProperty {
@@ -1462,10 +1508,10 @@ fn resolve_entity_container(
     let mut element_names: HashMap<String, ()> = HashMap::new();
 
     if let Some(base_ref) = &container.extends {
-        let base_name = unqualify_to_local(base_ref, ns, aliases)
+        let base_name = qualify_name(base_ref, ns, aliases)
             .ok_or_else(|| ResolveError::UnknownType(base_ref.clone()))?;
         let base_container = container_defs
-            .get(base_name)
+            .get(base_name.as_ref())
             .ok_or_else(|| ResolveError::UnknownType(base_ref.clone()))?;
 
         let resolved_base = resolve_entity_container(
@@ -1871,11 +1917,11 @@ fn resolve_operation_ref<'a, T>(
     ns: &str,
     aliases: &HashMap<String, String>,
 ) -> Result<(), ResolveError> {
-    let Some(short) = unqualify_to_local(type_name, ns, aliases) else {
+    let Some(short) = qualify_name(type_name, ns, aliases) else {
         return Err(ResolveError::UnknownType(type_name.to_string()));
     };
 
-    if defs.contains_key(short) {
+    if defs.contains_key(short.as_ref()) {
         Ok(())
     } else {
         Err(ResolveError::UnknownType(type_name.to_string()))
@@ -1888,10 +1934,10 @@ fn resolve_entity_ref(
     ns: &str,
     aliases: &HashMap<String, String>,
 ) -> Result<Arc<EntityType>, ResolveError> {
-    let short = unqualify_to_local(name, ns, aliases)
+    let short = qualify_name(name, ns, aliases)
         .ok_or_else(|| ResolveError::UnknownEntity(name.to_string()))?;
     entities
-        .get(short)
+        .get(short.as_ref())
         .cloned()
         .ok_or_else(|| ResolveError::UnknownEntity(name.to_string()))
 }

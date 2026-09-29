@@ -52,12 +52,13 @@ Related detailed design TODO:
 
 ## 1. Resolver Semantics Gaps
 
-- [ ] Complete inheritance semantics (`EntityType.BaseType`,
-      `ComplexType.BaseType`): same-schema base identity, inherited member visibility,
+- [x] Complete inheritance semantics (`EntityType.BaseType`,
+      `ComplexType.BaseType`): document-scope base identity, inherited member visibility,
       effective keys, cycle/wrong-kind rejection, CSDL 4.01 subtype narrowing,
       open/abstract/media inheritance checks, and empty inherited-key redeclaration
       rejection are implemented with XML/JSON regression coverage. Cross-schema
-      base resolution remains; version-specific 4.0 key and member-redefinition rules are implemented.
+      bases use a shared qualified-name registry, including forward aliases;
+      version-specific 4.0 key and member-redefinition rules are implemented.
 - [ ] Navigation semantics: `partner`, `contains_target`, `on_delete`, and
       `referential_constraints` (field mapping in resolver is implemented; semantic consistency checks are pending).
 - [ ] Operations: `Function`, `Action`, and operation binding/composability (signature mapping plus initial binding/entity-set-path validation is implemented; deeper semantics are pending).

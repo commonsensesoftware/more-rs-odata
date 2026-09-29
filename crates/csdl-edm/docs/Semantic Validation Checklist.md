@@ -31,12 +31,12 @@ This checklist is now split into:
 - [x] Derived types do not add properties to an inherited key.
 - [x] In 4.01, inherited properties and navigation properties may only be
       redefined with a derived structured type, preserving collection cardinality.
-- [x] Same-schema inheritance hierarchy contains no cycles.
+- [x] Document-scope inheritance hierarchy contains no cycles.
 - [x] Entity base types are entity types.
 - [x] Derived open types remain open; derived media entities preserve HasStream.
 - [x] Abstract entity types cannot derive from concrete entity types.
 - [x] OData 4.0 member-redefinition restrictions.
-- [ ] Cross-schema base resolution.
+- [x] Cross-schema base resolution, forward aliases, and qualified-name identity.
 
 ### C. Structural property semantics
 
@@ -46,7 +46,7 @@ This checklist is now split into:
 
 ### D. Complex type semantics
 
-- [x] Same-schema complex type inheritance contains no cycles.
+- [x] Document-scope complex type inheritance contains no cycles.
 - [x] Derived complex types allow only valid CSDL 4.01 subtype narrowing.
 - [x] Derived open complex types remain open.
 

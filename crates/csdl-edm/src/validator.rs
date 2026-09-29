@@ -662,11 +662,11 @@ impl ValidationRule for TermBaseTermCycleRule {
         };
 
         let mut seen = HashSet::new();
-        seen.insert(term.name.clone());
+        seen.insert(term as *const Term);
 
         let mut current = start_base.upgrade();
         while let Some(current_term) = current {
-            if !seen.insert(current_term.name.clone()) {
+            if !seen.insert(std::sync::Arc::as_ptr(&current_term)) {
                 ctx.push(ValidationError::CyclicTermBaseTerm {
                     term: term.name.clone(),
                 });
