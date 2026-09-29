@@ -33,6 +33,8 @@ type ResolvedMembers = (Vec<Arc<Property>>, Vec<Arc<NavigationProperty>>);
 
 impl Resolver {
     pub fn resolve_document(document: csdl::Edmx) -> Result<DocumentModel, ResolveError> {
+        let legacy_schemas =
+            (document.version.as_deref() == Some("4.0")).then(|| document.schemas.clone());
         let document_aliases = collect_document_aliases(&document.references);
         let references = document
             .references
@@ -76,6 +78,12 @@ impl Resolver {
 
         if schemas.is_empty() {
             return Err(ResolveError::NoSchemaInDocument);
+        }
+
+        if let Some(authored_schemas) = legacy_schemas {
+            for (authored, resolved) in authored_schemas.iter().zip(&schemas) {
+                reject_legacy_member_redefinitions(authored, resolved)?;
+            }
         }
 
         Ok(DocumentModel {
@@ -480,6 +488,82 @@ impl Resolver {
             entity_container,
         })
     }
+}
+
+fn reject_legacy_member_redefinitions(
+    authored: &csdl::Schema,
+    resolved: &Model,
+) -> Result<(), ResolveError> {
+    for element in &authored.elements {
+        let (name, properties, navigations, base_members) = match element {
+            csdl::SchemaElement::EntityType(entity) => {
+                let base = resolved
+                    .elements
+                    .iter()
+                    .find_map(|element| match element.as_ref() {
+                        SchemaElement::EntityType(ty) if ty.name == entity.name => ty
+                            .base_type
+                            .get()
+                            .and_then(Option::as_ref)
+                            .and_then(Weak::upgrade),
+                        _ => None,
+                    });
+                let Some(base) = base else {
+                    continue;
+                };
+                let members = base
+                    .properties()
+                    .iter()
+                    .map(|p| p.name.clone())
+                    .chain(base.navigation_properties().iter().map(|n| n.name.clone()))
+                    .collect::<HashSet<_>>();
+                (
+                    &entity.name,
+                    &entity.properties,
+                    &entity.navigation_properties,
+                    members,
+                )
+            }
+            csdl::SchemaElement::ComplexType(complex) => {
+                let base = resolved
+                    .elements
+                    .iter()
+                    .find_map(|element| match element.as_ref() {
+                        SchemaElement::ComplexType(ty) if ty.name == complex.name => ty
+                            .base_type
+                            .get()
+                            .and_then(Option::as_ref)
+                            .and_then(Weak::upgrade),
+                        _ => None,
+                    });
+                let Some(base) = base else {
+                    continue;
+                };
+                let members = base
+                    .properties()
+                    .iter()
+                    .map(|p| p.name.clone())
+                    .chain(base.navigation_properties().iter().map(|n| n.name.clone()))
+                    .collect::<HashSet<_>>();
+                (
+                    &complex.name,
+                    &complex.properties,
+                    &complex.navigation_properties,
+                    members,
+                )
+            }
+            _ => continue,
+        };
+        if properties.iter().any(|p| base_members.contains(&p.name))
+            || navigations.iter().any(|n| base_members.contains(&n.name))
+        {
+            return Err(ResolveError::UnsupportedCsdlFeature {
+                feature: "Inherited member redefinition in CSDL 4.0",
+                location: format!("{}.{}", authored.namespace, name),
+            });
+        }
+    }
+    Ok(())
 }
 
 fn collect_document_aliases(references: &[csdl::Reference]) -> HashMap<String, String> {

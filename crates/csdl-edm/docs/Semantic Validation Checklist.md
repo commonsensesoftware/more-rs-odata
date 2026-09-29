@@ -20,7 +20,7 @@ This checklist is now split into:
 
 ### A. Entity type semantics
 
-- [ ] For OData 4.0, non-abstract entity types define or inherit a key. In 4.01,
+- [x] For OData 4.0, non-abstract entity types define or inherit a key. In 4.01,
       key requirements depend on usage (entity sets and collection containment).
 - [ ] Key properties are non-nullable.
 - [ ] Key identity is consistent across inheritance.
@@ -35,7 +35,8 @@ This checklist is now split into:
 - [x] Entity base types are entity types.
 - [x] Derived open types remain open; derived media entities preserve HasStream.
 - [x] Abstract entity types cannot derive from concrete entity types.
-- [ ] Cross-schema base resolution and OData 4.0 member-redefinition restrictions.
+- [x] OData 4.0 member-redefinition restrictions.
+- [ ] Cross-schema base resolution.
 
 ### C. Structural property semantics
 

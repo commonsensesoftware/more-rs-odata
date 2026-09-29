@@ -168,3 +168,24 @@ fn allows_defining_key_below_keyless_base_and_abstract_complex_below_concrete() 
         validate_document(&model).unwrap();
     }
 }
+
+#[test]
+fn legacy_documents_reject_narrowing_and_concrete_keyless_entities() {
+    for mut document in documents(
+        r#"
+        <ComplexType Name="BaseValue"/>
+        <ComplexType Name="SubValue" BaseType="D.BaseValue"/>
+        <ComplexType Name="Base"><Property Name="P" Type="D.BaseValue"/></ComplexType>
+        <ComplexType Name="Derived" BaseType="D.Base"><Property Name="P" Type="D.SubValue"/></ComplexType>"#,
+    ) {
+        document.edmx.as_mut().unwrap().version = Some("4.0".into());
+        assert!(Resolver::resolve_document(document.edmx.unwrap()).is_err());
+    }
+    for mut document in documents(r#"<EntityType Name="Keyless"/>"#) {
+        document.edmx.as_mut().unwrap().version = Some("4.0".into());
+        let model = Resolver::resolve_document(document.edmx.unwrap()).unwrap();
+        assert!(validate_document(&model).unwrap_err().iter().any(
+            |e| matches!(e, ValidationError::MissingEntityKey { entity } if entity == "Keyless")
+        ));
+    }
+}

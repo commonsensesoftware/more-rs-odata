@@ -19,6 +19,9 @@ enum KeyPathClassification {
 
 #[derive(Debug, Clone)]
 pub enum ValidationError {
+    MissingEntityKey {
+        entity: String,
+    },
     InvalidInheritance {
         type_kind: &'static str,
         type_name: String,
@@ -94,6 +97,17 @@ pub fn validate_document(document: &DocumentModel) -> Result<(), Vec<ValidationE
 
     for schema in &document.schemas {
         errors.extend(engine.validate_model_collect(schema.as_ref()));
+        if document.version == "4.0" {
+            for element in &schema.elements {
+                if let SchemaElement::EntityType(entity) = element.as_ref() {
+                    if !entity.is_abstract && entity.keys().is_empty() {
+                        errors.push(ValidationError::MissingEntityKey {
+                            entity: entity.name.clone(),
+                        });
+                    }
+                }
+            }
+        }
     }
 
     if errors.is_empty() {
