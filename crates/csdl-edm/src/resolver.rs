@@ -152,6 +152,9 @@ impl Resolver {
                     let arc = Arc::new(EntityType {
                         name: e.name.clone(),
                         is_abstract: e.abstract_.unwrap_or(false),
+                        is_open: e.open_type.unwrap_or(false),
+                        has_stream: e.has_stream.unwrap_or(false),
+                        base_type: OnceLock::new(),
                         keys: std::sync::OnceLock::new(),
                         properties: std::sync::OnceLock::new(),
                         navigation_properties: std::sync::OnceLock::new(),
@@ -162,6 +165,8 @@ impl Resolver {
                     let arc = Arc::new(ComplexType {
                         name: c.name.clone(),
                         is_abstract: c.abstract_.unwrap_or(false),
+                        is_open: c.open_type.unwrap_or(false),
+                        base_type: OnceLock::new(),
                         properties: std::sync::OnceLock::new(),
                         navigation_properties: std::sync::OnceLock::new(),
                     });
@@ -226,6 +231,43 @@ impl Resolver {
                     )));
                 }
                 container_defs.insert(container.name.clone(), container);
+            }
+        }
+
+        // Weak base links preserve identity without retaining invalid cyclic inputs.
+        for element in &schema.elements {
+            match element {
+                csdl::SchemaElement::EntityType(e) => {
+                    let base = e
+                        .base_type
+                        .as_ref()
+                        .map(|name| {
+                            let short = unqualify_to_local(name, &ns, aliases)
+                                .ok_or_else(|| ResolveError::UnknownType(name.clone()))?;
+                            entities
+                                .get(short)
+                                .map(Arc::downgrade)
+                                .ok_or_else(|| ResolveError::UnknownType(name.clone()))
+                        })
+                        .transpose()?;
+                    let _ = entities[&e.name].base_type.set(base);
+                }
+                csdl::SchemaElement::ComplexType(c) => {
+                    let base = c
+                        .base_type
+                        .as_ref()
+                        .map(|name| {
+                            let short = unqualify_to_local(name, &ns, aliases)
+                                .ok_or_else(|| ResolveError::UnknownType(name.clone()))?;
+                            complexes
+                                .get(short)
+                                .map(Arc::downgrade)
+                                .ok_or_else(|| ResolveError::UnknownType(name.clone()))
+                        })
+                        .transpose()?;
+                    let _ = complexes[&c.name].base_type.set(base);
+                }
+                _ => {}
             }
         }
 
@@ -332,18 +374,20 @@ impl Resolver {
         // Inherited navigation properties share the same `Arc`, so resolving
         // each owning type's own navigations covers derived types too.
         for el in &schema.elements {
-            let (csdl_navs, resolved_navs): (&[csdl::NavigationProperty], &[Arc<NavigationProperty>]) =
-                match el {
-                    csdl::SchemaElement::EntityType(e) => match entities.get(&e.name) {
-                        Some(arc) => (&e.navigation_properties, arc.navigation_properties()),
-                        None => continue,
-                    },
-                    csdl::SchemaElement::ComplexType(c) => match complexes.get(&c.name) {
-                        Some(arc) => (&c.navigation_properties, arc.navigation_properties()),
-                        None => continue,
-                    },
-                    _ => continue,
-                };
+            let (csdl_navs, resolved_navs): (
+                &[csdl::NavigationProperty],
+                &[Arc<NavigationProperty>],
+            ) = match el {
+                csdl::SchemaElement::EntityType(e) => match entities.get(&e.name) {
+                    Some(arc) => (&e.navigation_properties, arc.navigation_properties()),
+                    None => continue,
+                },
+                csdl::SchemaElement::ComplexType(c) => match complexes.get(&c.name) {
+                    Some(arc) => (&c.navigation_properties, arc.navigation_properties()),
+                    None => continue,
+                },
+                _ => continue,
+            };
 
             for csdl_nav in csdl_navs {
                 let Some(partner) = csdl_nav.partner.as_deref() else {
@@ -521,7 +565,7 @@ fn resolve_effective_entity_keys(
         let base_keys =
             resolve_effective_entity_keys(base_name, entity_defs, ns, aliases, cache, visiting)?;
 
-        if !base_keys.is_empty() && !own_keys.is_empty() {
+        if !base_keys.is_empty() && entity.key.is_some() {
             return Err(ResolveError::UnsupportedCsdlFeature {
                 feature: "Derived EntityType.Key",
                 location: format!("{}.{}", ns, entity.name),
@@ -597,6 +641,52 @@ fn resolve_properties(
         .collect()
 }
 
+fn entity_is_strict_subtype(derived: &Arc<EntityType>, base: &Arc<EntityType>) -> bool {
+    let mut current = derived
+        .base_type
+        .get()
+        .and_then(Option::as_ref)
+        .and_then(Weak::upgrade);
+    let mut seen = HashSet::new();
+    while let Some(ty) = current {
+        if !seen.insert(Arc::as_ptr(&ty)) {
+            return false;
+        }
+        if Arc::ptr_eq(&ty, base) {
+            return true;
+        }
+        current = ty
+            .base_type
+            .get()
+            .and_then(Option::as_ref)
+            .and_then(Weak::upgrade);
+    }
+    false
+}
+
+fn complex_is_strict_subtype(derived: &Arc<ComplexType>, base: &Arc<ComplexType>) -> bool {
+    let mut current = derived
+        .base_type
+        .get()
+        .and_then(Option::as_ref)
+        .and_then(Weak::upgrade);
+    let mut seen = HashSet::new();
+    while let Some(ty) = current {
+        if !seen.insert(Arc::as_ptr(&ty)) {
+            return false;
+        }
+        if Arc::ptr_eq(&ty, base) {
+            return true;
+        }
+        current = ty
+            .base_type
+            .get()
+            .and_then(Option::as_ref)
+            .and_then(Weak::upgrade);
+    }
+    false
+}
+
 fn reject_inherited_member_redeclarations(
     kind: &'static str,
     type_name: &str,
@@ -606,19 +696,38 @@ fn reject_inherited_member_redeclarations(
     own_navs: &[Arc<NavigationProperty>],
     ns: &str,
 ) -> Result<(), ResolveError> {
-    let inherited_names = base_props
-        .iter()
-        .map(|property| property.name.as_str())
-        .chain(base_navs.iter().map(|navigation| navigation.name.as_str()))
-        .collect::<HashSet<_>>();
-
-    if own_props
-        .iter()
-        .any(|property| inherited_names.contains(property.name.as_str()))
-        || own_navs
+    let invalid_property = own_props.iter().any(|own| {
+        if base_navs.iter().any(|base| base.name == own.name) {
+            return true;
+        }
+        base_props
             .iter()
-            .any(|navigation| inherited_names.contains(navigation.name.as_str()))
-    {
+            .find(|base| base.name == own.name)
+            .is_some_and(|base| {
+                own.is_collection != base.is_collection
+                    || !matches!(
+                        (&own.ty, &base.ty),
+                        (ResolvedType::Complex(derived), ResolvedType::Complex(base))
+                            if complex_is_strict_subtype(derived, base)
+                    )
+            })
+    });
+    let invalid_navigation = own_navs.iter().any(|own| {
+        if base_props.iter().any(|base| base.name == own.name) {
+            return true;
+        }
+        base_navs
+            .iter()
+            .find(|base| base.name == own.name)
+            .is_some_and(|base| {
+                own.is_collection != base.is_collection
+                    || match (own.target.upgrade(), base.target.upgrade()) {
+                        (Some(derived), Some(base)) => !entity_is_strict_subtype(&derived, &base),
+                        _ => true,
+                    }
+            })
+    });
+    if invalid_property || invalid_navigation {
         return Err(ResolveError::UnsupportedCsdlFeature {
             feature: match kind {
                 "EntityType" => "Derived EntityType member redeclaration",
@@ -703,7 +812,9 @@ fn resolve_entity_members(
         ns,
     )?;
 
+    props.retain(|base| !own_props.iter().any(|own| own.name == base.name));
     props.extend(own_props);
+    navs.retain(|base| !own_navs.iter().any(|own| own.name == base.name));
     navs.extend(own_navs);
 
     visiting.pop();
@@ -728,40 +839,6 @@ fn resolve_complex_members(
         return Ok((props.clone(), navs.clone()));
     }
 
-    fn reject_inherited_member_redeclarations(
-        kind: &'static str,
-        type_name: &str,
-        base_props: &[Arc<Property>],
-        base_navs: &[Arc<NavigationProperty>],
-        own_props: &[Arc<Property>],
-        own_navs: &[Arc<NavigationProperty>],
-        ns: &str,
-    ) -> Result<(), ResolveError> {
-        let inherited_names = base_props
-            .iter()
-            .map(|property| property.name.as_str())
-            .chain(base_navs.iter().map(|navigation| navigation.name.as_str()))
-            .collect::<HashSet<_>>();
-
-        if own_props
-            .iter()
-            .any(|property| inherited_names.contains(property.name.as_str()))
-            || own_navs
-                .iter()
-                .any(|navigation| inherited_names.contains(navigation.name.as_str()))
-        {
-            return Err(ResolveError::UnsupportedCsdlFeature {
-                feature: match kind {
-                    "EntityType" => "Derived EntityType member redeclaration",
-                    "ComplexType" => "Derived ComplexType member redeclaration",
-                    _ => "Derived member redeclaration",
-                },
-                location: format!("{}.{}", ns, type_name),
-            });
-        }
-
-        Ok(())
-    }
     if visiting.iter().any(|current| current == name) {
         return Err(ResolveError::UnsupportedCsdlFeature {
             feature: "Cyclic ComplexType.BaseType",
@@ -816,7 +893,9 @@ fn resolve_complex_members(
         ns,
     )?;
 
+    props.retain(|base| !own_props.iter().any(|own| own.name == base.name));
     props.extend(own_props);
+    navs.retain(|base| !own_navs.iter().any(|own| own.name == base.name));
     navs.extend(own_navs);
 
     visiting.pop();
@@ -1105,7 +1184,9 @@ fn resolve_entity_set_path(
         };
 
         if let Some(nav) = navs.iter().find(|n| n.name == *part) {
-            out.push(EntitySetPathSegment::NavigationProperty(Arc::downgrade(nav)));
+            out.push(EntitySetPathSegment::NavigationProperty(Arc::downgrade(
+                nav,
+            )));
             if let Some(target) = nav.target.upgrade() {
                 ctx = Some(Ctx::Entity(target));
             }

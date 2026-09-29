@@ -20,19 +20,22 @@ This checklist is now split into:
 
 ### A. Entity type semantics
 
-- [ ] Non-abstract entity types define a key.
+- [ ] For OData 4.0, non-abstract entity types define or inherit a key. In 4.01,
+      key requirements depend on usage (entity sets and collection containment).
 - [ ] Key properties are non-nullable.
 - [ ] Key identity is consistent across inheritance.
 
 ### B. Entity type inheritance semantics
 
-- [ ] Derived types do not declare a key.
-- [ ] Derived types do not add key properties.
-- [ ] Derived types do not override inherited properties.
-- [ ] Derived types do not override inherited navigation properties.
-- [ ] Derived types do not change type/nullability of inherited properties.
-- [ ] Inheritance hierarchy contains no cycles.
-- [ ] Base types are entity types.
+- [x] Derived types cannot redeclare an inherited key (a keyless base permits a key).
+- [x] Derived types do not add properties to an inherited key.
+- [x] In 4.01, inherited properties and navigation properties may only be
+      redefined with a derived structured type, preserving collection cardinality.
+- [x] Same-schema inheritance hierarchy contains no cycles.
+- [x] Entity base types are entity types.
+- [x] Derived open types remain open; derived media entities preserve HasStream.
+- [x] Abstract entity types cannot derive from concrete entity types.
+- [ ] Cross-schema base resolution and OData 4.0 member-redefinition restrictions.
 
 ### C. Structural property semantics
 
@@ -42,8 +45,9 @@ This checklist is now split into:
 
 ### D. Complex type semantics
 
-- [ ] Complex type inheritance contains no cycles.
-- [ ] Derived complex types do not redefine inherited properties.
+- [x] Same-schema complex type inheritance contains no cycles.
+- [x] Derived complex types allow only valid CSDL 4.01 subtype narrowing.
+- [x] Derived open complex types remain open.
 
 ### E. Navigation property semantics
 

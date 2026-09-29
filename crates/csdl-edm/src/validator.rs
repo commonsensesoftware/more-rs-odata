@@ -3,10 +3,10 @@
 use std::collections::HashSet;
 
 use crate::edm::{
-    binding_path_to_string, entity_set_path_to_string, key_path_to_string, Action,
-    BindingPathSegment, ComplexType, DocumentModel, EntityContainer, EntityContainerElement,
-    EntitySetPathSegment, EntityType, EnumType, Function, KeyPathSegment, Model,
-    NavigationPropertyBinding, ResolvedType, SchemaElement, Term,
+    Action, BindingPathSegment, ComplexType, DocumentModel, EntityContainer,
+    EntityContainerElement, EntitySetPathSegment, EntityType, EnumType, Function, KeyPathSegment,
+    Model, NavigationPropertyBinding, ResolvedType, SchemaElement, Term, binding_path_to_string,
+    entity_set_path_to_string, key_path_to_string,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,6 +19,11 @@ enum KeyPathClassification {
 
 #[derive(Debug, Clone)]
 pub enum ValidationError {
+    InvalidInheritance {
+        type_kind: &'static str,
+        type_name: String,
+        reason: &'static str,
+    },
     DuplicateKey {
         entity: String,
         key: String,
@@ -141,6 +146,7 @@ impl Default for ValidatorEngine {
     fn default() -> Self {
         Self {
             rules: vec![
+                Box::new(InheritanceSemanticsRule),
                 Box::new(UniqueSchemaChildNamesRule),
                 Box::new(UniqueEntityChildNamesRule),
                 Box::new(UniqueComplexChildNamesRule),
@@ -241,6 +247,65 @@ fn schema_element_name(element: &SchemaElement) -> &str {
         SchemaElement::Term(t) => &t.name,
         SchemaElement::Function(f) => &f.name,
         SchemaElement::Action(a) => &a.name,
+    }
+}
+
+struct InheritanceSemanticsRule;
+
+impl ValidationRule for InheritanceSemanticsRule {
+    fn name(&self) -> &'static str {
+        "inheritance_semantics"
+    }
+
+    fn visit_entity_type(&self, entity: &EntityType, ctx: &mut ValidationContext) {
+        let Some(base) = entity
+            .base_type
+            .get()
+            .and_then(Option::as_ref)
+            .and_then(|b| b.upgrade())
+        else {
+            return;
+        };
+        for (invalid, reason) in [
+            (
+                entity.is_abstract && !base.is_abstract,
+                "Abstract entity type cannot derive from a concrete entity type",
+            ),
+            (
+                base.is_open && !entity.is_open,
+                "Derived type of an open type must be open",
+            ),
+            (
+                entity.has_stream != base.has_stream,
+                "Derived entity type must preserve HasStream",
+            ),
+        ] {
+            if invalid {
+                ctx.push(ValidationError::InvalidInheritance {
+                    type_kind: "EntityType",
+                    type_name: entity.name.clone(),
+                    reason,
+                });
+            }
+        }
+    }
+
+    fn visit_complex_type(&self, complex: &ComplexType, ctx: &mut ValidationContext) {
+        let Some(base) = complex
+            .base_type
+            .get()
+            .and_then(Option::as_ref)
+            .and_then(|b| b.upgrade())
+        else {
+            return;
+        };
+        if base.is_open && !complex.is_open {
+            ctx.push(ValidationError::InvalidInheritance {
+                type_kind: "ComplexType",
+                type_name: complex.name.clone(),
+                reason: "Derived type of an open type must be open",
+            });
+        }
     }
 }
 

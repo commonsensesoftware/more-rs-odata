@@ -1259,9 +1259,7 @@ fn entity_type_to_json(entity: &EntityType, namespace: &str) -> Value {
             .iter()
             .map(|p| Value::String(p.name.clone()))
             .collect::<Vec<_>>();
-        if !keys.is_empty() {
-            obj.insert("$Key".to_string(), Value::Array(keys));
-        }
+        obj.insert("$Key".to_string(), Value::Array(keys));
     }
 
     for prop in &entity.properties {

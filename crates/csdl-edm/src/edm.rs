@@ -94,6 +94,9 @@ pub enum SchemaElement {
 pub struct EntityType {
     pub name: String,
     pub is_abstract: bool,
+    pub is_open: bool,
+    pub has_stream: bool,
+    pub base_type: OnceLock<Option<Weak<EntityType>>>,
     /// Effective key paths (own + inherited). Each key is a resolved path of
     /// [`KeyPathSegment`]s rather than a raw string, filled by the resolver in a
     /// late pass once every entity/complex type has its properties.
@@ -121,6 +124,8 @@ impl EntityType {
 pub struct ComplexType {
     pub name: String,
     pub is_abstract: bool,
+    pub is_open: bool,
+    pub base_type: OnceLock<Option<Weak<ComplexType>>>,
     pub properties: OnceLock<Vec<Arc<Property>>>,
     pub navigation_properties: OnceLock<Vec<Arc<NavigationProperty>>>,
 }

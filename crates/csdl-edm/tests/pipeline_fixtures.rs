@@ -11,7 +11,6 @@ use csdl_edm::validator::{ValidationError, validate_document};
 enum ExpectedOutcome {
     Pass,
     ResolveUnknownType(&'static str),
-    ResolveUnknownEntity(&'static str),
     ResolveMissingType {
         element_kind: &'static str,
         element_name: &'static str,
@@ -237,7 +236,7 @@ fn resolve_and_validate_fixture_expectations() {
         ),
         (
             "example89.csdl.xml",
-            ExpectedOutcome::ResolveUnknownEntity("self.Supplier"),
+            ExpectedOutcome::Pass,
         ),
         ("extras_sample.csdl.json", ExpectedOutcome::Pass),
         ("extras_sample.csdl.xml", ExpectedOutcome::Pass),
@@ -1870,17 +1869,6 @@ fn assert_expected_resolve_error(
             other => panic!(
                 "{} expected unknown type {:?}, got {:?}",
                 fixture_name, type_name, other
-            ),
-        },
-        ExpectedOutcome::ResolveUnknownEntity(entity_name) => match error {
-            ResolveError::UnknownEntity(actual_entity_name) => assert_eq!(
-                actual_entity_name, entity_name,
-                "{} returned unexpected unknown entity",
-                fixture_name
-            ),
-            other => panic!(
-                "{} expected unknown entity {:?}, got {:?}",
-                fixture_name, entity_name, other
             ),
         },
         ExpectedOutcome::ResolveMissingType {
