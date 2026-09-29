@@ -1,3 +1,18 @@
+# [workspace]
+# members = ["odata", "odata-*", "examples/*"]
+# default-members = ["odata", "odata-*"]
+# resolver = "2"
+
+# [workspace.package]
+# version = "0.1.0"
+# authors = ["Chris Martinez <chris.s.martinez@outlook.com>"]
+# license = "MIT"
+# repository = "https://github.com/commonsensesoftware/more-rs-odata"
+# rust-version = "1.98.0"
+# edition = "2024"
+
+# [workspace.dependencies]
+
 [package]
 name = "odata-rs"
 version = "0.0.1"
@@ -6,7 +21,6 @@ description = "OData protocol implementation for Rust"
 license = "MIT OR Apache-2.0"
 homepage = "https://github.com/odata-rs/odata-rs"
 repository = "https://github.com/odata-rs/odata-rs"
-
 
 [workspace]
 members = ["crates/csdl-edm", "crates/url", "crates/routing", "crates/service"]

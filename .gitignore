@@ -53,3 +53,6 @@ Cargo.lock
 # End of https://www.toptal.com/developers/gitignore/api/rust,macos
 docs/*.docx
 crates/csdl-edm/graph.json
+
+# mdbook output
+guide/book
