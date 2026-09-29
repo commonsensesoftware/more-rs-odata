@@ -239,12 +239,73 @@ pub struct IncludeAnnotations {
 
 #[derive(Debug)]
 pub struct Model {
+    /// Inline, sibling-target, and externally targeted annotations.
+    pub annotations: OnceLock<Vec<ResolvedAnnotation>>,
     pub namespace: String,
     pub alias: Option<String>,
     pub elements: Vec<Arc<SchemaElement>>,
     pub entity_container: Option<Arc<EntityContainer>>,
     /// All declared containers; `entity_container` remains the first for compatibility.
     pub entity_containers: Vec<Arc<EntityContainer>>,
+}
+
+#[derive(Debug, Clone)]
+pub enum AnnotationTarget {
+    Expression {
+        kind: AnnotationTargetKind,
+        ordinal: usize,
+    },
+    Schema(String),
+    Element(Arc<SchemaElement>),
+    Property(Arc<Property>),
+    NavigationProperty(Arc<NavigationProperty>),
+    EnumMember(Arc<EnumMember>),
+    Container(Arc<EntityContainer>),
+    Resource(Arc<EntityContainerElement>),
+    Parameter {
+        operation: Arc<SchemaElement>,
+        index: usize,
+    },
+    ReturnType(Arc<SchemaElement>),
+    ReferentialConstraint {
+        navigation: Arc<NavigationProperty>,
+        index: usize,
+    },
+    OnDelete(Arc<NavigationProperty>),
+    AppliedTerm {
+        term: Arc<Term>,
+        qualifier: Option<String>,
+    },
+    DynamicProperty(String),
+    Unresolved(String),
+}
+
+#[derive(Debug)]
+pub struct ResolvedAnnotation {
+    pub term_name: String,
+    /// Unavailable external terms remain unresolved; resolution does not fetch documents.
+    pub term: Option<Arc<Term>>,
+    pub qualifier: Option<String>,
+    pub target_path: String,
+    /// An operation-name target can select multiple overloads.
+    pub targets: Vec<Arc<[AnnotationTarget]>>,
+    /// Authored expression retained for consumers; paths are resolved separately.
+    pub expression: Option<crate::expr::CsdlAnnotationExpression>,
+    pub expression_paths: Vec<AnnotationExpressionPath>,
+}
+
+#[derive(Debug)]
+pub struct AnnotationExpressionPath {
+    pub kind: AnnotationPathKind,
+    pub segments: Arc<[AnnotationTarget]>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AnnotationPathKind {
+    Value,
+    Property,
+    NavigationProperty,
+    Annotation,
 }
 
 impl Model {

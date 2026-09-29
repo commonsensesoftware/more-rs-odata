@@ -158,6 +158,20 @@ fn emit_schema(
     }
     start(out, "Schema", attrs);
 
+    if let Some(groups) = obj.shift_remove("$Annotations") {
+        for (target, annotations) in expect_object(groups, "$Annotations")? {
+            start(out, "Annotations", vec![("Target".into(), target)]);
+            let annotations = expect_object(annotations, "$Annotations target")?;
+            for (key, value) in annotations {
+                if !key.starts_with('@') {
+                    return Err(csdl_err("External annotations require @Term keys"));
+                }
+                emit_annotation(out, &key, value)?;
+            }
+            end(out, "Annotations");
+        }
+    }
+
     // Two-pass partition: members first (mirrors XML element order), then
     // schema-level annotations — own (`@Term`) and sibling-target
     // (`MemberName@Term`).

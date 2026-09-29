@@ -150,6 +150,17 @@ fn write_schema<W: io::Write>(xml: &mut quick_xml::Writer<W>, schema: &Schema) -
     }
 
     write_start(xml, "Schema", &attrs)?;
+    for group in &schema.external_annotations {
+        write_start(
+            xml,
+            "Annotations",
+            &[("Target".into(), group.target.clone())],
+        )?;
+        for annotation in &group.annotations {
+            write_annotation(xml, annotation)?;
+        }
+        write_end(xml, "Annotations")?;
+    }
     for element in &schema.elements {
         match element {
             SchemaElement::EntityType(entity) => write_entity_type(xml, entity)?,
@@ -1168,6 +1179,21 @@ fn include_to_json(include: &Include) -> Value {
 
 fn schema_to_json(schema: &Schema) -> Value {
     let mut obj = Map::new();
+    let mut groups = Map::new();
+    for group in &schema.external_annotations {
+        let target = groups
+            .entry(group.target.clone())
+            .or_insert_with(|| Value::Object(Map::new()));
+        let target = target.as_object_mut().expect("annotation target object");
+        for annotation in &group.annotations {
+            if let Some((key, value)) = annotation_member(annotation) {
+                target.insert(key, value);
+            }
+        }
+    }
+    if !groups.is_empty() {
+        obj.insert("$Annotations".into(), Value::Object(groups));
+    }
     if let Some(alias) = &schema.alias {
         obj.insert("$Alias".to_string(), Value::String(alias.clone()));
     }

@@ -1,6 +1,10 @@
 //! Semantic validation that is intentionally separate from reference resolution.
 
+mod annotations;
 mod types;
+pub use annotations::{
+    AnnotationDiagnostic, AnnotationIssue, validate_annotations, validate_model_annotations,
+};
 
 use std::collections::HashSet;
 

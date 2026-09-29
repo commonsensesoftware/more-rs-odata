@@ -38,6 +38,7 @@ fn parses_all_input_fixtures() {
 #[test]
 fn validates_navigation_property_binding_path_and_target_semantics() {
     let schema = csdl::Schema {
+        external_annotations: Vec::new(),
         namespace: "Demo".to_owned(),
         alias: None,
         elements: vec![
@@ -329,6 +330,7 @@ fn resolve_and_validate_fixture_expectations() {
 #[test]
 fn resolves_entity_container_extends_and_inherits_elements() {
     let schema = csdl::Schema {
+        external_annotations: Vec::new(),
         namespace: "Demo".to_owned(),
         alias: None,
         elements: vec![
@@ -430,6 +432,7 @@ fn resolves_entity_container_extends_and_inherits_elements() {
 #[test]
 fn resolves_container_imports_and_navigation_bindings() {
     let schema = csdl::Schema {
+        external_annotations: Vec::new(),
         namespace: "Demo".to_owned(),
         alias: None,
         elements: vec![
@@ -585,6 +588,7 @@ fn resolves_container_imports_and_navigation_bindings() {
 #[test]
 fn resolves_navigation_semantics_fields() {
     let schema = csdl::Schema {
+        external_annotations: Vec::new(),
         namespace: "Demo".to_owned(),
         alias: None,
         elements: vec![
@@ -702,6 +706,7 @@ fn resolves_navigation_semantics_fields() {
 #[test]
 fn validates_navigation_partner_existence() {
     let schema = csdl::Schema {
+        external_annotations: Vec::new(),
         namespace: "Demo".to_owned(),
         alias: None,
         elements: vec![
@@ -803,6 +808,7 @@ fn validates_navigation_partner_existence() {
 #[test]
 fn validates_navigation_referential_constraints() {
     let schema = csdl::Schema {
+        external_annotations: Vec::new(),
         namespace: "Demo".to_owned(),
         alias: None,
         elements: vec![
@@ -917,6 +923,7 @@ fn validates_navigation_referential_constraints() {
 #[test]
 fn resolves_collection_valued_term() {
     let schema = csdl::Schema {
+        external_annotations: Vec::new(),
         namespace: "Demo".to_owned(),
         alias: None,
         elements: vec![csdl::SchemaElement::Term(csdl::Term {
@@ -961,6 +968,7 @@ fn resolves_collection_valued_term() {
 #[test]
 fn validates_term_base_term_cycles() {
     let schema = csdl::Schema {
+        external_annotations: Vec::new(),
         namespace: "Demo".to_owned(),
         alias: None,
         elements: vec![
@@ -1018,6 +1026,7 @@ fn validates_term_base_term_cycles() {
 #[test]
 fn validates_container_targets() {
     let schema = csdl::Schema {
+        external_annotations: Vec::new(),
         namespace: "Demo".to_owned(),
         alias: None,
         elements: vec![
@@ -1130,6 +1139,7 @@ fn validates_container_targets() {
 #[test]
 fn rejects_unresolved_function_and_action_import_targets() {
     let schema = csdl::Schema {
+        external_annotations: Vec::new(),
         namespace: "Demo".to_owned(),
         alias: None,
         elements: vec![
@@ -1238,6 +1248,7 @@ fn rejects_unresolved_function_and_action_import_targets() {
 #[test]
 fn rejects_unresolved_action_import_targets() {
     let schema = csdl::Schema {
+        external_annotations: Vec::new(),
         namespace: "Demo".to_owned(),
         alias: None,
         elements: vec![
@@ -1321,6 +1332,7 @@ fn rejects_unresolved_action_import_targets() {
 #[test]
 fn validates_operation_binding_semantics() {
     let schema = csdl::Schema {
+        external_annotations: Vec::new(),
         namespace: "Demo".to_owned(),
         alias: None,
         elements: vec![
@@ -1457,6 +1469,7 @@ fn validates_operation_binding_semantics() {
 #[test]
 fn resolves_inherited_entity_keys() {
     let schema = csdl::Schema {
+        external_annotations: Vec::new(),
         namespace: "Demo".to_owned(),
         alias: None,
         elements: vec![
@@ -1534,6 +1547,7 @@ fn resolves_inherited_entity_keys() {
 #[test]
 fn rejects_derived_entity_redeclaring_base_keys() {
     let schema = csdl::Schema {
+        external_annotations: Vec::new(),
         namespace: "Demo".to_owned(),
         alias: None,
         elements: vec![
@@ -1618,6 +1632,7 @@ fn rejects_derived_entity_redeclaring_base_keys() {
 #[test]
 fn rejects_derived_entity_member_redeclaration() {
     let schema = csdl::Schema {
+        external_annotations: Vec::new(),
         namespace: "Demo".to_owned(),
         alias: None,
         elements: vec![
@@ -1692,6 +1707,7 @@ fn rejects_derived_entity_member_redeclaration() {
 #[test]
 fn rejects_derived_complex_member_redeclaration() {
     let schema = csdl::Schema {
+        external_annotations: Vec::new(),
         namespace: "Demo".to_owned(),
         alias: None,
         elements: vec![
@@ -1762,6 +1778,7 @@ fn rejects_derived_complex_member_redeclaration() {
 #[test]
 fn resolves_collection_valued_structural_properties() {
     let schema = csdl::Schema {
+        external_annotations: Vec::new(),
         namespace: "Demo".to_owned(),
         alias: None,
         elements: vec![csdl::SchemaElement::EntityType(csdl::EntityType {
@@ -1841,6 +1858,7 @@ fn resolves_collection_valued_structural_properties() {
 #[test]
 fn rejects_function_without_return_type() {
     let schema = csdl::Schema {
+        external_annotations: Vec::new(),
         namespace: "Demo".to_owned(),
         alias: None,
         elements: vec![csdl::SchemaElement::Function(csdl::Function {

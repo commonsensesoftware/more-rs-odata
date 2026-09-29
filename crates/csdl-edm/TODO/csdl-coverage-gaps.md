@@ -91,7 +91,12 @@ Related detailed design TODO:
 - [x] Add container-level binding/import validation, including entity-set keys,
       path/target kinds and multiplicity, target type compatibility, overload
       selection, and function-import service-document rules.
-- [ ] Add annotation semantic validation (term applicability and target checks).
+- [x] Add annotation semantic validation (term applicability and target checks):
+      inline, sibling, and external groups resolve to typed targets; overload
+      signatures and expression paths resolve in the resolver. Explicit
+      annotation diagnostics cover unknown terms/targets, duplicate applications,
+      qualifiers, applicability, base-term applications, and value shapes.
+      Annotation diagnostics are non-fatal to document consumption, as CSDL requires.
 
 ## 3. Primitive and Type Coverage
 

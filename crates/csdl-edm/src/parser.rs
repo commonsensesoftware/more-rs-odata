@@ -204,6 +204,35 @@ fn parse_schema(raw: &RawElement) -> io::Result<Schema> {
     }
 
     Ok(Schema {
+        external_annotations: raw
+            .children
+            .iter()
+            .filter(|n| n.name == "Annotations")
+            .map(|group| {
+                let target = raw_attr(group, "Target")
+                    .filter(|s| !s.is_empty())
+                    .ok_or_else(|| {
+                        io::Error::new(io::ErrorKind::InvalidData, "Annotations requires Target")
+                    })?
+                    .to_owned();
+                let mut annotations = parse_annotations(group)?;
+                if annotations.is_empty() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "Annotations requires at least one Annotation",
+                    ));
+                }
+                for annotation in &mut annotations {
+                    if annotation.qualifier.is_none() {
+                        annotation.qualifier = raw_attr(group, "Qualifier").map(str::to_owned);
+                    }
+                }
+                Ok(Annotations {
+                    target,
+                    annotations,
+                })
+            })
+            .collect::<io::Result<Vec<_>>>()?,
         namespace,
         alias,
         elements,

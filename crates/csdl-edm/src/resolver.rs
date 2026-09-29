@@ -8,6 +8,7 @@ use std::sync::{Arc, OnceLock, Weak};
 
 use crate::{csdl, edm::*};
 
+mod annotations;
 mod containers;
 
 #[derive(Debug)]
@@ -578,6 +579,7 @@ impl Resolver {
             let entity_container = entity_containers.first().cloned();
 
             models.push(Model {
+                annotations: OnceLock::new(),
                 namespace: schema.namespace.clone(),
                 alias: schema.alias.clone(),
                 elements,
@@ -585,6 +587,7 @@ impl Resolver {
                 entity_containers,
             });
         }
+        annotations::resolve(&schemas, &models, aliases);
         Ok(models)
     }
 }

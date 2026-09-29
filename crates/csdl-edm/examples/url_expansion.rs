@@ -25,6 +25,7 @@ fn main() {
 
 fn build_demo_schema() -> Schema {
     Schema {
+        external_annotations: Vec::new(),
         namespace: "Demo".to_owned(),
         alias: Some("D".to_owned()),
         annotations: vec![],

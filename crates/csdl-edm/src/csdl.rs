@@ -38,9 +38,17 @@ pub struct Include {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Schema {
+    pub external_annotations: Vec<Annotations>,
     pub namespace: String,
     pub alias: Option<String>,
     pub elements: Vec<SchemaElement>,
+    pub annotations: Vec<Annotation>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Annotations {
+    pub target: String,
+    /// Group qualifiers are normalized onto each annotation.
     pub annotations: Vec<Annotation>,
 }
 
