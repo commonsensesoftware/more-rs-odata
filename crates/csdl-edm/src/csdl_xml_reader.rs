@@ -166,7 +166,7 @@ impl<R: BufRead> CsdlReader<R> {
                         let mut exprs: Vec<CsdlAnnotationExpression> = Vec::new();
                         if let Some(idx) = find_inline_constant_idx(&attrs) {
                             let (k, v) = attrs.swap_remove(idx);
-                            exprs.push(constant_attr_to_expr(&k, v));
+                            exprs.push(constant_attr_to_expr(&k, v)?);
                         }
                         exprs.extend(self.read_expression_list("Annotation")?);
                         for ex in exprs {
@@ -198,7 +198,7 @@ impl<R: BufRead> CsdlReader<R> {
                         if let Some(idx) = find_inline_constant_idx(&attrs) {
                             let (k, v) = attrs.swap_remove(idx);
                             self.deferred.push_back(SyntaxUnit::AnnotationExpression(
-                                constant_attr_to_expr(&k, v),
+                                constant_attr_to_expr(&k, v)?,
                             ));
                         }
                         self.deferred.push_back(SyntaxUnit::EndElement {
@@ -231,12 +231,7 @@ impl<R: BufRead> CsdlReader<R> {
             "Binary" => Ok(CsdlAnnotationExpression::Binary(
                 self.read_text_body(name)?.into_bytes(),
             )),
-            "Bool" => {
-                let t = self.read_text_body(name)?;
-                Ok(CsdlAnnotationExpression::Bool(
-                    t.eq_ignore_ascii_case("true"),
-                ))
-            }
+            "Bool" => constant_attr_to_expr(name, self.read_text_body(name)?),
             "Date" => Ok(CsdlAnnotationExpression::Date(self.read_text_body(name)?)),
             "DateTimeOffset" => Ok(CsdlAnnotationExpression::DateTimeOffset(
                 self.read_text_body(name)?,
@@ -250,13 +245,9 @@ impl<R: BufRead> CsdlReader<R> {
             "EnumMember" => Ok(CsdlAnnotationExpression::EnumMember(
                 self.read_text_body(name)?,
             )),
-            "Float" => Ok(CsdlAnnotationExpression::Float(
-                self.read_text_body(name)?.parse().unwrap_or(0.0),
-            )),
+            "Float" => constant_attr_to_expr(name, self.read_text_body(name)?),
             "Guid" => Ok(CsdlAnnotationExpression::Guid(self.read_text_body(name)?)),
-            "Int" => Ok(CsdlAnnotationExpression::Int(
-                self.read_text_body(name)?.parse().unwrap_or(0),
-            )),
+            "Int" => constant_attr_to_expr(name, self.read_text_body(name)?),
             "String" => Ok(CsdlAnnotationExpression::String(self.read_text_body(name)?)),
             "TimeOfDay" => Ok(CsdlAnnotationExpression::TimeOfDay(
                 self.read_text_body(name)?,
@@ -465,10 +456,12 @@ impl<R: BufRead> CsdlReader<R> {
                     match n.as_str() {
                         "PropertyValue" => {
                             let property = attr_value(&a, "Property").unwrap_or_default();
-                            let value = find_inline_constant_idx(&a).map(|idx| {
-                                let (k, v) = a.swap_remove(idx);
-                                constant_attr_to_expr(&k, v)
-                            });
+                            let value = find_inline_constant_idx(&a)
+                                .map(|idx| {
+                                    let (k, v) = a.swap_remove(idx);
+                                    constant_attr_to_expr(&k, v)
+                                })
+                                .transpose()?;
                             properties.push(PropertyValue {
                                 property,
                                 value,
@@ -476,7 +469,7 @@ impl<R: BufRead> CsdlReader<R> {
                             });
                         }
                         "Annotation" => {
-                            annotations.push(self.read_annotation_empty(&mut a));
+                            annotations.push(self.read_annotation_empty(&mut a)?);
                         }
                         _ => {
                             return Err(self.csdl_err(format!(
@@ -508,10 +501,12 @@ impl<R: BufRead> CsdlReader<R> {
         attrs: &mut Vec<(String, String)>,
     ) -> Result<PropertyValue> {
         let property = attr_value(attrs, "Property").unwrap_or_default();
-        let inline = find_inline_constant_idx(attrs).map(|idx| {
-            let (k, v) = attrs.swap_remove(idx);
-            constant_attr_to_expr(&k, v)
-        });
+        let inline = find_inline_constant_idx(attrs)
+            .map(|idx| {
+                let (k, v) = attrs.swap_remove(idx);
+                constant_attr_to_expr(&k, v)
+            })
+            .transpose()?;
         let mut body_values: Vec<CsdlAnnotationExpression> = Vec::new();
         let mut annotations: Vec<Annotation> = Vec::new();
         loop {
@@ -528,7 +523,7 @@ impl<R: BufRead> CsdlReader<R> {
                 Event::Empty(e) => {
                     let (n, mut a) = parse_start(&e)?;
                     if n == "Annotation" {
-                        annotations.push(self.read_annotation_empty(&mut a));
+                        annotations.push(self.read_annotation_empty(&mut a)?);
                     } else {
                         body_values.push(build_expr_from_empty(&n, a));
                     }
@@ -560,10 +555,12 @@ impl<R: BufRead> CsdlReader<R> {
         let qualifier = attr_value(attrs, "Qualifier");
         let target = attr_value(attrs, "Target");
         // Inline-constant attribute (e.g. String="x"), if present.
-        let inline = find_inline_constant_idx(attrs).map(|idx| {
-            let (k, v) = attrs.swap_remove(idx);
-            constant_attr_to_expr(&k, v)
-        });
+        let inline = find_inline_constant_idx(attrs)
+            .map(|idx| {
+                let (k, v) = attrs.swap_remove(idx);
+                constant_attr_to_expr(&k, v)
+            })
+            .transpose()?;
         let body = self.read_expression_list("Annotation")?;
         let expression = match inline {
             Some(e) => Some(e),
@@ -580,23 +577,23 @@ impl<R: BufRead> CsdlReader<R> {
 
     /// Empty-element form (`<Annotation Term=".."/>`). Marker form
     /// (no inline constant attr) preserves the absence of an expression.
-    fn read_annotation_empty(&mut self, attrs: &mut Vec<(String, String)>) -> Annotation {
+    fn read_annotation_empty(&mut self, attrs: &mut Vec<(String, String)>) -> Result<Annotation> {
         let term = attr_value(attrs, "Term").unwrap_or_default();
         let qualifier = attr_value(attrs, "Qualifier");
         let target = attr_value(attrs, "Target");
         let expression = match find_inline_constant_idx(attrs) {
             Some(idx) => {
                 let (k, v) = attrs.swap_remove(idx);
-                Some(constant_attr_to_expr(&k, v))
+                Some(constant_attr_to_expr(&k, v)?)
             }
             None => None,
         };
-        Annotation {
+        Ok(Annotation {
             term,
             qualifier,
             target,
             expression,
-        }
+        })
     }
 
     fn expect_end(&mut self, name: &str) -> Result<()> {
@@ -758,18 +755,30 @@ fn find_inline_constant_idx(attrs: &[(String, String)]) -> Option<usize> {
         .position(|(k, _)| INLINE_CONSTANT_ATTRS.contains(&k.as_str()))
 }
 
-fn constant_attr_to_expr(key: &str, value: String) -> CsdlAnnotationExpression {
-    match key {
+fn constant_attr_to_expr(key: &str, value: String) -> Result<CsdlAnnotationExpression> {
+    Ok(match key {
         "Binary" => CsdlAnnotationExpression::Binary(value.into_bytes()),
-        "Bool" => CsdlAnnotationExpression::Bool(value.eq_ignore_ascii_case("true")),
+        "Bool" => CsdlAnnotationExpression::Bool(match value.as_str() {
+            "true" => true,
+            "false" => false,
+            _ => return Err(Error::Csdl(format!("invalid Bool constant: {value}"))),
+        }),
         "Date" => CsdlAnnotationExpression::Date(value),
         "DateTimeOffset" => CsdlAnnotationExpression::DateTimeOffset(value),
         "Decimal" => CsdlAnnotationExpression::Decimal(value),
         "Duration" => CsdlAnnotationExpression::Duration(value),
         "EnumMember" => CsdlAnnotationExpression::EnumMember(value),
-        "Float" => CsdlAnnotationExpression::Float(value.parse().unwrap_or(0.0)),
+        "Float" => CsdlAnnotationExpression::Float(
+            value
+                .parse()
+                .map_err(|_| Error::Csdl(format!("invalid Float constant: {value}")))?,
+        ),
         "Guid" => CsdlAnnotationExpression::Guid(value),
-        "Int" => CsdlAnnotationExpression::Int(value.parse().unwrap_or(0)),
+        "Int" => CsdlAnnotationExpression::Int(
+            value
+                .parse()
+                .map_err(|_| Error::Csdl(format!("invalid Int constant: {value}")))?,
+        ),
         "String" => CsdlAnnotationExpression::String(value),
         "TimeOfDay" => CsdlAnnotationExpression::TimeOfDay(value),
         "AnnotationPath" => CsdlAnnotationExpression::AnnotationPath(value),
@@ -777,5 +786,5 @@ fn constant_attr_to_expr(key: &str, value: String) -> CsdlAnnotationExpression {
         "Path" => CsdlAnnotationExpression::Path(value),
         "PropertyPath" => CsdlAnnotationExpression::PropertyPath(value),
         _ => CsdlAnnotationExpression::String(value),
-    }
+    })
 }
