@@ -384,7 +384,7 @@ fn emit_property(
     namespace: &str,
 ) -> Result<()> {
     let is_collection = take_bool(&mut obj, "$Collection").unwrap_or(false);
-    let raw_type = take_string(&mut obj, "$Type");
+    let raw_type = take_string(&mut obj, "$Type").or_else(|| Some("Edm.String".into()));
     let nullable = take_bool(&mut obj, "$Nullable");
     let max_length = take_string_or_number(&mut obj, "$MaxLength");
     let precision = take_string_or_number(&mut obj, "$Precision");
@@ -393,10 +393,9 @@ fn emit_property(
     let unicode = take_bool(&mut obj, "$Unicode");
     let default_value = take_string(&mut obj, "$DefaultValue");
 
-    // Literal pass-through: only emit Type/Nullable when the JSON source
-    // carries one. JSON's defaults ($Type=Edm.String, $Nullable=false) live
-    // in the semantic layer, not the model — same way the XML reader doesn't
-    // materialize XML's own defaults.
+    // Materialize JSON's default type: the shared model cannot otherwise
+    // distinguish an omitted JSON type from a missing required XML Type.
+    // Nullable remains authored here until format-specific facets are modeled.
     let mut attrs = vec![("Name".into(), name.into())];
     push_type_attrs(&mut attrs, raw_type.as_deref(), is_collection, namespace);
     if let Some(n) = nullable {

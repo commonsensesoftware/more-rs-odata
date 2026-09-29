@@ -23,7 +23,7 @@ fn format_equivalence_case_list_matches_fixture_pairs() {
 #[rstest]
 #[case::enum_sample("enum_sample", ExpectedEquivalence::Equivalent)]
 #[case::extras_sample("extras_sample", ExpectedEquivalence::Equivalent)]
-#[case::record_sample("record_sample", ExpectedEquivalence::Equivalent)]
+#[case::record_sample("record_sample", ExpectedEquivalence::KnownMismatch("JSON defaults to Edm.String; XML omits required Type"))]
 #[case::reporting_line("reporting_line", ExpectedEquivalence::Equivalent)]
 #[case::example89(
     "example89",
@@ -98,7 +98,7 @@ fn expected_equivalence() -> BTreeMap<String, ExpectedEquivalence> {
             "import_sample",
             ExpectedEquivalence::KnownMismatch("schema alias differs"),
         ),
-        ("record_sample", ExpectedEquivalence::Equivalent),
+        ("record_sample", ExpectedEquivalence::KnownMismatch("JSON defaults to Edm.String; XML omits required Type")),
         ("reporting_line", ExpectedEquivalence::Equivalent),
         (
             "types_sample",

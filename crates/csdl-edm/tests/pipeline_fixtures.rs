@@ -229,10 +229,7 @@ fn resolve_and_validate_fixture_expectations() {
         ("enum_sample.csdl.xml", ExpectedOutcome::Pass),
         (
             "example89.csdl.json",
-            ExpectedOutcome::ResolveMissingType {
-                element_kind: "Property",
-                element_name: "ID",
-            },
+            ExpectedOutcome::Pass,
         ),
         (
             "example89.csdl.xml",
@@ -266,10 +263,7 @@ fn resolve_and_validate_fixture_expectations() {
         ),
         (
             "record_sample.csdl.json",
-            ExpectedOutcome::ResolveMissingType {
-                element_kind: "Property",
-                element_name: "ISBN",
-            },
+            ExpectedOutcome::Pass,
         ),
         (
             "record_sample.csdl.xml",
