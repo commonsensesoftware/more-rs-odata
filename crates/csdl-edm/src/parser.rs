@@ -286,7 +286,7 @@ fn parse_complex_type(raw: &RawElement) -> io::Result<ComplexType> {
 fn parse_enum_type(raw: &RawElement) -> io::Result<EnumType> {
     let name = raw_attr(raw, "Name").unwrap_or("").to_string();
     let underlying_type = raw_attr(raw, "UnderlyingType").map(str::to_string);
-    let is_flags = raw_attr_bool(raw, "IsFlags");
+    let is_flags = checked_bool(raw, "IsFlags")?;
 
     let members = raw
         .children
@@ -306,7 +306,16 @@ fn parse_enum_type(raw: &RawElement) -> io::Result<EnumType> {
 
 fn parse_enum_member(raw: &RawElement) -> io::Result<EnumMember> {
     let name = raw_attr(raw, "Name").unwrap_or("").to_string();
-    let value = raw_attr(raw, "Value").and_then(|v| v.parse::<i64>().ok());
+    let value = raw_attr(raw, "Value")
+        .map(|v| {
+            v.parse::<i64>().map_err(|_| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "Enumeration Value must be an Int64 integer",
+                )
+            })
+        })
+        .transpose()?;
     let annotations = raw
         .children
         .iter()

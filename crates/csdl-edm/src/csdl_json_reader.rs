@@ -301,6 +301,12 @@ fn emit_enum_type(
     name: &str,
     mut obj: Map<String, Value>,
 ) -> Result<()> {
+    if obj.get("$IsFlags").is_some_and(|v| !v.is_boolean()) {
+        return Err(Error::Csdl("$IsFlags must be boolean".into()));
+    }
+    if obj.get("$UnderlyingType").is_some_and(|v| !v.is_string()) {
+        return Err(Error::Csdl("$UnderlyingType must be a string".into()));
+    }
     let underlying = take_string(&mut obj, "$UnderlyingType");
     let is_flags = take_bool(&mut obj, "$IsFlags");
 
@@ -333,10 +339,10 @@ fn emit_enum_type(
             Value::String(s) => s.parse::<i64>().ok(),
             _ => None,
         };
-        let mut member_attrs = vec![("Name".into(), key)];
-        if let Some(v) = val_i64 {
-            member_attrs.push(("Value".into(), v.to_string()));
-        }
+        let v = val_i64.ok_or_else(|| {
+            Error::Csdl(format!("Enumeration member {key} requires an Int64 value"))
+        })?;
+        let member_attrs = vec![("Name".into(), key), ("Value".into(), v.to_string())];
         start(out, "Member", member_attrs);
         end(out, "Member");
     }

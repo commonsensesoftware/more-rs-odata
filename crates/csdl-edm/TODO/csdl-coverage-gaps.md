@@ -95,6 +95,9 @@ Related detailed design TODO:
 
 ## 3. Primitive and Type Coverage
 
+- [x] Enumeration underlying integer types, flags, explicit/implicit values,
+      numeric range checks, and XML implicit-to-JSON numeric serialization.
+
 - [ ] Expand primitive support beyond the currently implemented subset where
       CSDL inputs require it.
 - [x] Track unsupported primitive names as explicit expected failures with clear

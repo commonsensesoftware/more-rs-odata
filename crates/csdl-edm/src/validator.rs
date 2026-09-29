@@ -21,6 +21,10 @@ enum KeyPathClassification {
 
 #[derive(Debug, Clone)]
 pub enum ValidationError {
+    InvalidEnum {
+        name: String,
+        reason: &'static str,
+    },
     InvalidFacet {
         element: String,
         facet: &'static str,

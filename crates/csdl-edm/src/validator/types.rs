@@ -6,6 +6,7 @@ pub(super) fn validate(model: &Model, version: &str) -> Vec<ValidationError> {
     let mut errors = Vec::new();
     for element in &model.elements {
         match element.as_ref() {
+            SchemaElement::EnumType(t) => enumeration(t, &mut errors),
             SchemaElement::TypeDefinition(t) => check(
                 &t.name,
                 Some(&t.underlying_type),
@@ -39,10 +40,52 @@ pub(super) fn validate(model: &Model, version: &str) -> Vec<ValidationError> {
                 version,
                 &mut errors,
             ),
-            _ => {}
         }
     }
     errors
+}
+
+fn enumeration(t: &EnumType, errors: &mut Vec<ValidationError>) {
+    use PrimitiveType::*;
+    let mut fail = |reason| {
+        errors.push(ValidationError::InvalidEnum {
+            name: t.name.clone(),
+            reason,
+        })
+    };
+    let range = match t.underlying_type {
+        Byte => 0..=255,
+        SByte => -128..=127,
+        Int16 => -32768..=32767,
+        Int32 => i32::MIN as i64..=i32::MAX as i64,
+        Int64 => i64::MIN..=i64::MAX,
+        _ => {
+            fail("Enumeration underlying type must be Byte, SByte, Int16, Int32, or Int64");
+            return;
+        }
+    };
+    if t.members.is_empty() {
+        fail("Enumeration must contain at least one member");
+    }
+    let explicit = t.members.iter().filter(|m| m.value.is_some()).count();
+    if explicit != 0 && explicit != t.members.len() {
+        fail("Enumeration member values must be all explicit or all implicit");
+    }
+    if t.is_flags
+        && t.members
+            .iter()
+            .any(|m| m.value.is_none() || m.resolved_value < 0)
+    {
+        fail("Flags members require explicit non-negative values");
+    }
+    for member in &t.members {
+        if !range.contains(&member.resolved_value) {
+            fail("Enumeration member value is outside its underlying integer range");
+        }
+        if !super::is_simple_identifier(&member.name) {
+            fail("Enumeration member name must be a simple identifier");
+        }
+    }
 }
 
 fn properties(

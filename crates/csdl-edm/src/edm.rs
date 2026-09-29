@@ -267,6 +267,8 @@ impl ComplexType {
 #[derive(Debug)]
 pub struct EnumType {
     pub name: String,
+    pub underlying_type: PrimitiveType,
+    pub is_flags: bool,
     pub members: Vec<Arc<EnumMember>>,
 }
 
@@ -274,6 +276,8 @@ pub struct EnumType {
 pub struct EnumMember {
     pub name: String,
     pub value: Option<i64>,
+    /// Numeric value after applying XML's ordered implicit-value rule.
+    pub resolved_value: i64,
 }
 
 #[derive(Debug)]

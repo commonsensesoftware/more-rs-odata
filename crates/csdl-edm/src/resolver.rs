@@ -168,15 +168,26 @@ impl Resolver {
                     let members = en
                         .members
                         .iter()
-                        .map(|m| {
+                        .enumerate()
+                        .map(|(index, m)| {
                             Arc::new(EnumMember {
                                 name: m.name.clone(),
                                 value: m.value,
+                                resolved_value: m.value.unwrap_or(index as i64),
                             })
                         })
                         .collect();
                     let arc = Arc::new(EnumType {
                         name: en.name.clone(),
+                        underlying_type: resolve_primitive(
+                            en.underlying_type.as_deref().unwrap_or("Edm.Int32"),
+                        )
+                        .ok_or_else(|| {
+                            ResolveError::UnknownType(
+                                en.underlying_type.clone().unwrap_or_default(),
+                            )
+                        })?,
+                        is_flags: en.is_flags.unwrap_or(false),
                         members,
                     });
                     insert_unique(&mut enums, &en.name, arc, ns)?;

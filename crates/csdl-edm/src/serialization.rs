@@ -1301,10 +1301,10 @@ fn enum_type_to_json(enum_: &EnumType) -> Value {
         }
     }
     insert_optional_bool(&mut obj, "$IsFlags", enum_.is_flags);
-    for member in &enum_.members {
+    for (index, member) in enum_.members.iter().enumerate() {
         let v = match member.value {
             Some(v) => Value::Number(Number::from(v)),
-            None => Value::Null,
+            None => Value::Number(Number::from(index as u64)),
         };
         if !obj.contains_key(&member.name) {
             obj.insert(member.name.clone(), v);
