@@ -1665,6 +1665,7 @@ fn max_length_facet_value(value: MaxLengthFacet) -> Value {
 fn scale_facet_value(value: ScaleFacet) -> Value {
     match value {
         ScaleFacet::Number(n) => Value::Number(Number::from(n)),
+        ScaleFacet::Floating => Value::String("floating".into()),
         ScaleFacet::Variable => Value::String("variable".to_string()),
     }
 }

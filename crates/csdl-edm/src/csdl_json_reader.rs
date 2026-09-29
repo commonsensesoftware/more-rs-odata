@@ -403,6 +403,7 @@ fn emit_property(
     mut obj: Map<String, Value>,
     namespace: &str,
 ) -> Result<()> {
+    validate_callable_type(&obj)?;
     let is_collection = take_bool(&mut obj, "$Collection").unwrap_or(false);
     let raw_type = take_string(&mut obj, "$Type").or_else(|| Some("Edm.String".into()));
     let nullable = Some(take_bool(&mut obj, "$Nullable").unwrap_or(false));
@@ -836,6 +837,7 @@ fn emit_type_definition(
     name: &str,
     mut obj: Map<String, Value>,
 ) -> Result<()> {
+    validate_callable_type(&obj)?;
     let underlying = take_string(&mut obj, "$UnderlyingType").unwrap_or_default();
     let max_length = take_string_or_number(&mut obj, "$MaxLength");
     let precision = take_string_or_number(&mut obj, "$Precision");
@@ -869,6 +871,7 @@ fn emit_type_definition(
 }
 
 fn validate_callable_type(value: &Map<String, Value>) -> Result<()> {
+    validate_facets(value)?;
     if value.get("$Type").is_some_and(|value| !value.is_string()) {
         return Err(Error::Csdl("Operation type must be a string".into()));
     }
@@ -880,12 +883,32 @@ fn validate_callable_type(value: &Map<String, Value>) -> Result<()> {
     Ok(())
 }
 
+fn validate_facets(value: &Map<String, Value>) -> Result<()> {
+    for key in ["$MaxLength", "$Precision", "$Scale", "$SRID"] {
+        if value
+            .get(key)
+            .is_some_and(|v| !v.is_string() && !v.is_u64())
+        {
+            return Err(Error::Csdl(format!(
+                "{key} requires a non-negative integer or supported symbolic value"
+            )));
+        }
+    }
+    for key in ["$Unicode", "$Nullable", "$Collection"] {
+        if value.get(key).is_some_and(|v| !v.is_boolean()) {
+            return Err(Error::Csdl(format!("{key} must be boolean")));
+        }
+    }
+    Ok(())
+}
+
 fn emit_term(
     out: &mut Vec<SyntaxUnit>,
     name: &str,
     mut obj: Map<String, Value>,
     namespace: &str,
 ) -> Result<()> {
+    validate_callable_type(&obj)?;
     let is_collection = take_bool(&mut obj, "$Collection").unwrap_or(false);
     let raw_type = take_string(&mut obj, "$Type");
     let base_term = take_string(&mut obj, "$BaseTerm");

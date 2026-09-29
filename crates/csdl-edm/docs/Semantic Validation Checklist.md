@@ -41,9 +41,9 @@ This checklist is now split into:
 
 ### C. Structural property semantics
 
-- [ ] No conflicts with inherited property/navigation names.
+- [x] No conflicts with inherited property/navigation names.
 - [ ] Default values are type-compatible.
-- [ ] Facets (`Precision`, `Scale`, `MaxLength`) are type-valid.
+- [x] Facets (`Precision`, `Scale`, `MaxLength`, `Unicode`, `SRID`) are type-valid; type-definition facets cannot be re-specified.
 
 ### D. Complex type semantics
 

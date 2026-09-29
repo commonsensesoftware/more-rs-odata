@@ -86,7 +86,7 @@ Related detailed design TODO:
       non-nullable paths, aliases, non-empty declarations, and versioned related-entity keys.
 - [ ] Add inheritance-related validation (base-type cycles, key compatibility,
       member consistency) (key compatibility is now enforced in resolver; broader validation remains).
-- [ ] Add navigation validation (partner consistency, referential constraints,
+- [x] Add navigation validation (partner consistency, referential constraints,
       containment rules).
 - [x] Add container-level binding/import validation, including entity-set keys,
       path/target kinds and multiplicity, target type compatibility, overload
@@ -97,10 +97,11 @@ Related detailed design TODO:
 
 - [ ] Expand primitive support beyond the currently implemented subset where
       CSDL inputs require it.
-- [ ] Track unsupported primitive names as explicit expected failures with clear
+- [x] Track unsupported primitive names as explicit expected failures with clear
       diagnostics.
-- [ ] Introduce typed facet/value unions in parse+serialize+resolver model:
-      `MaxLength` (`int | max`), `Scale` (`int | variable`), `SRID` (`int | variable`), and typed `AppliesTo` target set.
+- [x] Introduce typed facet/value unions in parse+serialize+resolver model:
+      `MaxLength` (`int | max`), `Scale` (`int | variable | floating`), `SRID` (`int | variable`), and typed `AppliesTo` target set (unknown future targets are preserved).
+      Facet applicability, ranges, type-definition overrides, and versioned floating scale are validated.
 
 ## 4. Tests and Compatibility
 

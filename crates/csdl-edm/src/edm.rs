@@ -4,9 +4,117 @@
 
 use std::sync::{Arc, OnceLock, Weak};
 
+/// Authored facets. Type-definition facets are retained separately to detect
+/// forbidden re-specification before calculating effective constraints.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TypeFacets {
+    pub max_length: Option<crate::csdl::MaxLengthFacet>,
+    pub precision: Option<String>,
+    pub scale: Option<crate::csdl::ScaleFacet>,
+    pub srid: Option<crate::csdl::SridFacet>,
+    pub unicode: Option<bool>,
+}
+
+/// Open set: future applicability values survive resolution.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum AnnotationTargetKind {
+    Action,
+    ActionImport,
+    Annotation,
+    Apply,
+    Cast,
+    Collection,
+    ComplexType,
+    EntityContainer,
+    EntitySet,
+    EntityType,
+    EnumType,
+    Function,
+    FunctionImport,
+    If,
+    Include,
+    IsOf,
+    LabeledElement,
+    Member,
+    NavigationProperty,
+    Null,
+    OnDelete,
+    Parameter,
+    Property,
+    PropertyValue,
+    Record,
+    Reference,
+    ReferentialConstraint,
+    ReturnType,
+    Schema,
+    Singleton,
+    Term,
+    TypeDefinition,
+    UrlRef,
+    Other(String),
+}
+
+impl AnnotationTargetKind {
+    pub fn parse(value: &str) -> Self {
+        match value {
+            "Action" => Self::Action,
+            "ActionImport" => Self::ActionImport,
+            "Annotation" => Self::Annotation,
+            "Apply" => Self::Apply,
+            "Cast" => Self::Cast,
+            "Collection" => Self::Collection,
+            "ComplexType" => Self::ComplexType,
+            "EntityContainer" => Self::EntityContainer,
+            "EntitySet" => Self::EntitySet,
+            "EntityType" => Self::EntityType,
+            "EnumType" => Self::EnumType,
+            "Function" => Self::Function,
+            "FunctionImport" => Self::FunctionImport,
+            "If" => Self::If,
+            "Include" => Self::Include,
+            "IsOf" => Self::IsOf,
+            "LabeledElement" => Self::LabeledElement,
+            "Member" => Self::Member,
+            "NavigationProperty" => Self::NavigationProperty,
+            "Null" => Self::Null,
+            "OnDelete" => Self::OnDelete,
+            "Parameter" => Self::Parameter,
+            "Property" => Self::Property,
+            "PropertyValue" => Self::PropertyValue,
+            "Record" => Self::Record,
+            "Reference" => Self::Reference,
+            "ReferentialConstraint" => Self::ReferentialConstraint,
+            "ReturnType" => Self::ReturnType,
+            "Schema" => Self::Schema,
+            "Singleton" => Self::Singleton,
+            "Term" => Self::Term,
+            "TypeDefinition" => Self::TypeDefinition,
+            "UrlRef" => Self::UrlRef,
+            other => Self::Other(other.to_owned()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum PrimitiveType {
     Binary,
+    Stream,
+    Geography,
+    GeographyPoint,
+    GeographyLineString,
+    GeographyPolygon,
+    GeographyMultiPoint,
+    GeographyMultiLineString,
+    GeographyMultiPolygon,
+    GeographyCollection,
+    Geometry,
+    GeometryPoint,
+    GeometryLineString,
+    GeometryPolygon,
+    GeometryMultiPoint,
+    GeometryMultiLineString,
+    GeometryMultiPolygon,
+    GeometryCollection,
     Byte,
     Date,
     DateTimeOffset,
@@ -170,12 +278,17 @@ pub struct EnumMember {
 
 #[derive(Debug)]
 pub struct TypeDefinition {
+    pub facets: TypeFacets,
     pub name: String,
     pub underlying_type: PrimitiveType,
 }
 
 #[derive(Debug)]
 pub struct Term {
+    pub nullable: Option<bool>,
+    pub default_value: Option<String>,
+    pub applies_to: Vec<AnnotationTargetKind>,
+    pub facets: TypeFacets,
     pub name: String,
     pub is_collection: bool,
     pub ty: OnceLock<TermType>,
@@ -206,6 +319,8 @@ pub struct Action {
 
 #[derive(Debug)]
 pub struct OperationParameter {
+    pub default_value: Option<String>,
+    pub facets: TypeFacets,
     pub name: String,
     pub ty: TermType,
     pub is_collection: bool,
@@ -214,6 +329,7 @@ pub struct OperationParameter {
 
 #[derive(Debug)]
 pub struct OperationReturnType {
+    pub facets: TypeFacets,
     pub ty: TermType,
     pub is_collection: bool,
     pub nullable: Option<bool>,
@@ -227,6 +343,7 @@ impl Term {
 
 #[derive(Debug)]
 pub struct Property {
+    pub facets: TypeFacets,
     pub name: String,
     pub ty: ResolvedType,
     pub is_collection: bool,

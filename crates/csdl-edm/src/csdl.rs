@@ -273,13 +273,17 @@ impl MaxLengthFacet {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScaleFacet {
+    Floating,
     Number(u64),
     Variable,
 }
 
 impl ScaleFacet {
     pub fn parse(raw: &str) -> Option<Self> {
-        if raw == "variable" {
+        if raw.eq_ignore_ascii_case("floating") {
+            return Some(Self::Floating);
+        }
+        if raw.eq_ignore_ascii_case("variable") {
             return Some(Self::Variable);
         }
         raw.parse::<u64>().ok().map(Self::Number)
@@ -289,6 +293,7 @@ impl ScaleFacet {
         match self {
             Self::Number(value) => value.to_string(),
             Self::Variable => "variable".to_string(),
+            Self::Floating => "floating".to_string(),
         }
     }
 }

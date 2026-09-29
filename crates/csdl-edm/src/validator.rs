@@ -1,5 +1,7 @@
 //! Semantic validation that is intentionally separate from reference resolution.
 
+mod types;
+
 use std::collections::HashSet;
 
 use crate::edm::{
@@ -19,6 +21,11 @@ enum KeyPathClassification {
 
 #[derive(Debug, Clone)]
 pub enum ValidationError {
+    InvalidFacet {
+        element: String,
+        facet: &'static str,
+        reason: &'static str,
+    },
     InvalidKey {
         entity: String,
         key: String,
@@ -119,7 +126,7 @@ pub fn validate_document(document: &DocumentModel) -> Result<(), Vec<ValidationE
     let mut errors = Vec::new();
 
     for schema in &document.schemas {
-        errors.extend(engine.validate_model_collect(schema.as_ref()));
+        errors.extend(engine.validate_model_collect(schema.as_ref(), &document.version));
         if document.version == "4.0" {
             for element in &schema.elements {
                 if let SchemaElement::EntityType(entity) = element.as_ref() {
@@ -230,7 +237,7 @@ fn complex_contains_navigation(
 
 pub fn validate_model(model: &Model) -> Result<(), Vec<ValidationError>> {
     let engine = ValidatorEngine::default();
-    let errors = engine.validate_model_collect(model);
+    let errors = engine.validate_model_collect(model, "4.01");
 
     if errors.is_empty() {
         Ok(())
@@ -297,9 +304,10 @@ impl Default for ValidatorEngine {
 }
 
 impl ValidatorEngine {
-    fn validate_model_collect(&self, model: &Model) -> Vec<ValidationError> {
+    fn validate_model_collect(&self, model: &Model, version: &str) -> Vec<ValidationError> {
         let mut ctx = ValidationContext::default();
         self.walk_model(model, &mut ctx);
+        ctx.errors.extend(types::validate(model, version));
         ctx.errors
     }
 

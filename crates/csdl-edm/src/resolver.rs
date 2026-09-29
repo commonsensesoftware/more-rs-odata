@@ -185,6 +185,13 @@ impl Resolver {
                     let primitive = resolve_primitive(&td.underlying_type)
                         .ok_or_else(|| ResolveError::UnknownType(td.underlying_type.clone()))?;
                     let arc = Arc::new(TypeDefinition {
+                        facets: TypeFacets {
+                            max_length: td.max_length,
+                            precision: td.precision.clone(),
+                            scale: td.scale,
+                            srid: td.srid,
+                            unicode: td.unicode,
+                        },
                         name: td.name.clone(),
                         underlying_type: primitive,
                     });
@@ -192,6 +199,20 @@ impl Resolver {
                 }
                 csdl::SchemaElement::Term(t) => {
                     let arc = Arc::new(Term {
+                        facets: TypeFacets {
+                            max_length: t.max_length,
+                            precision: t.precision.clone(),
+                            scale: t.scale,
+                            srid: t.srid,
+                            unicode: t.unicode,
+                        },
+                        nullable: t.nullable,
+                        default_value: t.default_value.clone(),
+                        applies_to: t
+                            .applies_to
+                            .iter()
+                            .map(|s| AnnotationTargetKind::parse(s))
+                            .collect(),
                         name: t.name.clone(),
                         is_collection: t.is_collection,
                         ty: std::sync::OnceLock::new(),
@@ -802,6 +823,13 @@ fn resolve_properties(
 
             let ty = resolve_type(type_name, complexes, enums, type_definitions, ns, aliases)?;
             Ok(Arc::new(Property {
+                facets: TypeFacets {
+                    max_length: p.max_length,
+                    precision: p.precision.clone(),
+                    scale: p.scale,
+                    srid: p.srid,
+                    unicode: p.unicode,
+                },
                 name: p.name.clone(),
                 ty,
                 is_collection: p.is_collection,
@@ -1296,6 +1324,14 @@ fn resolve_operation_parameters(
                 aliases,
             )?;
             Ok(OperationParameter {
+                facets: TypeFacets {
+                    max_length: parameter.max_length,
+                    precision: parameter.precision.clone(),
+                    scale: parameter.scale,
+                    srid: parameter.srid,
+                    unicode: parameter.unicode,
+                },
+                default_value: parameter.default_value.clone(),
                 name: parameter.name.clone(),
                 ty,
                 is_collection: parameter.is_collection,
@@ -1338,6 +1374,13 @@ fn resolve_operation_return_type(
         aliases,
     )?;
     Ok(Some(OperationReturnType {
+        facets: TypeFacets {
+            max_length: return_type.max_length,
+            precision: return_type.precision.clone(),
+            scale: return_type.scale,
+            srid: return_type.srid,
+            unicode: return_type.unicode,
+        },
         ty,
         is_collection: return_type.is_collection,
         nullable: return_type.nullable,
@@ -1347,6 +1390,23 @@ fn resolve_operation_return_type(
 fn resolve_primitive(type_name: &str) -> Option<PrimitiveType> {
     let rest = type_name.strip_prefix("Edm.")?;
     match rest {
+        "Stream" => Some(PrimitiveType::Stream),
+        "Geography" => Some(PrimitiveType::Geography),
+        "GeographyPoint" => Some(PrimitiveType::GeographyPoint),
+        "GeographyLineString" => Some(PrimitiveType::GeographyLineString),
+        "GeographyPolygon" => Some(PrimitiveType::GeographyPolygon),
+        "GeographyMultiPoint" => Some(PrimitiveType::GeographyMultiPoint),
+        "GeographyMultiLineString" => Some(PrimitiveType::GeographyMultiLineString),
+        "GeographyMultiPolygon" => Some(PrimitiveType::GeographyMultiPolygon),
+        "GeographyCollection" => Some(PrimitiveType::GeographyCollection),
+        "Geometry" => Some(PrimitiveType::Geometry),
+        "GeometryPoint" => Some(PrimitiveType::GeometryPoint),
+        "GeometryLineString" => Some(PrimitiveType::GeometryLineString),
+        "GeometryPolygon" => Some(PrimitiveType::GeometryPolygon),
+        "GeometryMultiPoint" => Some(PrimitiveType::GeometryMultiPoint),
+        "GeometryMultiLineString" => Some(PrimitiveType::GeometryMultiLineString),
+        "GeometryMultiPolygon" => Some(PrimitiveType::GeometryMultiPolygon),
+        "GeometryCollection" => Some(PrimitiveType::GeometryCollection),
         "Binary" => Some(PrimitiveType::Binary),
         "Boolean" => Some(PrimitiveType::Boolean),
         "Byte" => Some(PrimitiveType::Byte),

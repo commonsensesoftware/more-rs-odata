@@ -343,14 +343,14 @@ fn parse_property_ref(raw: &RawElement) -> io::Result<PropertyRef> {
 fn parse_property(raw: &RawElement) -> io::Result<Property> {
     let name = raw_attr(raw, "Name").unwrap_or("").to_string();
     let (type_name, is_collection) = raw_type_attr(raw, "Type");
-    let nullable = raw_attr_bool(raw, "Nullable");
+    let nullable = checked_bool(raw, "Nullable")?;
     let max_length = raw_attr(raw, "MaxLength")
         .map(parse_max_length_facet)
         .transpose()?;
     let precision = raw_attr(raw, "Precision").map(str::to_string);
     let scale = raw_attr(raw, "Scale").map(parse_scale_facet).transpose()?;
     let srid = raw_attr(raw, "SRID").map(parse_srid_facet).transpose()?;
-    let unicode = raw_attr_bool(raw, "Unicode");
+    let unicode = checked_bool(raw, "Unicode")?;
     let default_value = raw_attr(raw, "DefaultValue").map(str::to_string);
     let annotations = raw
         .children
@@ -385,7 +385,7 @@ fn parse_navigation_property(raw: &RawElement) -> io::Result<NavigationProperty>
     }
     let name = raw_attr(raw, "Name").unwrap_or("").to_string();
     let (type_name, is_collection) = raw_type_attr(raw, "Type");
-    let nullable = raw_attr_bool(raw, "Nullable");
+    let nullable = checked_bool(raw, "Nullable")?;
     let partner = raw_attr(raw, "Partner").map(str::to_string);
     let contains_target = raw_attr_bool(raw, "ContainsTarget");
 
@@ -578,7 +578,7 @@ fn parse_type_definition(raw: &RawElement) -> io::Result<TypeDefinition> {
     let precision = raw_attr(raw, "Precision").map(str::to_string);
     let scale = raw_attr(raw, "Scale").map(parse_scale_facet).transpose()?;
     let srid = raw_attr(raw, "SRID").map(parse_srid_facet).transpose()?;
-    let unicode = raw_attr_bool(raw, "Unicode");
+    let unicode = checked_bool(raw, "Unicode")?;
     let annotations = raw
         .children
         .iter()
@@ -606,14 +606,14 @@ fn parse_term(raw: &RawElement) -> io::Result<Term> {
     let applies_to = raw_attr(raw, "AppliesTo")
         .map(|s| s.split_whitespace().map(str::to_string).collect::<Vec<_>>())
         .unwrap_or_default();
-    let nullable = raw_attr_bool(raw, "Nullable");
+    let nullable = checked_bool(raw, "Nullable")?;
     let max_length = raw_attr(raw, "MaxLength")
         .map(parse_max_length_facet)
         .transpose()?;
     let precision = raw_attr(raw, "Precision").map(str::to_string);
     let scale = raw_attr(raw, "Scale").map(parse_scale_facet).transpose()?;
     let srid = raw_attr(raw, "SRID").map(parse_srid_facet).transpose()?;
-    let unicode = raw_attr_bool(raw, "Unicode");
+    let unicode = checked_bool(raw, "Unicode")?;
     let annotations = raw
         .children
         .iter()
@@ -650,14 +650,14 @@ fn parse_parameter(raw: &RawElement) -> io::Result<Parameter> {
         name: raw_attr(raw, "Name").unwrap_or("").to_string(),
         type_name,
         is_collection,
-        nullable: raw_attr_bool(raw, "Nullable"),
+        nullable: checked_bool(raw, "Nullable")?,
         max_length: raw_attr(raw, "MaxLength")
             .map(parse_max_length_facet)
             .transpose()?,
         precision: raw_attr(raw, "Precision").map(str::to_string),
         scale: raw_attr(raw, "Scale").map(parse_scale_facet).transpose()?,
         srid: raw_attr(raw, "SRID").map(parse_srid_facet).transpose()?,
-        unicode: raw_attr_bool(raw, "Unicode"),
+        unicode: checked_bool(raw, "Unicode")?,
         default_value: raw_attr(raw, "DefaultValue").map(str::to_string),
         annotations,
     })
@@ -674,14 +674,14 @@ fn parse_return_type(raw: &RawElement) -> io::Result<ReturnType> {
     Ok(ReturnType {
         type_name,
         is_collection,
-        nullable: raw_attr_bool(raw, "Nullable"),
+        nullable: checked_bool(raw, "Nullable")?,
         max_length: raw_attr(raw, "MaxLength")
             .map(parse_max_length_facet)
             .transpose()?,
         precision: raw_attr(raw, "Precision").map(str::to_string),
         scale: raw_attr(raw, "Scale").map(parse_scale_facet).transpose()?,
         srid: raw_attr(raw, "SRID").map(parse_srid_facet).transpose()?,
-        unicode: raw_attr_bool(raw, "Unicode"),
+        unicode: checked_bool(raw, "Unicode")?,
         annotations,
     })
 }
@@ -783,7 +783,7 @@ fn parse_singleton(raw: &RawElement) -> io::Result<Singleton> {
     Ok(Singleton {
         name,
         type_name,
-        nullable: raw_attr_bool(raw, "Nullable"),
+        nullable: checked_bool(raw, "Nullable")?,
         include_in_service_document: raw_attr_bool(raw, "IncludeInServiceDocument"),
         navigation_property_bindings,
         annotations,
@@ -844,6 +844,19 @@ fn raw_attr<'a>(raw: &'a RawElement, key: &str) -> Option<&'a str> {
     raw.attributes
         .iter()
         .find_map(|(k, v)| (k == key).then_some(v.as_str()))
+}
+
+fn checked_bool(raw: &RawElement, key: &str) -> io::Result<Option<bool>> {
+    raw_attr(raw, key)
+        .map(|v| match v {
+            "true" => Ok(true),
+            "false" => Ok(false),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("{key} must be true or false"),
+            )),
+        })
+        .transpose()
 }
 
 fn raw_attr_bool(raw: &RawElement, key: &str) -> Option<bool> {
