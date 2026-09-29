@@ -1,3 +1,5 @@
+#![cfg(all(feature = "resolver", feature = "validator"))]
+
 use csdl_edm::{parser, resolver::Resolver, validator::validate_document};
 
 fn documents(body: &str) -> Vec<csdl_edm::CsdlDocument> {

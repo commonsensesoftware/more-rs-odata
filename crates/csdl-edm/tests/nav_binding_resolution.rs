@@ -1,3 +1,5 @@
+#![cfg(all(feature = "resolver", feature = "validator"))]
+
 //! Resolution of `NavigationPropertyBinding` Path and Target into reference
 //! paths over the EDM graph (`edm::BindingPathSegment`).
 

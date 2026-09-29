@@ -1,3 +1,5 @@
+#![cfg(all(feature = "resolver", feature = "validator"))]
+
 use csdl_edm::edm::{BindingPathSegment, EntityContainerElement, SchemaElement};
 use csdl_edm::resolver::Resolver;
 use csdl_edm::validator::{ValidationError, validate_document};

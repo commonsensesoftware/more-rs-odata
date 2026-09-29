@@ -1,3 +1,5 @@
+#![cfg(all(feature = "resolver", feature = "validator"))]
+
 use csdl_edm::{parser, resolver::Resolver, validator::validate_document};
 
 fn check(body: &str, valid: bool) {

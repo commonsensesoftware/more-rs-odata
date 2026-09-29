@@ -6,6 +6,12 @@ edition = "2024"
 [lib]
 name = "csdl_edm"
 
+[features]
+default = ["resolver", "validator"]
+edm = []
+resolver = ["edm"]
+validator = ["edm"]
+
 [dependencies]
 quick-xml = "0.40.1"
 serde = { version = "1", features = ["derive"] }
@@ -19,14 +25,17 @@ similar = "2"
 [[example]]
 name = "parse_resolve_validate"
 test = true
+required-features = ["resolver", "validator"]
 
 [[example]]
 name = "edm_graph_demo"
 test = true
+required-features = ["resolver", "validator"]
 
 [[example]]
 name = "url_expansion"
 test = true
+required-features = ["resolver", "validator"]
 
 [[example]]
 name = "csdl_roundtrip"

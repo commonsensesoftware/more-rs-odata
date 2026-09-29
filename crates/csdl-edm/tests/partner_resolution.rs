@@ -1,3 +1,5 @@
+#![cfg(all(feature = "resolver", feature = "validator"))]
+
 //! Resolution of navigation `Partner` into typed reference paths over the EDM
 //! graph (`edm::BindingPathSegment`).
 

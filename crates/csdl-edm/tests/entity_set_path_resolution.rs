@@ -1,3 +1,5 @@
+#![cfg(all(feature = "resolver", feature = "validator"))]
+
 //! Resolution of operation `EntitySetPath` into typed reference paths over the
 //! EDM graph (`edm::EntitySetPathSegment`).
 

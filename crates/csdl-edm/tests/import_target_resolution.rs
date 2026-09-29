@@ -1,3 +1,5 @@
+#![cfg(all(feature = "resolver", feature = "validator"))]
+
 //! Resolution of `FunctionImport`/`ActionImport` `EntitySet` targets into typed
 //! reference paths over the EDM graph (`edm::BindingPathSegment`).
 

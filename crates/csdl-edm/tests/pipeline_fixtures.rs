@@ -1,3 +1,5 @@
+#![cfg(all(feature = "resolver", feature = "validator"))]
+
 use std::fs;
 use std::path::{Path, PathBuf};
 

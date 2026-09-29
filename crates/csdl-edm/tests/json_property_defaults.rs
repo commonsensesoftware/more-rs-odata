@@ -1,3 +1,5 @@
+#![cfg(all(feature = "resolver"))]
+
 use csdl_edm::edm::{PrimitiveType, ResolvedType, SchemaElement};
 use csdl_edm::resolver::{ResolveError, Resolver};
 use csdl_edm::{CsdlFormat, parser};

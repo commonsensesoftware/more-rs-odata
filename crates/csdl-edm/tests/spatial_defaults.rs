@@ -1,3 +1,5 @@
+#![cfg(all(feature = "resolver", feature = "validator"))]
+
 use csdl_edm::{CsdlFormat, parser, resolver::Resolver, validator::validate_document};
 
 fn xml_document(ty: &str, value: &str, facet: &str) -> csdl_edm::CsdlDocument {

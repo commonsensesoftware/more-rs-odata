@@ -133,12 +133,13 @@ Related detailed design TODO:
 
 ## 5. Packaging Backlog
 
-- [ ] Add crate feature flags so parse/serialize-only users can opt out of
+- [x] Add crate feature flags so parse/serialize-only users can opt out of
       resolver + validator.
-- [ ] Start with in-crate feature gating before considering a hard crate split
+- [x] Start with in-crate feature gating before considering a hard crate split
       (`csdl` vs `edm`).
-- [ ] Define default feature set and compatibility policy for examples and
-      public APIs.
+- [x] Define default feature set and compatibility policy for examples and
+      public APIs: see [features](../docs/features.md). Default features preserve
+      the complete API; resolver and validator independently enable the EDM graph.
 
 ## 6. Documentation Hygiene
 
