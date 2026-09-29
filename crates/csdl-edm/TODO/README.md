@@ -4,5 +4,9 @@ One file per open item. Keep each item focused so planning and implementation ca
 
 ## Active items
 
-- [csdl-coverage-gaps](csdl-coverage-gaps.md) - authoritative backlog for remaining CSDL 4.01 coverage.
-- [path-attribute-resolution-architecture](path-attribute-resolution-architecture.md) - architecture for resolver-owned typed/resolved handling of CSDL path attributes.
+- [path-attribute-resolution-architecture](path-attribute-resolution-architecture.md) - implemented typed-path architecture and remaining diagnostic consistency work.
+
+## Delivery record
+
+- [csdl-coverage-gaps](csdl-coverage-gaps.md) - completed implementation checklist,
+  current coverage matrix, and explicit conformance limits.

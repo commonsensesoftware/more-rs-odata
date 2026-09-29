@@ -20,29 +20,43 @@ Status legend used below:
 
 ## Coverage Matrix Snapshot
 
-| Element Group          | Model Element (4.01)                                      | parse+serialize | resolver | validation | Notes                                                                                                                                                                      |
-| ---------------------- | --------------------------------------------------------- | --------------- | -------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Schema Core            | Edmx / Schema                                             | done            | done     | partial    | Canonical CSDL model (`src/csdl.rs`) resolves to EDM model.                                                                                                                |
-| Schema Core            | Reference / Include / IncludeAnnotations                  | done            | done     | partial    | Alias wiring exists; deeper semantic checks are minimal.                                                                                                                   |
-| Type Definitions       | EntityType / ComplexType / EnumType                       | done            | partial  | partial    | BaseType member inheritance is partially supported, and the resolver now rejects derived member redeclarations; full inheritance semantics remain.                         |
-| Type Definitions       | TypeDefinition / Term                                     | done            | partial  | partial    | Term resolution includes collection-valued terms, and term base-term cycle validation is now covered; broader inheritance semantics remain.                                |
-| Structural Members     | Property / NavigationProperty / Key                       | done            | partial  | partial    | Core resolution works (including collection-valued structural properties); PropertyRef key paths are resolved from owning entity context; nav semantics remain incomplete. |
-| Navigation Constraints | ReferentialConstraint / OnDelete / Partner / Containment  | done            | partial  | missing    | Resolver maps fields, including typed `OnDelete.Action` and `ContainsTarget` passthrough; deeper containment/navigation semantics remain.                                  |
-| Operations             | Function / Action / Parameter / ReturnType                | done            | partial  | missing    | Resolver maps operation signatures and now rejects Function without ReturnType; deeper operation semantics and validation are still pending.                               |
-| Container              | EntityContainer / EntitySet / Singleton                   | done            | done     | partial    | Core container target resolution works.                                                                                                                                    |
-| Container              | FunctionImport / ActionImport / NavigationPropertyBinding | done            | partial  | missing    | Resolver now maps imports and nav bindings and validates function/action import targets; deeper target/operation semantics remain.                                         |
-| Annotations            | Annotation attachment forms                               | done            | missing  | missing    | Round-trip support; semantic consumption/validation not implemented.                                                                                                       |
+This is implementation tracking, not the normative CSDL element catalog.
+The spec model is maintained in
+[csdl-attribute-catalog.toml](../../../docs/csdl-attribute-catalog.toml)
+and rendered in [edm-semantic-graph.md](../../../docs/edm-semantic-graph.md).
+"Done" below refers to the delivery scope in the numbered checklist.
 
-## Gap Summary
+| Element group | Parse + serialize | Resolver | Validation | Implemented behavior |
+| --- | --- | --- | --- | --- |
+| Edmx / Schema | done | done | partial | Shared document namespace registry, aliases, declaration flags, schema-child uniqueness including containers |
+| Reference / Include / IncludeAnnotations | done | done | partial | Reference metadata and aliases retained; referenced documents are not fetched |
+| EntityType / ComplexType | done | done | done | Shared cross-schema inheritance, effective members/keys, cycles, subtype narrowing, versioned 4.0 rules |
+| EnumType / TypeDefinition / Term | done | done | done | Concrete/built-in types, enum numeric values, facets, defaults, collection terms, base-term checks |
+| Property / NavigationProperty / Key | done | done | done | Typed key, partner, and constraint paths; aliases, nullability, cardinality, compatible endpoint types |
+| OnDelete / Partner / Containment | done | done | done | Typed delete actions, reciprocal partners, recursive/nonrecursive containment, versioned multiplicity rules |
+| Function / Action / Parameter / ReturnType | done | done | done | Overloads, binding signatures, returns, facets/defaults, typed EntitySetPath |
+| EntityContainer / EntitySet / Singleton | done | done | done | All containers, inherited resources, cycles, compatible targets and entity-set keys |
+| Imports / NavigationPropertyBinding | done | done | done | Resolved operation overloads, cross-container targets, typed casts/traversal, duplicate paths, service-document rules |
+| Annotation attachment forms | done | done | done | Typed targets/expression paths and explicit nonfatal authoring diagnostics |
 
-1. Resolver semantic gaps:
-   Inheritance, nav constraints/containment/partner, operations, imports,
-   bindings, container inheritance, collection-valued terms.
-2. Validation depth gaps:
-   Only baseline uniqueness/key checks are implemented; most semantic checklist
-   rules are pending.
-3. Test coverage gaps:
-   Need systematic fixture-backed end-to-end and expected-failure coverage.
+## Delivery and limits
+
+The numbered implementation tasks below are complete. Regression suites cover
+XML/JSON parsing, resolution, validation, round trips, expected failures, and
+the five example entrypoints. Feature configurations preserve the full default
+API and permit parsing/serialization without the EDM, resolver, or validator.
+
+This does not claim exhaustive conformance for every possible CSDL document:
+
+- Schema/reference validation remains partial; namespace/alias lexical rules
+  and reference-document consistency are not exhaustively checked.
+- References do not load external schemas or vocabularies. Required external
+  type definitions must be supplied in the document's schemas.
+- Annotation diagnostics are explicit and nonfatal. Value-shape checks and
+  resolved expression paths do not execute dynamic expressions or service data.
+  See [annotation validation](../docs/annotation-validation.md).
+- Existing fixture pairs with different authored semantics remain expected
+  mismatches; serialization does not erase those differences.
 
 Related detailed design TODO:
 
@@ -64,7 +78,7 @@ Related detailed design TODO:
       and non-recursive containment, typed structural/navigation constraint paths,
       type/cardinality/nullability checks, and strict OnDelete parsing. XML/JSON
       nullability defaults and Int32 key serialization are preserved. Built-in
-      abstract targets remain part of primitive/type coverage below.
+      abstract targets and their containment/key restrictions are also covered.
 - [x] Operations: `Function`, `Action`, binding/composability, parameter uniqueness,
       function/action overload rules, consistent overload returns, entity-return
       nullability, and typed EntitySetPath navigation/casts with return compatibility.
@@ -84,8 +98,8 @@ Related detailed design TODO:
 - [x] Promote key checklist items from
       `docs/Semantic Validation Checklist.md` into executable rules: allowed types,
       non-nullable paths, aliases, non-empty declarations, and versioned related-entity keys.
-- [ ] Add inheritance-related validation (base-type cycles, key compatibility,
-      member consistency) (key compatibility is now enforced in resolver; broader validation remains).
+- [x] Add inheritance-related validation: cycles, effective keys, compatible
+      member redefinitions, and open/abstract/media flags, including 4.0 differences.
 - [x] Add navigation validation (partner consistency, referential constraints,
       containment rules).
 - [x] Add container-level binding/import validation, including entity-set keys,
@@ -143,7 +157,7 @@ Related detailed design TODO:
 
 ## 6. Documentation Hygiene
 
-- [ ] Authoritative spec model lives in `docs/csdl-attribute-catalog.toml`
+- [x] Authoritative spec model lives in `docs/csdl-attribute-catalog.toml`
       (top-level repo) and the rendered `docs/edm-semantic-graph.md`. Keep
       this TODO file focused on delivery tracking; the catalog is the source
       of truth for what CSDL 4.01 expresses.

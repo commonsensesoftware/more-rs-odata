@@ -29,6 +29,18 @@ This preserves separation of concerns and avoids duplicate path logic.
 
 ## Path Attribute Inventory
 
+Implementation status: navigation binding paths/targets, key paths, partners,
+referential constraints, operation entity-set paths, import entity-set targets,
+and annotation targets/expression paths are now resolved into typed EDM values.
+Their validators consume these values. Raw authored strings remain available
+for compatibility and diagnostics; removing them would require a separate API
+compatibility decision.
+
+Annotation targets may intentionally retain unresolved segments: the explicit
+annotation diagnostic API reports them without rejecting the document.
+Resolver errors for structural paths still vary by domain; the uniform
+segment-index/context diagnostic format described below remains a follow-up.
+
 The architecture applies to all path-like attributes, including at least:
 
 - `NavigationPropertyBinding.Path`
@@ -77,7 +89,7 @@ Compatibility path during migration:
 
 - Keep raw string fields temporarily for backward compatibility.
 - Mark raw string fields transitional.
-- Remove raw fields once all semantic consumers are moved to typed segments.
+- Preserve raw fields while the public API remains additive.
 
 ## Consume Phase (Validator and Service)
 
@@ -147,7 +159,8 @@ remaining path domains in prioritized follow-up items.
 5. Remove navigation-binding string parsing from validator.
 6. Repeat by path domain (`EntitySetPath`, key/reference paths,
    annotation/model-target paths).
-7. Remove transitional raw path strings once all consumers are migrated.
+7. Retain authored strings for compatibility; consider removal only through
+   an explicit public API compatibility decision.
 
 ## Test Strategy
 

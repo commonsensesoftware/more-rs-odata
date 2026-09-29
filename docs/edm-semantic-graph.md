@@ -7,6 +7,15 @@
 
 ## Introduction & motivation
 
+This document and its source catalog describe the CSDL specification model.
+For the crate's delivered behavior and remaining limits, see the
+[csdl-edm coverage record](../crates/csdl-edm/TODO/csdl-coverage-gaps.md).
+The resolver now materializes typed structural and annotation paths; annotation
+authoring diagnostics are documented separately in
+[annotation validation](../crates/csdl-edm/docs/annotation-validation.md).
+The [feature policy](../crates/csdl-edm/docs/features.md) describes optional
+semantic-model, resolver, and validator compilation.
+
 A CSDL document — the XML or JSON you author to describe an OData service — is a
 **syntactic tree**. Resolving it (binding every symbolic name to the element it
 denotes) yields the **EDM**, which is best understood not as a tree but as a
