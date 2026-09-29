@@ -106,6 +106,7 @@ fn build_demo_schema() -> Schema {
                 has_stream: None,
                 key: Some(Key {
                     property_refs: vec![PropertyRef {
+                        alias: None,
                         name: "id".to_owned(),
                     }],
                 }),
@@ -171,6 +172,7 @@ fn build_demo_schema() -> Schema {
                 has_stream: None,
                 key: Some(Key {
                     property_refs: vec![PropertyRef {
+                        alias: None,
                         name: "id".to_owned(),
                     }],
                 }),

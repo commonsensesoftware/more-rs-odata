@@ -143,6 +143,7 @@ pub struct Key {
 #[derive(Debug, Clone, PartialEq)]
 pub struct PropertyRef {
     pub name: String,
+    pub alias: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

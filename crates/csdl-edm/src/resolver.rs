@@ -120,7 +120,7 @@ impl Resolver {
             })
             .collect::<HashMap<_, _>>();
 
-        let mut entity_key_cache: HashMap<String, Vec<String>> = HashMap::new();
+        let mut entity_key_cache: HashMap<String, Vec<csdl::PropertyRef>> = HashMap::new();
         for name in entity_defs.keys() {
             let _ = resolve_effective_entity_keys(
                 name,
@@ -147,6 +147,7 @@ impl Resolver {
                         has_stream: e.has_stream.unwrap_or(false),
                         base_type: OnceLock::new(),
                         keys: std::sync::OnceLock::new(),
+                        key_aliases: std::sync::OnceLock::new(),
                         properties: std::sync::OnceLock::new(),
                         navigation_properties: std::sync::OnceLock::new(),
                     });
@@ -281,18 +282,6 @@ impl Resolver {
                         &mut entity_member_cache,
                         &mut Vec::new(),
                     )?;
-                    validate_entity_key_paths(
-                        e,
-                        &props,
-                        &complex_defs,
-                        &complexes,
-                        &enums,
-                        &type_definitions,
-                        &entities,
-                        ns,
-                        aliases,
-                        &mut complex_member_cache,
-                    )?;
                     let _ = arc.properties.set(props);
                     let _ = arc.navigation_properties.set(navs);
                 }
@@ -353,13 +342,26 @@ impl Resolver {
         }
 
         // Late pass: every entity/complex type now has its properties, so the
-        // effective key strings can be resolved into typed [`KeyPathSegment`]
-        // paths. The key paths were already validated to resolve above.
+        // effective key declarations can be resolved into typed paths.
         for (name, arc) in &entities {
-            let typed_keys = entity_key_cache
-                .get(name)
-                .map(|keys| keys.iter().map(|key| resolve_key_path(arc, key)).collect())
-                .unwrap_or_default();
+            let keys = &entity_key_cache[name];
+            let mut typed_keys = Vec::new();
+            for key in keys {
+                let path = resolve_key_path(arc, &key.name);
+                if path
+                    .iter()
+                    .any(|s| matches!(s, KeyPathSegment::Unresolved(_)))
+                {
+                    return Err(ResolveError::UnknownPropertyPath {
+                        entity: arc.name.clone(),
+                        key_path: key.name.clone(),
+                    });
+                }
+                typed_keys.push(path);
+            }
+            let _ = arc
+                .key_aliases
+                .set(keys.iter().map(|key| key.alias.clone()).collect());
             let _ = arc.keys.set(typed_keys);
         }
 
@@ -683,9 +685,9 @@ fn resolve_effective_entity_keys(
     entity_defs: &HashMap<String, &csdl::EntityType>,
     ns: &str,
     aliases: &HashMap<String, String>,
-    cache: &mut HashMap<String, Vec<String>>,
+    cache: &mut HashMap<String, Vec<csdl::PropertyRef>>,
     visiting: &mut Vec<String>,
-) -> Result<Vec<String>, ResolveError> {
+) -> Result<Vec<csdl::PropertyRef>, ResolveError> {
     let ns = name.rsplit_once('.').map(|(ns, _)| ns).unwrap_or(ns);
     if let Some(keys) = cache.get(name) {
         return Ok(keys.clone());
@@ -703,15 +705,21 @@ fn resolve_effective_entity_keys(
         .get(name)
         .ok_or_else(|| ResolveError::UnknownType(name.to_owned()))?;
 
+    if entity
+        .key
+        .as_ref()
+        .is_some_and(|key| key.property_refs.is_empty())
+    {
+        return Err(ResolveError::UnsupportedCsdlFeature {
+            feature: "Empty EntityType.Key",
+            location: name.to_owned(),
+        });
+    }
+
     let own_keys = entity
         .key
         .as_ref()
-        .map(|k| {
-            k.property_refs
-                .iter()
-                .map(|r| r.name.clone())
-                .collect::<Vec<_>>()
-        })
+        .map(|k| k.property_refs.iter().cloned().collect::<Vec<_>>())
         .unwrap_or_default();
 
     let effective_keys = if let Some(base_type) = &entity.base_type {
@@ -1066,114 +1074,6 @@ fn resolve_complex_members(
     visiting.pop();
     cache.insert(name.to_owned(), (props.clone(), navs.clone()));
     Ok((props, navs))
-}
-
-#[allow(clippy::too_many_arguments)]
-fn validate_entity_key_paths(
-    entity: &csdl::EntityType,
-    entity_properties: &[Arc<Property>],
-    complex_defs: &HashMap<String, &csdl::ComplexType>,
-    complexes: &HashMap<String, Arc<ComplexType>>,
-    enums: &HashMap<String, Arc<EnumType>>,
-    type_definitions: &HashMap<String, Arc<TypeDefinition>>,
-    entities: &HashMap<String, Arc<EntityType>>,
-    ns: &str,
-    aliases: &HashMap<String, String>,
-    complex_member_cache: &mut HashMap<String, ResolvedMembers>,
-) -> Result<(), ResolveError> {
-    let Some(key) = &entity.key else {
-        return Ok(());
-    };
-
-    for key_ref in &key.property_refs {
-        validate_property_path_from_entity(
-            &entity.name,
-            &key_ref.name,
-            entity_properties,
-            complex_defs,
-            complexes,
-            enums,
-            type_definitions,
-            entities,
-            ns,
-            aliases,
-            complex_member_cache,
-        )?;
-    }
-
-    Ok(())
-}
-
-#[allow(clippy::too_many_arguments)]
-fn validate_property_path_from_entity(
-    entity_name: &str,
-    key_path: &str,
-    entity_properties: &[Arc<Property>],
-    complex_defs: &HashMap<String, &csdl::ComplexType>,
-    complexes: &HashMap<String, Arc<ComplexType>>,
-    enums: &HashMap<String, Arc<EnumType>>,
-    type_definitions: &HashMap<String, Arc<TypeDefinition>>,
-    entities: &HashMap<String, Arc<EntityType>>,
-    ns: &str,
-    aliases: &HashMap<String, String>,
-    complex_member_cache: &mut HashMap<String, ResolvedMembers>,
-) -> Result<(), ResolveError> {
-    let mut segments = key_path.split('/').filter(|segment| !segment.is_empty());
-
-    let Some(first_segment) = segments.next() else {
-        return Err(ResolveError::UnknownPropertyPath {
-            entity: entity_name.to_owned(),
-            key_path: key_path.to_owned(),
-        });
-    };
-
-    let first_property = entity_properties
-        .iter()
-        .find(|property| property.name == first_segment)
-        .ok_or_else(|| ResolveError::UnknownPropertyPath {
-            entity: entity_name.to_owned(),
-            key_path: key_path.to_owned(),
-        })?;
-
-    let mut current_type = first_property.ty.clone();
-
-    for segment in segments {
-        let ResolvedType::Complex(complex) = &current_type else {
-            return Err(ResolveError::UnknownPropertyPath {
-                entity: entity_name.to_owned(),
-                key_path: key_path.to_owned(),
-            });
-        };
-
-        let qualified_name = complexes
-            .iter()
-            .find_map(|(name, candidate)| Arc::ptr_eq(candidate, complex).then_some(name))
-            .expect("resolved complex type is registered in scope");
-        let (complex_properties, _) = resolve_complex_members(
-            qualified_name,
-            complex_defs,
-            complexes,
-            enums,
-            type_definitions,
-            entities,
-            ns,
-            aliases,
-            complex_member_cache,
-            &mut Vec::new(),
-        )?;
-
-        let next_property = complex_properties
-            .iter()
-            .find(|property| property.name == segment)
-            .ok_or_else(|| ResolveError::UnknownPropertyPath {
-                entity: entity_name.to_owned(),
-                key_path: key_path.to_owned(),
-            })?;
-
-        current_type = next_property.ty.clone();
-    }
-
-    Ok(())
 }
 
 fn resolve_term_type(
@@ -1531,7 +1431,32 @@ fn entity_container_element_name(element: &Arc<EntityContainerElement>) -> &str 
 /// properties. Key paths are pre-validated to resolve, so
 /// [`KeyPathSegment::Unresolved`] is a defensive fallback only.
 fn resolve_key_path(entity: &Arc<EntityType>, key: &str) -> Arc<[KeyPathSegment]> {
-    resolve_property_path(entity.properties(), key)
+    let mut properties = entity.properties().to_vec();
+    let mut navigations = entity.navigation_properties().to_vec();
+    let mut path = Vec::new();
+    let parts: Vec<_> = key.split('/').collect();
+    for (index, name) in parts.iter().enumerate() {
+        if let Some(property) = properties.iter().cloned().find(|p| p.name == *name) {
+            path.push(KeyPathSegment::Property(Arc::downgrade(&property)));
+            if index + 1 == parts.len() {
+                return path.into();
+            }
+            if let ResolvedType::Complex(complex) = &property.ty {
+                properties = complex.properties().to_vec();
+                navigations = complex.navigation_properties().to_vec();
+                continue;
+            }
+        } else if let Some(nav) = navigations.iter().cloned().find(|n| n.name == *name) {
+            path.push(KeyPathSegment::NavigationProperty(Arc::downgrade(&nav)));
+            let target = nav.target.upgrade().expect("resolved navigation target");
+            properties = target.properties().to_vec();
+            navigations = target.navigation_properties().to_vec();
+            continue;
+        }
+        path.push(KeyPathSegment::Unresolved((*name).into()));
+        break;
+    }
+    path.into()
 }
 
 fn resolve_constraint_path<'a>(
@@ -1567,36 +1492,6 @@ fn resolve_constraint_path<'a>(
         break;
     }
     out.into()
-}
-
-fn resolve_property_path(mut props: &[Arc<Property>], key: &str) -> Arc<[KeyPathSegment]> {
-    let mut out: Vec<KeyPathSegment> = Vec::new();
-    let parts: Vec<&str> = key.split('/').collect();
-
-    for (i, part) in parts.iter().enumerate() {
-        let is_last = i + 1 == parts.len();
-        match props.iter().find(|p| p.name == *part) {
-            Some(prop) => {
-                out.push(KeyPathSegment::Property(Arc::downgrade(prop)));
-                if is_last {
-                    break;
-                }
-                match &prop.ty {
-                    ResolvedType::Complex(complex) => props = complex.properties(),
-                    _ => {
-                        out.push(KeyPathSegment::Unresolved(parts[i + 1].to_owned()));
-                        break;
-                    }
-                }
-            }
-            None => {
-                out.push(KeyPathSegment::Unresolved((*part).to_owned()));
-                break;
-            }
-        }
-    }
-
-    Arc::from(out)
 }
 
 /// Resolve a binding `Path` against the bound entity type, walking the EDM

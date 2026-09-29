@@ -81,8 +81,9 @@ Related detailed design TODO:
 
 ## 2. Validation Gaps
 
-- [ ] Promote key checklist items from
-      `docs/Semantic Validation Checklist.md` into executable rules.
+- [x] Promote key checklist items from
+      `docs/Semantic Validation Checklist.md` into executable rules: allowed types,
+      non-nullable paths, aliases, non-empty declarations, and versioned related-entity keys.
 - [ ] Add inheritance-related validation (base-type cycles, key compatibility,
       member consistency) (key compatibility is now enforced in resolver; broader validation remains).
 - [ ] Add navigation validation (partner consistency, referential constraints,

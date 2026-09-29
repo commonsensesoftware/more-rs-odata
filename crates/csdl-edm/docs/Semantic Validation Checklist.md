@@ -22,8 +22,9 @@ This checklist is now split into:
 
 - [x] For OData 4.0, non-abstract entity types define or inherit a key. In 4.01,
       key requirements depend on usage (entity sets and collection containment).
-- [ ] Key properties are non-nullable.
-- [ ] Key identity is consistent across inheritance.
+- [x] Key paths are single-valued and non-nullable with permitted scalar types.
+- [x] Key paths and aliases are inherited; aliases are required for nested paths, unique, and forbidden for direct properties.
+- [x] CSDL 4.01 related-entity keys require the entire directly related key; 4.0 rejects navigation key paths.
 
 ### B. Entity type inheritance semantics
 

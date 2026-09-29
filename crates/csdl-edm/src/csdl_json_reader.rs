@@ -242,13 +242,29 @@ fn emit_entity_type(
     push_opt_bool_attr(&mut attrs, "HasStream", has_stream);
     start(out, "EntityType", attrs);
 
-    if let Some(Value::Array(refs)) = key {
+    if let Some(key) = key {
+        let Value::Array(refs) = key else {
+            return Err(Error::Csdl("$Key must be an array".into()));
+        };
         start(out, "Key", vec![]);
         for r in refs {
-            if let Value::String(s) = r {
-                start(out, "PropertyRef", vec![("Name".into(), s)]);
-                end(out, "PropertyRef");
-            }
+            let attrs = match r {
+                Value::String(path) => vec![("Name".into(), path)],
+                Value::Object(alias) if alias.len() == 1 => {
+                    let (alias, path) = alias.into_iter().next().unwrap();
+                    let Value::String(path) = path else {
+                        return Err(Error::Csdl("Key alias must name a string path".into()));
+                    };
+                    vec![("Name".into(), path), ("Alias".into(), alias)]
+                }
+                _ => {
+                    return Err(Error::Csdl(
+                        "Key member must be a string or one alias/path pair".into(),
+                    ));
+                }
+            };
+            start(out, "PropertyRef", attrs);
+            end(out, "PropertyRef");
         }
         end(out, "Key");
     }

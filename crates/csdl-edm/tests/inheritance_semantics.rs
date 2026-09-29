@@ -288,7 +288,7 @@ fn rejects_cross_schema_inheritance_cycles_and_conflicting_aliases() {
 #[test]
 fn cross_schema_keys_and_terms_use_qualified_identity() {
     let mut document = documents(r#"
-        <EntityType Name="Item"><Key><PropertyRef Name="Value/ID"/></Key><Property Name="Value" Type="B.Value" Nullable="false"/></EntityType>
+        <EntityType Name="Item"><Key><PropertyRef Name="Value/ID" Alias="ValueID"/></Key><Property Name="Value" Type="B.Value" Nullable="false"/></EntityType>
         <Term Name="Label" Type="Edm.String" BaseTerm="B.Label"/>"#).remove(0);
     let mut base = documents(r#"
         <ComplexType Name="Value"><Property Name="ID" Type="Edm.Int32" Nullable="false"/></ComplexType>

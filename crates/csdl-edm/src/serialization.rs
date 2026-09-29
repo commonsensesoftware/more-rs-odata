@@ -299,11 +299,11 @@ fn write_key<W: io::Write>(xml: &mut quick_xml::Writer<W>, key: &Key) -> io::Res
 
     write_start(xml, "Key", &[])?;
     for property_ref in &key.property_refs {
-        write_empty(
-            xml,
-            "PropertyRef",
-            &[("Name".to_string(), property_ref.name.clone())],
-        )?;
+        let mut attrs = vec![("Name".to_string(), property_ref.name.clone())];
+        if let Some(alias) = &property_ref.alias {
+            attrs.push(("Alias".into(), alias.clone()));
+        }
+        write_empty(xml, "PropertyRef", &attrs)?;
     }
     write_end(xml, "Key")
 }
@@ -1260,7 +1260,13 @@ fn entity_type_to_json(entity: &EntityType, namespace: &str) -> Value {
         let keys = key
             .property_refs
             .iter()
-            .map(|p| Value::String(p.name.clone()))
+            .map(|p| match &p.alias {
+                Some(alias) => Value::Object(Map::from_iter([(
+                    alias.clone(),
+                    Value::String(p.name.clone()),
+                )])),
+                None => Value::String(p.name.clone()),
+            })
             .collect::<Vec<_>>();
         obj.insert("$Key".to_string(), Value::Array(keys));
     }

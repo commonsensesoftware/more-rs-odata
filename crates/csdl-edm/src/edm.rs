@@ -113,6 +113,8 @@ pub struct EntityType {
     /// [`KeyPathSegment`]s rather than a raw string, filled by the resolver in a
     /// late pass once every entity/complex type has its properties.
     pub keys: OnceLock<Vec<Arc<[KeyPathSegment]>>>,
+    /// Effective aliases, in the same order as `keys` (including inherited keys).
+    pub key_aliases: OnceLock<Vec<Option<String>>>,
     pub properties: OnceLock<Vec<Arc<Property>>>,
     pub navigation_properties: OnceLock<Vec<Arc<NavigationProperty>>>,
 }
@@ -491,12 +493,17 @@ pub fn binding_path_to_string(path: &[BindingPathSegment]) -> String {
 #[derive(Debug, Clone)]
 pub enum KeyPathSegment {
     Property(Weak<Property>),
+    NavigationProperty(Weak<NavigationProperty>),
     Unresolved(String),
 }
 
 impl KeyPathSegment {
     pub fn display_name(&self) -> String {
         match self {
+            Self::NavigationProperty(nav) => nav
+                .upgrade()
+                .map(|n| n.name.clone())
+                .unwrap_or_else(|| "<dangling-navigation>".into()),
             Self::Property(property) => property
                 .upgrade()
                 .map(|property| property.name.clone())

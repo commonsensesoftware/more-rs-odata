@@ -49,6 +49,7 @@ fn validates_navigation_property_binding_path_and_target_semantics() {
                 has_stream: None,
                 key: Some(csdl::Key {
                     property_refs: vec![csdl::PropertyRef {
+                        alias: None,
                         name: "ID".to_owned(),
                     }],
                 }),
@@ -86,6 +87,7 @@ fn validates_navigation_property_binding_path_and_target_semantics() {
                 has_stream: None,
                 key: Some(csdl::Key {
                     property_refs: vec![csdl::PropertyRef {
+                        alias: None,
                         name: "ID".to_owned(),
                     }],
                 }),
@@ -123,6 +125,7 @@ fn validates_navigation_property_binding_path_and_target_semantics() {
                 has_stream: None,
                 key: Some(csdl::Key {
                     property_refs: vec![csdl::PropertyRef {
+                        alias: None,
                         name: "ID".to_owned(),
                     }],
                 }),
@@ -229,16 +232,20 @@ fn resolve_and_validate_fixture_expectations() {
     let expectations: [(&str, ExpectedOutcome); 16] = [
         ("enum_sample.csdl.json", ExpectedOutcome::Pass),
         ("enum_sample.csdl.xml", ExpectedOutcome::Pass),
+        ("example89.csdl.json", ExpectedOutcome::Pass),
+        ("example89.csdl.xml", ExpectedOutcome::Pass),
         (
-            "example89.csdl.json",
-            ExpectedOutcome::Pass,
+            "extras_sample.csdl.json",
+            ExpectedOutcome::ValidateInvalidNavigation(
+                "Referential constraints require a single-valued navigation",
+            ),
         ),
         (
-            "example89.csdl.xml",
-            ExpectedOutcome::Pass,
+            "extras_sample.csdl.xml",
+            ExpectedOutcome::ValidateInvalidNavigation(
+                "Referential constraints require a single-valued navigation",
+            ),
         ),
-        ("extras_sample.csdl.json", ExpectedOutcome::ValidateInvalidNavigation("Referential constraints require a single-valued navigation")),
-        ("extras_sample.csdl.xml", ExpectedOutcome::ValidateInvalidNavigation("Referential constraints require a single-valued navigation")),
         (
             "fields_sample.csdl.json",
             ExpectedOutcome::ResolveUnknownType("FieldsDemo.BaseService"),
@@ -263,10 +270,7 @@ fn resolve_and_validate_fixture_expectations() {
                 target: "Maintenance",
             },
         ),
-        (
-            "record_sample.csdl.json",
-            ExpectedOutcome::Pass,
-        ),
+        ("record_sample.csdl.json", ExpectedOutcome::Pass),
         (
             "record_sample.csdl.xml",
             ExpectedOutcome::ResolveMissingType {
@@ -336,6 +340,7 @@ fn resolves_entity_container_extends_and_inherits_elements() {
                 has_stream: None,
                 key: Some(csdl::Key {
                     property_refs: vec![csdl::PropertyRef {
+                        alias: None,
                         name: "ID".to_owned(),
                     }],
                 }),
@@ -436,6 +441,7 @@ fn resolves_container_imports_and_navigation_bindings() {
                 has_stream: None,
                 key: Some(csdl::Key {
                     property_refs: vec![csdl::PropertyRef {
+                        alias: None,
                         name: "ID".to_owned(),
                     }],
                 }),
@@ -590,6 +596,7 @@ fn resolves_navigation_semantics_fields() {
                 has_stream: None,
                 key: Some(csdl::Key {
                     property_refs: vec![csdl::PropertyRef {
+                        alias: None,
                         name: "ID".to_owned(),
                     }],
                 }),
@@ -631,6 +638,7 @@ fn resolves_navigation_semantics_fields() {
                 has_stream: None,
                 key: Some(csdl::Key {
                     property_refs: vec![csdl::PropertyRef {
+                        alias: None,
                         name: "ID".to_owned(),
                     }],
                 }),
@@ -705,6 +713,7 @@ fn validates_navigation_partner_existence() {
                 has_stream: None,
                 key: Some(csdl::Key {
                     property_refs: vec![csdl::PropertyRef {
+                        alias: None,
                         name: "ID".to_owned(),
                     }],
                 }),
@@ -742,6 +751,7 @@ fn validates_navigation_partner_existence() {
                 has_stream: None,
                 key: Some(csdl::Key {
                     property_refs: vec![csdl::PropertyRef {
+                        alias: None,
                         name: "ID".to_owned(),
                     }],
                 }),
@@ -804,6 +814,7 @@ fn validates_navigation_referential_constraints() {
                 has_stream: None,
                 key: Some(csdl::Key {
                     property_refs: vec![csdl::PropertyRef {
+                        alias: None,
                         name: "ID".to_owned(),
                     }],
                 }),
@@ -845,6 +856,7 @@ fn validates_navigation_referential_constraints() {
                 has_stream: None,
                 key: Some(csdl::Key {
                     property_refs: vec![csdl::PropertyRef {
+                        alias: None,
                         name: "ID".to_owned(),
                     }],
                 }),
@@ -1017,6 +1029,7 @@ fn validates_container_targets() {
                 has_stream: None,
                 key: Some(csdl::Key {
                     property_refs: vec![csdl::PropertyRef {
+                        alias: None,
                         name: "ID".to_owned(),
                     }],
                 }),
@@ -1128,6 +1141,7 @@ fn rejects_unresolved_function_and_action_import_targets() {
                 has_stream: None,
                 key: Some(csdl::Key {
                     property_refs: vec![csdl::PropertyRef {
+                        alias: None,
                         name: "ID".to_owned(),
                     }],
                 }),
@@ -1235,6 +1249,7 @@ fn rejects_unresolved_action_import_targets() {
                 has_stream: None,
                 key: Some(csdl::Key {
                     property_refs: vec![csdl::PropertyRef {
+                        alias: None,
                         name: "ID".to_owned(),
                     }],
                 }),
@@ -1317,6 +1332,7 @@ fn validates_operation_binding_semantics() {
                 has_stream: None,
                 key: Some(csdl::Key {
                     property_refs: vec![csdl::PropertyRef {
+                        alias: None,
                         name: "ID".to_owned(),
                     }],
                 }),
@@ -1452,6 +1468,7 @@ fn resolves_inherited_entity_keys() {
                 has_stream: None,
                 key: Some(csdl::Key {
                     property_refs: vec![csdl::PropertyRef {
+                        alias: None,
                         name: "ID".to_owned(),
                     }],
                 }),
@@ -1528,6 +1545,7 @@ fn rejects_derived_entity_redeclaring_base_keys() {
                 has_stream: None,
                 key: Some(csdl::Key {
                     property_refs: vec![csdl::PropertyRef {
+                        alias: None,
                         name: "ID".to_owned(),
                     }],
                 }),
@@ -1555,6 +1573,7 @@ fn rejects_derived_entity_redeclaring_base_keys() {
                 has_stream: None,
                 key: Some(csdl::Key {
                     property_refs: vec![csdl::PropertyRef {
+                        alias: None,
                         name: "ID".to_owned(),
                     }],
                 }),
@@ -1753,6 +1772,7 @@ fn resolves_collection_valued_structural_properties() {
             has_stream: None,
             key: Some(csdl::Key {
                 property_refs: vec![csdl::PropertyRef {
+                    alias: None,
                     name: "ID".to_owned(),
                 }],
             }),
@@ -1907,9 +1927,11 @@ fn assert_expected_validation(
 ) {
     match expected {
         ExpectedOutcome::ValidateInvalidNavigation(reason) => {
-            assert!(errors.iter().any(|error| matches!(error,
+            assert!(
+                errors.iter().any(|error| matches!(error,
                 ValidationError::InvalidNavigation { reason: actual, .. } if *actual == reason)),
-                "{fixture_name}: expected {reason}, got {errors:?}");
+                "{fixture_name}: expected {reason}, got {errors:?}"
+            );
         }
         ExpectedOutcome::ValidateUnknownContainerTarget {
             source_kind,

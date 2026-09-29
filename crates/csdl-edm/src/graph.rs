@@ -395,6 +395,14 @@ impl Builder {
         for (i, key) in entity.keys().iter().enumerate() {
             let mut nodes = vec![entity_id.to_string()];
             for seg in key.iter() {
+                if let KeyPathSegment::NavigationProperty(w) = seg {
+                    if let Some(nav) = w.upgrade() {
+                        if let Some(id) = self.lookup(arc_ptr(&nav)) { nodes.push(id); }
+                        if let Some(target) = nav.target.upgrade() {
+                            if let Some(id) = self.lookup(arc_ptr(&target)) { nodes.push(id); }
+                        }
+                    }
+                }
                 if let KeyPathSegment::Property(w) = seg {
                     if let Some(p) = w.upgrade() {
                         if let Some(pid) = self.lookup(arc_ptr(&p)) {

@@ -334,7 +334,10 @@ fn parse_key(raw: &RawElement) -> io::Result<Key> {
 
 fn parse_property_ref(raw: &RawElement) -> io::Result<PropertyRef> {
     let name = raw_attr(raw, "Name").unwrap_or("").to_string();
-    Ok(PropertyRef { name })
+    Ok(PropertyRef {
+        name,
+        alias: raw_attr(raw, "Alias").map(str::to_owned),
+    })
 }
 
 fn parse_property(raw: &RawElement) -> io::Result<Property> {

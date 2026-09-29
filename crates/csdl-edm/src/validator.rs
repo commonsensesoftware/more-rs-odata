@@ -19,6 +19,11 @@ enum KeyPathClassification {
 
 #[derive(Debug, Clone)]
 pub enum ValidationError {
+    InvalidKey {
+        entity: String,
+        key: String,
+        reason: &'static str,
+    },
     InvalidImport {
         container: String,
         import: String,
@@ -116,6 +121,22 @@ pub fn validate_document(document: &DocumentModel) -> Result<(), Vec<ValidationE
     for schema in &document.schemas {
         errors.extend(engine.validate_model_collect(schema.as_ref()));
         if document.version == "4.0" {
+            for element in &schema.elements {
+                if let SchemaElement::EntityType(entity) = element.as_ref() {
+                    for key in entity.keys() {
+                        if key
+                            .iter()
+                            .any(|s| matches!(s, KeyPathSegment::NavigationProperty(_)))
+                        {
+                            errors.push(ValidationError::InvalidKey {
+                                entity: entity.name.clone(),
+                                key: key_path_to_string(key),
+                                reason: "Navigation key paths require CSDL 4.01",
+                            });
+                        }
+                    }
+                }
+            }
             for container in schema.containers() {
                 for element in &container.elements {
                     let (kind, name, bindings) = match element.as_ref() {
@@ -269,6 +290,7 @@ impl Default for ValidatorEngine {
                 Box::new(DuplicateEntityKeyRule),
                 Box::new(UnknownEntityKeyPropertyRule),
                 Box::new(NonScalarEntityKeyRule),
+                Box::new(KeySemanticsRule),
             ],
         }
     }
@@ -1527,6 +1549,146 @@ impl ValidationRule for UnknownEntityKeyPropertyRule {
     }
 }
 
+struct KeySemanticsRule;
+
+impl ValidationRule for KeySemanticsRule {
+    fn name(&self) -> &'static str {
+        "key_semantics"
+    }
+
+    fn visit_entity_type(&self, entity: &EntityType, ctx: &mut ValidationContext) {
+        let mut aliases: HashSet<String> = entity
+            .properties()
+            .iter()
+            .map(|p| p.name.clone())
+            .chain(
+                entity
+                    .navigation_properties()
+                    .iter()
+                    .map(|n| n.name.clone()),
+            )
+            .collect();
+        for (index, key) in entity.keys().iter().enumerate() {
+            let mut fail = |reason| {
+                ctx.push(ValidationError::InvalidKey {
+                    entity: entity.name.clone(),
+                    key: key_path_to_string(key),
+                    reason,
+                })
+            };
+            let alias = entity
+                .key_aliases
+                .get()
+                .and_then(|a| a.get(index))
+                .and_then(Option::as_deref);
+            match (key.len() > 1, alias) {
+                (true, None) => fail("Nested key properties require an alias"),
+                (false, Some(_)) => fail("Direct key properties must not have an alias"),
+                (_, Some(alias)) => {
+                    if !is_simple_identifier(alias) {
+                        fail("Key alias must be a simple identifier");
+                    }
+                    if !aliases.insert(alias.to_owned()) {
+                        fail("Key alias conflicts with a member or another alias");
+                    }
+                }
+                _ => {}
+            }
+            let mut navigation_count = 0;
+            for (position, segment) in key.iter().enumerate() {
+                match segment {
+                    KeyPathSegment::Property(property) => {
+                        if let Some(property) = property.upgrade() {
+                            if property.nullable.unwrap_or(true) {
+                                fail("Every key path property must be non-nullable");
+                            }
+                            if position + 1 == key.len() {
+                                use crate::edm::PrimitiveType::*;
+                                let primitive = match &property.ty {
+                                    ResolvedType::Primitive(p) => Some(p),
+                                    ResolvedType::TypeDefinition(t) => Some(&t.underlying_type),
+                                    _ => None,
+                                };
+                                if primitive.is_some_and(|p| {
+                                    !matches!(
+                                        p,
+                                        Boolean
+                                            | Byte
+                                            | Date
+                                            | DateTimeOffset
+                                            | Decimal
+                                            | Duration
+                                            | Guid
+                                            | Int16
+                                            | Int32
+                                            | Int64
+                                            | SByte
+                                            | String
+                                            | TimeOfDay
+                                    )
+                                }) {
+                                    fail("Key property type is not permitted");
+                                }
+                            }
+                        }
+                    }
+                    KeyPathSegment::NavigationProperty(nav) => {
+                        if let Some(nav) = nav.upgrade() {
+                            navigation_count += 1;
+                            if navigation_count > 1 {
+                                fail("Key paths may reference only directly related entities");
+                            }
+                            if nav.nullable.unwrap_or(true) {
+                                fail("Every key path navigation must be non-nullable");
+                            }
+                            if let Some(target) = nav.target.upgrade() {
+                                let tail = &key[position + 1..];
+                                if !target.keys().iter().any(|k| same_key_path(k, tail)) {
+                                    fail("Related entity key path must reference a key property");
+                                }
+                                for target_key in target.keys() {
+                                    if !entity.keys().iter().any(|candidate| {
+                                        candidate.len() == position + 1 + target_key.len()
+                                            && same_key_path(
+                                                &candidate[..position + 1],
+                                                &key[..position + 1],
+                                            )
+                                            && same_key_path(&candidate[position + 1..], target_key)
+                                    }) {
+                                        fail(
+                                            "All key properties of the related entity must be included",
+                                        );
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+}
+
+fn same_key_path(left: &[KeyPathSegment], right: &[KeyPathSegment]) -> bool {
+    left.len() == right.len()
+        && left.iter().zip(right).all(|(a, b)| match (a, b) {
+            (KeyPathSegment::Property(a), KeyPathSegment::Property(b)) => a.ptr_eq(b),
+            (KeyPathSegment::NavigationProperty(a), KeyPathSegment::NavigationProperty(b)) => {
+                a.ptr_eq(b)
+            }
+            _ => false,
+        })
+}
+
+fn is_simple_identifier(value: &str) -> bool {
+    let mut chars = value.chars();
+    matches!(chars.next(), Some(c) if c == '_' || c.is_alphabetic())
+        && chars.all(|c| c == '_' || c.is_alphanumeric())
+        && value.chars().count() <= 128
+}
+
 struct NonScalarEntityKeyRule;
 
 impl ValidationRule for NonScalarEntityKeyRule {
@@ -1554,6 +1716,16 @@ fn classify_key_path(key: &[KeyPathSegment]) -> KeyPathClassification {
     let mut terminal = None;
 
     for segment in key {
+        if let KeyPathSegment::NavigationProperty(nav) = segment {
+            let Some(nav) = nav.upgrade() else {
+                return KeyPathClassification::Unknown;
+            };
+            if nav.is_collection {
+                return KeyPathClassification::Collection;
+            }
+            terminal = None;
+            continue;
+        }
         let KeyPathSegment::Property(property) = segment else {
             return KeyPathClassification::Unknown;
         };
