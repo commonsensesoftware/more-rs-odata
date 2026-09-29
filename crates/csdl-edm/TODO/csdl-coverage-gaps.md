@@ -59,8 +59,12 @@ Related detailed design TODO:
       rejection are implemented with XML/JSON regression coverage. Cross-schema
       bases use a shared qualified-name registry, including forward aliases;
       version-specific 4.0 key and member-redefinition rules are implemented.
-- [ ] Navigation semantics: `partner`, `contains_target`, `on_delete`, and
-      `referential_constraints` (field mapping in resolver is implemented; semantic consistency checks are pending).
+- [x] Navigation semantics for named entity targets: typed partner paths (including
+      derived casts), reciprocal/type checks, complex-owner restrictions, recursive
+      and non-recursive containment, typed structural/navigation constraint paths,
+      type/cardinality/nullability checks, and strict OnDelete parsing. XML/JSON
+      nullability defaults and Int32 key serialization are preserved. Built-in
+      abstract targets remain part of primitive/type coverage below.
 - [ ] Operations: `Function`, `Action`, and operation binding/composability (signature mapping plus initial binding/entity-set-path validation is implemented; deeper semantics are pending).
 - [ ] Container features: `FunctionImport`, `ActionImport`, and
       `NavigationPropertyBinding` resolution (initial resolver mapping done; semantic target/operation validation pending).

@@ -21,10 +21,10 @@
 
 use serde_json::{Map, Value};
 
-use crate::error::{Error, Result};
-use crate::expr::{BinaryOperator, CsdlAnnotationExpression, PropertyValue};
 use crate::csdl::Annotation;
 use crate::csdl_xml_reader::SyntaxUnit;
+use crate::error::{Error, Result};
+use crate::expr::{BinaryOperator, CsdlAnnotationExpression, PropertyValue};
 
 pub struct JsonCsdlReader {
     value: Value,
@@ -146,7 +146,11 @@ fn emit_include(out: &mut Vec<SyntaxUnit>, mut obj: Map<String, Value>) -> Resul
     Ok(())
 }
 
-fn emit_schema(out: &mut Vec<SyntaxUnit>, namespace: &str, mut obj: Map<String, Value>) -> Result<()> {
+fn emit_schema(
+    out: &mut Vec<SyntaxUnit>,
+    namespace: &str,
+    mut obj: Map<String, Value>,
+) -> Result<()> {
     let alias = take_string(&mut obj, "$Alias");
     let mut attrs = vec![("Namespace".into(), namespace.into())];
     if let Some(a) = alias.clone() {
@@ -385,7 +389,7 @@ fn emit_property(
 ) -> Result<()> {
     let is_collection = take_bool(&mut obj, "$Collection").unwrap_or(false);
     let raw_type = take_string(&mut obj, "$Type").or_else(|| Some("Edm.String".into()));
-    let nullable = take_bool(&mut obj, "$Nullable");
+    let nullable = Some(take_bool(&mut obj, "$Nullable").unwrap_or(false));
     let max_length = take_string_or_number(&mut obj, "$MaxLength");
     let precision = take_string_or_number(&mut obj, "$Precision");
     let scale = take_string_or_number(&mut obj, "$Scale");
@@ -395,7 +399,7 @@ fn emit_property(
 
     // Materialize JSON's default type: the shared model cannot otherwise
     // distinguish an omitted JSON type from a missing required XML Type.
-    // Nullable remains authored here until format-specific facets are modeled.
+    // JSON nullability defaults to false; XML defaults to true.
     let mut attrs = vec![("Name".into(), name.into())];
     push_type_attrs(&mut attrs, raw_type.as_deref(), is_collection, namespace);
     if let Some(n) = nullable {
@@ -432,9 +436,31 @@ fn emit_navigation_property(
     mut obj: Map<String, Value>,
     namespace: &str,
 ) -> Result<()> {
+    for key in ["$Type", "$Partner", "$OnDelete"] {
+        if obj.get(key).is_some_and(|value| !value.is_string()) {
+            return Err(Error::Csdl(format!(
+                "NavigationProperty {key} must be a string"
+            )));
+        }
+    }
+    for key in ["$Collection", "$Nullable", "$ContainsTarget"] {
+        if obj.get(key).is_some_and(|value| !value.is_boolean()) {
+            return Err(Error::Csdl(format!(
+                "NavigationProperty {key} must be a boolean"
+            )));
+        }
+    }
+    if obj
+        .get("$ReferentialConstraint")
+        .is_some_and(|value| !value.is_object())
+    {
+        return Err(Error::Csdl(
+            "$ReferentialConstraint must be an object".into(),
+        ));
+    }
     let is_collection = take_bool(&mut obj, "$Collection").unwrap_or(false);
     let raw_type = take_string(&mut obj, "$Type");
-    let nullable = take_bool(&mut obj, "$Nullable");
+    let nullable = take_bool(&mut obj, "$Nullable").or_else(|| (!is_collection).then_some(false));
     let partner = take_string(&mut obj, "$Partner");
     let contains_target = take_bool(&mut obj, "$ContainsTarget");
     let on_delete = take_string(&mut obj, "$OnDelete");
@@ -474,15 +500,12 @@ fn emit_navigation_property(
             }
             let rp = match ref_prop {
                 Value::String(s) => s,
-                _ => continue,
+                _ => return Err(Error::Csdl("ReferencedProperty must be a string".into())),
             };
             start(
                 out,
                 "ReferentialConstraint",
-                vec![
-                    ("Property".into(), prop),
-                    ("ReferencedProperty".into(), rp),
-                ],
+                vec![("Property".into(), prop), ("ReferencedProperty".into(), rp)],
             );
             end(out, "ReferentialConstraint");
         }
@@ -576,10 +599,18 @@ fn emit_container_child(
         return Ok(());
     }
 
-    let kind = if is_collection { "EntitySet" } else { "Singleton" };
+    let kind = if is_collection {
+        "EntitySet"
+    } else {
+        "Singleton"
+    };
     let mut attrs = vec![("Name".into(), name.into())];
     if let Some(t) = raw_type {
-        let key = if kind == "EntitySet" { "EntityType" } else { "Type" };
+        let key = if kind == "EntitySet" {
+            "EntityType"
+        } else {
+            "Type"
+        };
         attrs.push((key.into(), t));
     }
     if let Some(b) = include_in_service_doc {

@@ -19,6 +19,15 @@ enum KeyPathClassification {
 
 #[derive(Debug, Clone)]
 pub enum ValidationError {
+    InvalidContainmentProperty {
+        owner: String,
+        property: String,
+    },
+    InvalidNavigation {
+        owner: String,
+        navigation: String,
+        reason: &'static str,
+    },
     MissingEntityKey {
         entity: String,
     },
@@ -106,6 +115,23 @@ pub fn validate_document(document: &DocumentModel) -> Result<(), Vec<ValidationE
                         });
                     }
                 }
+                let (owner, properties) = match element.as_ref() {
+                    SchemaElement::EntityType(entity) => (&entity.name, entity.properties()),
+                    SchemaElement::ComplexType(complex) => (&complex.name, complex.properties()),
+                    _ => continue,
+                };
+                for property in properties {
+                    if property.is_collection {
+                        if let ResolvedType::Complex(complex) = &property.ty {
+                            if complex_contains_navigation(complex, &mut HashSet::new()) {
+                                errors.push(ValidationError::InvalidContainmentProperty {
+                                    owner: owner.clone(),
+                                    property: property.name.clone(),
+                                });
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -115,6 +141,26 @@ pub fn validate_document(document: &DocumentModel) -> Result<(), Vec<ValidationE
     } else {
         Err(errors)
     }
+}
+
+fn complex_contains_navigation(
+    complex: &ComplexType,
+    seen: &mut HashSet<*const ComplexType>,
+) -> bool {
+    if !seen.insert(complex as *const ComplexType) {
+        return false;
+    }
+    complex
+        .navigation_properties()
+        .iter()
+        .any(|nav| nav.contains_target.unwrap_or(false))
+        || complex
+            .properties()
+            .iter()
+            .any(|property| match &property.ty {
+                ResolvedType::Complex(nested) => complex_contains_navigation(nested, seen),
+                _ => false,
+            })
 }
 
 pub fn validate_model(model: &Model) -> Result<(), Vec<ValidationError>> {
@@ -169,6 +215,7 @@ impl Default for ValidatorEngine {
                 Box::new(NavigationPropertyBindingSemanticsRule),
                 Box::new(KnownEntityContainerTargetsRule),
                 Box::new(NavigationPartnerConsistencyRule),
+                Box::new(NavigationSemanticsRule),
                 Box::new(ReferentialConstraintConsistencyRule),
                 Box::new(TermBaseTermCycleRule),
                 Box::new(BoundOperationBindingParameterRule),
@@ -608,46 +655,317 @@ impl ValidationRule for NavigationPartnerConsistencyRule {
     }
 }
 
-impl ValidationRule for ReferentialConstraintConsistencyRule {
-    fn name(&self) -> &'static str {
-        "referential_constraint_consistency"
+enum ConstraintEndpoint {
+    Property(std::sync::Arc<crate::edm::Property>),
+    Navigation(std::sync::Arc<crate::edm::NavigationProperty>),
+}
+
+fn terminal_constraint_property(
+    path: Option<&std::sync::Arc<[crate::edm::ConstraintPathSegment]>>,
+) -> Option<ConstraintEndpoint> {
+    use crate::edm::ConstraintPathSegment;
+    let path = path?;
+    if path
+        .iter()
+        .any(|s| matches!(s, ConstraintPathSegment::Unresolved(_)))
+    {
+        return None;
     }
+    match path.last()? {
+        ConstraintPathSegment::Property(p) => p.upgrade().map(ConstraintEndpoint::Property),
+        ConstraintPathSegment::NavigationProperty(n) => {
+            n.upgrade().map(ConstraintEndpoint::Navigation)
+        }
+        _ => None,
+    }
+}
 
-    fn visit_entity_type(&self, entity: &EntityType, ctx: &mut ValidationContext) {
-        for navigation in entity.navigation_properties() {
-            let Some(target) = navigation.target.upgrade() else {
-                continue;
-            };
+fn path_nullable(path: &[crate::edm::ConstraintPathSegment]) -> bool {
+    use crate::edm::ConstraintPathSegment;
+    path.iter().any(|segment| match segment {
+        ConstraintPathSegment::Property(property) => property
+            .upgrade()
+            .is_none_or(|p| p.nullable.unwrap_or(true)),
+        ConstraintPathSegment::NavigationProperty(nav) => {
+            nav.upgrade().is_none_or(|n| n.nullable.unwrap_or(true))
+        }
+        _ => true,
+    })
+}
 
-            for constraint in &navigation.referential_constraints {
-                if !entity
-                    .properties()
-                    .iter()
-                    .any(|property| property.name == constraint.property)
-                {
-                    ctx.push(ValidationError::UnknownReferentialConstraintProperty {
-                        entity: entity.name.clone(),
-                        navigation: navigation.name.clone(),
-                        property: constraint.property.clone(),
-                    });
+fn constraint_types_match(left: &ConstraintEndpoint, right: &ConstraintEndpoint) -> bool {
+    use std::sync::Arc;
+    match (left, right) {
+        (ConstraintEndpoint::Property(left), ConstraintEndpoint::Property(right)) => {
+            left.is_collection == right.is_collection
+                && match (&left.ty, &right.ty) {
+                    (ResolvedType::Primitive(a), ResolvedType::Primitive(b)) => a == b,
+                    (ResolvedType::Enum(a), ResolvedType::Enum(b)) => Arc::ptr_eq(a, b),
+                    (ResolvedType::TypeDefinition(a), ResolvedType::TypeDefinition(b)) => {
+                        Arc::ptr_eq(a, b)
+                    }
+                    (ResolvedType::Complex(_), ResolvedType::Complex(_)) => true,
+                    _ => false,
                 }
+        }
+        (ConstraintEndpoint::Navigation(left), ConstraintEndpoint::Navigation(right)) => {
+            left.is_collection == right.is_collection
+                && match (left.target.upgrade(), right.target.upgrade()) {
+                    (Some(left), Some(right)) => Arc::ptr_eq(&left, &right),
+                    _ => false,
+                }
+        }
+        _ => false,
+    }
+}
 
-                if !target
-                    .properties()
-                    .iter()
-                    .any(|property| property.name == constraint.referenced_property)
-                {
-                    ctx.push(
-                        ValidationError::UnknownReferentialConstraintReferencedProperty {
-                            entity: entity.name.clone(),
-                            navigation: navigation.name.clone(),
-                            target_entity: target.name.clone(),
-                            referenced_property: constraint.referenced_property.clone(),
-                        },
+fn invalid_navigation(
+    owner: &str,
+    nav: &crate::edm::NavigationProperty,
+    reason: &'static str,
+    ctx: &mut ValidationContext,
+) {
+    ctx.push(ValidationError::InvalidNavigation {
+        owner: owner.into(),
+        navigation: nav.name.clone(),
+        reason,
+    });
+}
+
+fn validate_constraints(
+    owner: &str,
+    navs: &[std::sync::Arc<crate::edm::NavigationProperty>],
+    ctx: &mut ValidationContext,
+) {
+    for nav in navs {
+        let Some(target) = nav.target.upgrade() else {
+            continue;
+        };
+        if nav.is_collection && !nav.referential_constraints.is_empty() {
+            invalid_navigation(
+                owner,
+                nav,
+                "Referential constraints require a single-valued navigation",
+                ctx,
+            );
+        }
+        let mut seen = HashSet::new();
+        for constraint in &nav.referential_constraints {
+            if !seen.insert(&constraint.property) {
+                invalid_navigation(owner, nav, "Dependent constraint paths must be unique", ctx);
+            }
+            let dependent = terminal_constraint_property(constraint.property_path.get());
+            let principal = terminal_constraint_property(constraint.referenced_property_path.get());
+            if dependent.is_none() {
+                ctx.push(ValidationError::UnknownReferentialConstraintProperty {
+                    entity: owner.into(),
+                    navigation: nav.name.clone(),
+                    property: constraint.property.clone(),
+                });
+            }
+            if principal.is_none() {
+                ctx.push(
+                    ValidationError::UnknownReferentialConstraintReferencedProperty {
+                        entity: owner.into(),
+                        navigation: nav.name.clone(),
+                        target_entity: target.name.clone(),
+                        referenced_property: constraint.referenced_property.clone(),
+                    },
+                );
+            }
+            if let (Some(dependent), Some(principal)) = (dependent, principal) {
+                if !constraint_types_match(&dependent, &principal) {
+                    invalid_navigation(
+                        owner,
+                        nav,
+                        "Dependent and principal constraint types must match",
+                        ctx,
+                    );
+                }
+                let dependent_nullable = path_nullable(constraint.property_path.get().unwrap());
+                let principal_nullable =
+                    path_nullable(constraint.referenced_property_path.get().unwrap());
+                if dependent_nullable != (nav.nullable.unwrap_or(true) || principal_nullable) {
+                    invalid_navigation(
+                        owner,
+                        nav,
+                        "Dependent nullability must equal navigation or principal nullability",
+                        ctx,
                     );
                 }
             }
         }
+    }
+}
+
+impl ValidationRule for ReferentialConstraintConsistencyRule {
+    fn name(&self) -> &'static str {
+        "referential_constraint_consistency"
+    }
+    fn visit_entity_type(&self, entity: &EntityType, ctx: &mut ValidationContext) {
+        validate_constraints(&entity.name, entity.navigation_properties(), ctx);
+    }
+    fn visit_complex_type(&self, complex: &ComplexType, ctx: &mut ValidationContext) {
+        validate_constraints(&complex.name, complex.navigation_properties(), ctx);
+    }
+}
+
+struct NavigationSemanticsRule;
+
+fn entity_derives_from(entity: &EntityType, base: &EntityType) -> bool {
+    if std::ptr::eq(entity, base) {
+        return true;
+    }
+    let mut next = entity
+        .base_type
+        .get()
+        .and_then(Option::as_ref)
+        .and_then(|b| b.upgrade());
+    let mut seen = HashSet::new();
+    while let Some(current) = next {
+        if !seen.insert(std::sync::Arc::as_ptr(&current)) {
+            break;
+        }
+        if std::ptr::eq(current.as_ref(), base) {
+            return true;
+        }
+        next = current
+            .base_type
+            .get()
+            .and_then(Option::as_ref)
+            .and_then(|b| b.upgrade());
+    }
+    false
+}
+
+fn partner_navigation(
+    nav: &crate::edm::NavigationProperty,
+) -> Option<std::sync::Arc<crate::edm::NavigationProperty>> {
+    let path = nav.partner()?;
+    if path
+        .iter()
+        .any(|s| matches!(s, BindingPathSegment::Unresolved(_)))
+    {
+        return None;
+    }
+    match path.last()? {
+        BindingPathSegment::NavigationProperty(partner) => partner.upgrade(),
+        _ => None,
+    }
+}
+
+fn validate_navigation_members(
+    owner: &str,
+    entity: Option<&EntityType>,
+    navs: &[std::sync::Arc<crate::edm::NavigationProperty>],
+    ctx: &mut ValidationContext,
+) {
+    let mut container_partners = 0;
+    for nav in navs {
+        if nav.is_collection && nav.nullable.is_some() {
+            invalid_navigation(
+                owner,
+                nav,
+                "Collection-valued navigation must not specify Nullable",
+                ctx,
+            );
+        }
+        let Some(target) = nav.target.upgrade() else {
+            continue;
+        };
+        if nav.is_collection && nav.contains_target.unwrap_or(false) && target.keys().is_empty() {
+            invalid_navigation(
+                owner,
+                nav,
+                "Collection containment target requires a key",
+                ctx,
+            );
+        }
+        if entity.is_none() && nav.partner().is_some() {
+            invalid_navigation(
+                owner,
+                nav,
+                "Navigation declared on a complex type cannot specify Partner",
+                ctx,
+            );
+        }
+        let Some(partner) = partner_navigation(nav) else {
+            continue;
+        };
+        if partner.contains_target.unwrap_or(false) {
+            container_partners += 1;
+        }
+        if let Some(entity) = entity {
+            if partner
+                .target
+                .upgrade()
+                .is_none_or(|ty| !entity_derives_from(entity, &ty))
+            {
+                invalid_navigation(
+                    owner,
+                    nav,
+                    "Partner must target the declaring entity type or a base type",
+                    ctx,
+                );
+            }
+            if partner.partner().is_some()
+                && partner_navigation(&partner)
+                    .is_none_or(|back| !std::sync::Arc::ptr_eq(&back, nav))
+            {
+                invalid_navigation(
+                    owner,
+                    nav,
+                    "Partner must point back to the current navigation",
+                    ctx,
+                );
+            }
+            if nav.contains_target.unwrap_or(false) {
+                let recursive =
+                    entity_derives_from(entity, &target) || entity_derives_from(&target, entity);
+                if recursive && (partner.is_collection || !partner.nullable.unwrap_or(true)) {
+                    invalid_navigation(
+                        owner,
+                        nav,
+                        "Recursive containment partner must be nullable and single-valued",
+                        ctx,
+                    );
+                } else if !recursive && partner.nullable.unwrap_or(true) {
+                    invalid_navigation(
+                        owner,
+                        nav,
+                        "Non-recursive containment partner must be non-nullable",
+                        ctx,
+                    );
+                }
+            }
+        }
+    }
+    if container_partners > 1 {
+        if let Some(nav) = navs.first() {
+            invalid_navigation(
+                owner,
+                nav,
+                "Entity inheritance chain has more than one containment partner",
+                ctx,
+            );
+        }
+    }
+}
+
+impl ValidationRule for NavigationSemanticsRule {
+    fn name(&self) -> &'static str {
+        "navigation_semantics"
+    }
+    fn visit_entity_type(&self, entity: &EntityType, ctx: &mut ValidationContext) {
+        validate_navigation_members(
+            &entity.name,
+            Some(entity),
+            entity.navigation_properties(),
+            ctx,
+        );
+    }
+    fn visit_complex_type(&self, complex: &ComplexType, ctx: &mut ValidationContext) {
+        validate_navigation_members(&complex.name, None, complex.navigation_properties(), ctx);
     }
 }
 

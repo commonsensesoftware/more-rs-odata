@@ -214,6 +214,8 @@ pub struct Property {
     pub name: String,
     pub ty: ResolvedType,
     pub is_collection: bool,
+    pub nullable: Option<bool>,
+    pub default_value: Option<String>,
 }
 
 #[derive(Debug)]
@@ -222,6 +224,7 @@ pub struct NavigationProperty {
     /// Weak to break entity <-> entity cycles.
     pub target: Weak<EntityType>,
     pub is_collection: bool,
+    pub nullable: Option<bool>,
     /// Resolved `Partner` path against the target entity type; ends at a
     /// navigation property. Filled by the resolver in a late pass once every
     /// entity's navigation properties exist. Unset when no partner is declared.
@@ -260,6 +263,16 @@ impl OnDeleteAction {
 pub struct ReferentialConstraint {
     pub property: String,
     pub referenced_property: String,
+    /// Resolver-owned paths; authored strings above remain for diagnostics.
+    pub property_path: OnceLock<Arc<[ConstraintPathSegment]>>,
+    pub referenced_property_path: OnceLock<Arc<[ConstraintPathSegment]>>,
+}
+
+#[derive(Debug, Clone)]
+pub enum ConstraintPathSegment {
+    Property(Weak<Property>),
+    NavigationProperty(Weak<NavigationProperty>),
+    Unresolved(String),
 }
 
 #[derive(Debug)]

@@ -10,6 +10,7 @@ use csdl_edm::validator::{ValidationError, validate_document};
 #[derive(Debug, Clone, Copy)]
 enum ExpectedOutcome {
     Pass,
+    ValidateInvalidNavigation(&'static str),
     ResolveUnknownType(&'static str),
     ResolveMissingType {
         element_kind: &'static str,
@@ -235,8 +236,8 @@ fn resolve_and_validate_fixture_expectations() {
             "example89.csdl.xml",
             ExpectedOutcome::Pass,
         ),
-        ("extras_sample.csdl.json", ExpectedOutcome::Pass),
-        ("extras_sample.csdl.xml", ExpectedOutcome::Pass),
+        ("extras_sample.csdl.json", ExpectedOutcome::ValidateInvalidNavigation("Referential constraints require a single-valued navigation")),
+        ("extras_sample.csdl.xml", ExpectedOutcome::ValidateInvalidNavigation("Referential constraints require a single-valued navigation")),
         (
             "fields_sample.csdl.json",
             ExpectedOutcome::ResolveUnknownType("FieldsDemo.BaseService"),
@@ -1902,6 +1903,11 @@ fn assert_expected_validation(
     errors: &[ValidationError],
 ) {
     match expected {
+        ExpectedOutcome::ValidateInvalidNavigation(reason) => {
+            assert!(errors.iter().any(|error| matches!(error,
+                ValidationError::InvalidNavigation { reason: actual, .. } if *actual == reason)),
+                "{fixture_name}: expected {reason}, got {errors:?}");
+        }
         ExpectedOutcome::ValidateUnknownContainerTarget {
             source_kind,
             source,

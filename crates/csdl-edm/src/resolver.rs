@@ -404,14 +404,41 @@ impl Resolver {
             };
 
             for csdl_nav in csdl_navs {
-                let Some(partner) = csdl_nav.partner.as_deref() else {
-                    continue;
-                };
                 let Some(resolved) = resolved_navs.iter().find(|n| n.name == csdl_nav.name) else {
                     continue;
                 };
+                let source_properties = match el {
+                    csdl::SchemaElement::EntityType(e) => {
+                        entities[&format!("{ns}.{}", e.name)].properties()
+                    }
+                    csdl::SchemaElement::ComplexType(c) => {
+                        complexes[&format!("{ns}.{}", c.name)].properties()
+                    }
+                    _ => unreachable!(),
+                };
+                if let Some(target) = resolved.target.upgrade() {
+                    for constraint in &resolved.referential_constraints {
+                        let _ = constraint.property_path.set(resolve_constraint_path(
+                            source_properties,
+                            resolved_navs,
+                            &constraint.property,
+                        ));
+                        let _ = constraint
+                            .referenced_property_path
+                            .set(resolve_constraint_path(
+                                target.properties(),
+                                target.navigation_properties(),
+                                &constraint.referenced_property,
+                            ));
+                    }
+                }
+                let Some(partner) = csdl_nav.partner.as_deref() else {
+                    continue;
+                };
                 let path = match resolved.target.upgrade() {
-                    Some(target) => resolve_binding_path(&target, partner),
+                    Some(target) => {
+                        resolve_partner_path(&target, partner, &entities, &complexes, ns, aliases)
+                    }
                     None => Arc::from([BindingPathSegment::Unresolved(partner.to_owned())]),
                 };
                 let _ = resolved.partner.set(path);
@@ -760,6 +787,8 @@ fn resolve_properties(
                 name: p.name.clone(),
                 ty,
                 is_collection: p.is_collection,
+                nullable: p.nullable,
+                default_value: p.default_value.clone(),
             }))
         })
         .collect()
@@ -1465,6 +1494,7 @@ fn resolve_navs(
                 name: n.name.clone(),
                 target: Arc::downgrade(target),
                 is_collection: n.is_collection,
+                nullable: n.nullable,
                 partner: OnceLock::new(),
                 contains_target: n.contains_target,
                 on_delete: n.on_delete.as_ref().map(|action| match action {
@@ -1479,6 +1509,8 @@ fn resolve_navs(
                     .map(|constraint| ReferentialConstraint {
                         property: constraint.property.clone(),
                         referenced_property: constraint.referenced_property.clone(),
+                        property_path: OnceLock::new(),
+                        referenced_property_path: OnceLock::new(),
                     })
                     .collect(),
             }))
@@ -1748,9 +1780,47 @@ fn resolve_bindings(
 /// properties. Key paths are pre-validated to resolve, so
 /// [`KeyPathSegment::Unresolved`] is a defensive fallback only.
 fn resolve_key_path(entity: &Arc<EntityType>, key: &str) -> Arc<[KeyPathSegment]> {
+    resolve_property_path(entity.properties(), key)
+}
+
+fn resolve_constraint_path<'a>(
+    mut properties: &'a [Arc<Property>],
+    mut navigations: &'a [Arc<NavigationProperty>],
+    path: &str,
+) -> Arc<[ConstraintPathSegment]> {
+    let mut out = Vec::new();
+    let parts: Vec<_> = path.split('/').collect();
+    for (index, part) in parts.iter().enumerate() {
+        let last = index + 1 == parts.len();
+        if let Some(property) = properties.iter().find(|p| p.name == *part) {
+            out.push(ConstraintPathSegment::Property(Arc::downgrade(property)));
+            if last {
+                return out.into();
+            }
+            if !property.is_collection {
+                if let ResolvedType::Complex(complex) = &property.ty {
+                    properties = complex.properties();
+                    navigations = complex.navigation_properties();
+                    continue;
+                }
+            }
+        } else if last {
+            if let Some(nav) = navigations.iter().find(|n| n.name == *part) {
+                out.push(ConstraintPathSegment::NavigationProperty(Arc::downgrade(
+                    nav,
+                )));
+                return out.into();
+            }
+        }
+        out.push(ConstraintPathSegment::Unresolved((*part).to_owned()));
+        break;
+    }
+    out.into()
+}
+
+fn resolve_property_path(mut props: &[Arc<Property>], key: &str) -> Arc<[KeyPathSegment]> {
     let mut out: Vec<KeyPathSegment> = Vec::new();
-    let mut props: &[Arc<Property>] = entity.properties();
-    let parts: Vec<&str> = key.split('/').filter(|s| !s.is_empty()).collect();
+    let parts: Vec<&str> = key.split('/').collect();
 
     for (i, part) in parts.iter().enumerate() {
         let is_last = i + 1 == parts.len();
@@ -1783,6 +1853,69 @@ fn resolve_key_path(entity: &Arc<EntityType>, key: &str) -> Arc<[KeyPathSegment]
 /// hop), or a complex-typed structural property descended into. Type-cast
 /// (qualified) segments are not resolved in v1. A segment that cannot be
 /// resolved becomes [`BindingPathSegment::Unresolved`] and walking stops.
+fn resolve_partner_path(
+    source: &Arc<EntityType>,
+    path: &str,
+    entities: &HashMap<String, Arc<EntityType>>,
+    complexes: &HashMap<String, Arc<ComplexType>>,
+    ns: &str,
+    aliases: &HashMap<String, String>,
+) -> Arc<[BindingPathSegment]> {
+    enum Context {
+        Entity(Arc<EntityType>),
+        Complex(Arc<ComplexType>),
+    }
+    let mut context = Context::Entity(source.clone());
+    let mut out = Vec::new();
+    let parts: Vec<_> = path.split('/').collect();
+    for (index, part) in parts.iter().enumerate() {
+        let last = index + 1 == parts.len();
+        if part.contains('.') && !last {
+            let qualified = qualify_name(part, ns, aliases).expect("qualified path segment");
+            match &context {
+                Context::Entity(base) => {
+                    if let Some(derived) = entities.get(qualified.as_ref()).filter(|derived| {
+                        Arc::ptr_eq(derived, base) || entity_is_strict_subtype(derived, base)
+                    }) {
+                        out.push(BindingPathSegment::EntityTypeCast(Arc::downgrade(derived)));
+                        context = Context::Entity(derived.clone());
+                        continue;
+                    }
+                }
+                Context::Complex(base) => {
+                    if let Some(derived) = complexes.get(qualified.as_ref()).filter(|derived| {
+                        Arc::ptr_eq(derived, base) || complex_is_strict_subtype(derived, base)
+                    }) {
+                        out.push(BindingPathSegment::ComplexTypeCast(Arc::downgrade(derived)));
+                        context = Context::Complex(derived.clone());
+                        continue;
+                    }
+                }
+            }
+        } else {
+            let (props, navs) = match &context {
+                Context::Entity(ty) => (ty.properties(), ty.navigation_properties()),
+                Context::Complex(ty) => (ty.properties(), ty.navigation_properties()),
+            };
+            if last {
+                if let Some(nav) = navs.iter().find(|n| n.name == *part) {
+                    out.push(BindingPathSegment::NavigationProperty(Arc::downgrade(nav)));
+                    return out.into();
+                }
+            } else if let Some(prop) = props.iter().find(|p| p.name == *part) {
+                if let ResolvedType::Complex(complex) = &prop.ty {
+                    out.push(BindingPathSegment::Property(Arc::downgrade(prop)));
+                    context = Context::Complex(complex.clone());
+                    continue;
+                }
+            }
+        }
+        out.push(BindingPathSegment::Unresolved((*part).to_owned()));
+        break;
+    }
+    out.into()
+}
+
 fn resolve_binding_path(source: &Arc<EntityType>, path: &str) -> Arc<[BindingPathSegment]> {
     enum Ctx {
         Entity(Arc<EntityType>),

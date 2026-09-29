@@ -372,19 +372,36 @@ fn parse_property(raw: &RawElement) -> io::Result<Property> {
 }
 
 fn parse_navigation_property(raw: &RawElement) -> io::Result<NavigationProperty> {
+    for attribute in ["Nullable", "ContainsTarget"] {
+        if raw_attr(raw, attribute).is_some_and(|value| !matches!(value, "true" | "false")) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("NavigationProperty {attribute} must be true or false"),
+            ));
+        }
+    }
     let name = raw_attr(raw, "Name").unwrap_or("").to_string();
     let (type_name, is_collection) = raw_type_attr(raw, "Type");
     let nullable = raw_attr_bool(raw, "Nullable");
     let partner = raw_attr(raw, "Partner").map(str::to_string);
     let contains_target = raw_attr_bool(raw, "ContainsTarget");
 
-    let on_delete = raw
-        .children
-        .iter()
-        .find(|n| n.name == "OnDelete")
-        .and_then(|n| raw_attr(n, "Action"))
-        .map(parse_on_delete_action)
+    let mut delete_elements = raw.children.iter().filter(|n| n.name == "OnDelete");
+    let on_delete = delete_elements
+        .next()
+        .map(|element| {
+            let action = raw_attr(element, "Action").ok_or_else(|| {
+                io::Error::new(io::ErrorKind::InvalidData, "OnDelete requires Action")
+            })?;
+            parse_on_delete_action(action)
+        })
         .transpose()?;
+    if delete_elements.next().is_some() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "NavigationProperty permits at most one OnDelete",
+        ));
+    }
 
     let referential_constraints = raw
         .children
@@ -443,6 +460,14 @@ fn parse_srid_facet(raw: &str) -> io::Result<SridFacet> {
 }
 
 fn parse_referential_constraint(raw: &RawElement) -> io::Result<ReferentialConstraint> {
+    for attribute in ["Property", "ReferencedProperty"] {
+        if raw_attr(raw, attribute).is_none_or(str::is_empty) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("ReferentialConstraint requires {attribute}"),
+            ));
+        }
+    }
     let annotations = raw
         .children
         .iter()

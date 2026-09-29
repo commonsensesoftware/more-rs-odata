@@ -1263,14 +1263,7 @@ fn entity_type_to_json(entity: &EntityType, namespace: &str) -> Value {
     }
 
     for prop in &entity.properties {
-        obj.insert(
-            prop.name.clone(),
-            property_to_json(
-                prop,
-                namespace,
-                entity.has_stream == Some(true) && prop.name == "ID",
-            ),
-        );
+        obj.insert(prop.name.clone(), property_to_json(prop, namespace));
     }
 
     for nav in &entity.navigation_properties {
@@ -1344,7 +1337,7 @@ fn complex_type_to_json(complex: &ComplexType, namespace: &str) -> Value {
     insert_optional_bool(&mut obj, "$OpenType", complex.open_type);
 
     for prop in &complex.properties {
-        obj.insert(prop.name.clone(), property_to_json(prop, namespace, false));
+        obj.insert(prop.name.clone(), property_to_json(prop, namespace));
     }
 
     for nav in &complex.navigation_properties {
@@ -1362,25 +1355,19 @@ fn complex_type_to_json(complex: &ComplexType, namespace: &str) -> Value {
     Value::Object(obj)
 }
 
-fn property_to_json(property: &Property, namespace: &str, default_id_shape: bool) -> Value {
+fn property_to_json(property: &Property, namespace: &str) -> Value {
     let mut obj = Map::new();
 
     write_type_facets(
         &mut obj,
         property.type_name.as_deref(),
         property.is_collection,
-        property.nullable,
+        property
+            .nullable
+            .or_else(|| (!property.is_collection).then_some(true)),
         property.max_length,
         namespace,
     );
-
-    if default_id_shape
-        && property.type_name.as_deref() == Some("Edm.Int32")
-        && property.nullable == Some(false)
-        && obj.keys().all(|k| k == "$Type")
-    {
-        obj.clear();
-    }
 
     if let Some(v) = &property.precision {
         obj.insert("$Precision".to_string(), facet_value(v));
@@ -1424,8 +1411,11 @@ fn navigation_property_to_json(nav: &NavigationProperty, namespace: &str) -> Val
         );
     }
 
-    // Literal pass-through, matching the reader: only emit when source had it.
-    if let Some(n) = nav.nullable {
+    // Preserve XML's implicit true when writing JSON, whose default is false.
+    if let Some(n) = nav
+        .nullable
+        .or_else(|| (!nav.is_collection).then_some(true))
+    {
         obj.insert("$Nullable".to_string(), Value::Bool(n));
     }
 

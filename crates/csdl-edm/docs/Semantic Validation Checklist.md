@@ -53,15 +53,29 @@ This checklist is now split into:
 ### E. Navigation property semantics
 
 - [ ] Multiplicity is semantically valid for target entity.
-- [ ] If a Partner navigation property exists it points back correctly.
-- [ ] Containment navigation properties are used in valid container contexts.
+- [x] Partner paths resolve through complex properties/derived casts, target the
+      declaring entity or a base, and reciprocate when both partners are declared.
+- [x] Complex-type navigations cannot declare Partner; collection navigations
+      cannot declare Nullable.
+- [x] Collection containment requires a keyed target; recursive partners are
+      nullable and single-valued; non-recursive partners are non-nullable.
+- [x] An inheritance chain has at most one navigation with a containment partner.
+- [x] OData 4.0 rejects collections of complex values containing navigation targets.
 
 ### F. Referential constraint semantics
 
-- [ ] Principal key properties are non-nullable.
-- [ ] Dependent properties exist and match principal key types.
-- [ ] Constraint cardinalities match.
-- [ ] Referential constraints do not form cycles.
+- [x] Constraint paths resolve to structural or navigation properties, including
+      nested complex properties, on entity and complex owners.
+- [x] Dependent/principal types and collection cardinalities match (distinct
+      complex types are allowed by CSDL 4.01).
+- [x] Constraints are declared only on single-valued navigations and dependent
+      paths are unique.
+- [x] Dependent nullability equals navigation-or-principal nullability.
+- [x] OnDelete requires one valid Action and cannot be repeated.
+
+Principal properties need not be keys or non-nullable. Referential cycles are
+not forbidden by the CSDL 4.01 constraint rules. Containment instance identity
+and execution of delete actions require service data, not schema-only validation.
 
 ### G. Entity container semantics
 
