@@ -347,6 +347,7 @@ pub struct EntitySet {
 pub struct Singleton {
     pub name: String,
     pub type_name: Option<String>,
+    pub nullable: Option<bool>,
     pub include_in_service_document: Option<bool>,
     pub navigation_property_bindings: Vec<NavigationPropertyBinding>,
     pub annotations: Vec<Annotation>,

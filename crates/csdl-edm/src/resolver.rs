@@ -8,6 +8,8 @@ use std::sync::{Arc, OnceLock, Weak};
 
 use crate::{csdl, edm::*};
 
+mod containers;
+
 #[derive(Debug)]
 pub enum ResolveError {
     UnknownType(String),
@@ -135,23 +137,6 @@ impl Resolver {
         let mut enums: HashMap<String, Arc<EnumType>> = HashMap::new();
         let mut type_definitions: HashMap<String, Arc<TypeDefinition>> = HashMap::new();
         let mut terms: HashMap<String, Arc<Term>> = HashMap::new();
-        let function_defs = scoped_elements(&schemas)
-            .filter_map(|(ns, el)| match el {
-                csdl::SchemaElement::Function(function) => {
-                    Some((format!("{ns}.{}", function.name), function))
-                }
-                _ => None,
-            })
-            .collect::<HashMap<String, &csdl::Function>>();
-        let action_defs = scoped_elements(&schemas)
-            .filter_map(|(ns, el)| match el {
-                csdl::SchemaElement::Action(action) => {
-                    Some((format!("{ns}.{}", action.name), action))
-                }
-                _ => None,
-            })
-            .collect::<HashMap<String, &csdl::Action>>();
-
         for (ns, el) in scoped_elements(&schemas) {
             match el {
                 csdl::SchemaElement::EntityType(e) => {
@@ -445,6 +430,55 @@ impl Resolver {
             }
         }
 
+        let mut functions = HashMap::<String, Vec<Arc<Function>>>::new();
+        let mut actions = HashMap::<String, Vec<Arc<Action>>>::new();
+        let mut function_nodes = HashMap::new();
+        let mut action_nodes = HashMap::new();
+        for (ns, element) in scoped_elements(&schemas) {
+            match element {
+                csdl::SchemaElement::Function(function) => {
+                    let node = Arc::new(resolve_function(
+                        function,
+                        &entities,
+                        &complexes,
+                        &enums,
+                        &type_definitions,
+                        ns,
+                        aliases,
+                    )?);
+                    functions
+                        .entry(format!("{ns}.{}", function.name))
+                        .or_default()
+                        .push(node.clone());
+                    function_nodes.insert(function as *const csdl::Function, node);
+                }
+                csdl::SchemaElement::Action(action) => {
+                    let node = Arc::new(resolve_action(
+                        action,
+                        &entities,
+                        &complexes,
+                        &enums,
+                        &type_definitions,
+                        ns,
+                        aliases,
+                    )?);
+                    actions
+                        .entry(format!("{ns}.{}", action.name))
+                        .or_default()
+                        .push(node.clone());
+                    action_nodes.insert(action as *const csdl::Action, node);
+                }
+                _ => {}
+            }
+        }
+        let mut containers = containers::Containers::new(
+            &container_defs,
+            &entities,
+            &complexes,
+            &functions,
+            &actions,
+            aliases,
+        )?;
         let mut models = Vec::new();
         for schema in &schemas {
             let ns = &schema.namespace;
@@ -481,59 +515,35 @@ impl Resolver {
                             .cloned()
                             .expect("term exists"),
                     ),
-                    csdl::SchemaElement::Function(function) => {
-                        SchemaElement::Function(Arc::new(resolve_function(
-                            function,
-                            &entities,
-                            &complexes,
-                            &enums,
-                            &type_definitions,
-                            ns,
-                            aliases,
-                        )?))
-                    }
-                    csdl::SchemaElement::Action(action) => {
-                        SchemaElement::Action(Arc::new(resolve_action(
-                            action,
-                            &entities,
-                            &complexes,
-                            &enums,
-                            &type_definitions,
-                            ns,
-                            aliases,
-                        )?))
-                    }
+                    csdl::SchemaElement::Function(function) => SchemaElement::Function(
+                        function_nodes[&(function as *const csdl::Function)].clone(),
+                    ),
+                    csdl::SchemaElement::Action(action) => SchemaElement::Action(
+                        action_nodes[&(action as *const csdl::Action)].clone(),
+                    ),
                     csdl::SchemaElement::EntityContainer(_) => continue,
                 };
                 elements.push(Arc::new(wrapped));
             }
 
-            let entity_container = schema
+            let entity_containers = schema
                 .elements
                 .iter()
-                .find_map(|el| match el {
-                    csdl::SchemaElement::EntityContainer(container) => Some(container),
+                .filter_map(|element| match element {
+                    csdl::SchemaElement::EntityContainer(container) => {
+                        Some(containers.resolve(&format!("{ns}.{}", container.name)))
+                    }
                     _ => None,
                 })
-                .map(|c| {
-                    resolve_entity_container(
-                        c,
-                        &container_defs,
-                        &entities,
-                        &function_defs,
-                        &action_defs,
-                        ns,
-                        aliases,
-                        &mut Vec::new(),
-                    )
-                })
-                .transpose()?;
+                .collect::<Result<Vec<_>, _>>()?;
+            let entity_container = entity_containers.first().cloned();
 
             models.push(Model {
                 namespace: schema.namespace.clone(),
                 alias: schema.alias.clone(),
                 elements,
                 entity_container,
+                entity_containers,
             });
         }
         Ok(models)
@@ -1507,238 +1517,6 @@ fn resolve_navs(
         .collect()
 }
 
-fn resolve_entity_container(
-    container: &csdl::EntityContainer,
-    container_defs: &HashMap<String, &csdl::EntityContainer>,
-    entities: &HashMap<String, Arc<EntityType>>,
-    function_defs: &HashMap<String, &csdl::Function>,
-    action_defs: &HashMap<String, &csdl::Action>,
-    ns: &str,
-    aliases: &HashMap<String, String>,
-    visiting: &mut Vec<String>,
-) -> Result<Arc<EntityContainer>, ResolveError> {
-    if visiting.iter().any(|name| name == &container.name) {
-        return Err(ResolveError::UnsupportedCsdlFeature {
-            feature: "Cyclic EntityContainer.Extends",
-            location: format!("{}.{}", ns, container.name),
-        });
-    }
-    visiting.push(container.name.clone());
-
-    let mut elements = Vec::new();
-    let mut element_names: HashMap<String, ()> = HashMap::new();
-
-    if let Some(base_ref) = &container.extends {
-        let base_name = qualify_name(base_ref, ns, aliases)
-            .ok_or_else(|| ResolveError::UnknownType(base_ref.clone()))?;
-        let base_container = container_defs
-            .get(base_name.as_ref())
-            .ok_or_else(|| ResolveError::UnknownType(base_ref.clone()))?;
-
-        let resolved_base = resolve_entity_container(
-            base_container,
-            container_defs,
-            entities,
-            function_defs,
-            action_defs,
-            ns,
-            aliases,
-            visiting,
-        )?;
-
-        for element in &resolved_base.elements {
-            element_names.insert(entity_container_element_name(element).to_owned(), ());
-            elements.push(element.clone());
-        }
-    }
-
-    // Phase 1: create the EntitySet / Singleton Arcs with their bindings left
-    // unset. Targets resolved below may reference sibling sets/singletons, so
-    // every container element must exist before any binding is resolved.
-    let mut pending_sets: Vec<(Arc<EntitySet>, &csdl::EntitySet, Arc<EntityType>)> = Vec::new();
-    let mut pending_singletons: Vec<(Arc<Singleton>, &csdl::Singleton, Arc<EntityType>)> =
-        Vec::new();
-
-    for es in &container.entity_sets {
-        if element_names.contains_key(&es.name) {
-            visiting.pop();
-            return Err(ResolveError::DuplicateName(format!(
-                "{}.{}",
-                container.name, es.name
-            )));
-        }
-        let type_name = es
-            .entity_type
-            .as_deref()
-            .ok_or_else(|| ResolveError::MissingTypeName {
-                element_kind: "EntitySet",
-                element_name: es.name.clone(),
-            })?;
-
-        let target = resolve_entity_ref(type_name, entities, ns, aliases)?;
-        element_names.insert(es.name.clone(), ());
-        let set = Arc::new(EntitySet {
-            name: es.name.clone(),
-            target: target.clone(),
-            navigation_property_bindings: OnceLock::new(),
-        });
-        elements.push(Arc::new(EntityContainerElement::EntitySet(set.clone())));
-        pending_sets.push((set, es, target));
-    }
-
-    for s in &container.singletons {
-        if element_names.contains_key(&s.name) {
-            visiting.pop();
-            return Err(ResolveError::DuplicateName(format!(
-                "{}.{}",
-                container.name, s.name
-            )));
-        }
-        let type_name = s
-            .type_name
-            .as_deref()
-            .ok_or_else(|| ResolveError::MissingTypeName {
-                element_kind: "Singleton",
-                element_name: s.name.clone(),
-            })?;
-
-        let target = resolve_entity_ref(type_name, entities, ns, aliases)?;
-        element_names.insert(s.name.clone(), ());
-        let singleton = Arc::new(Singleton {
-            name: s.name.clone(),
-            target: target.clone(),
-            navigation_property_bindings: OnceLock::new(),
-        });
-        elements.push(Arc::new(EntityContainerElement::Singleton(
-            singleton.clone(),
-        )));
-        pending_singletons.push((singleton, s, target));
-    }
-
-    // Every set/singleton Arc (own + inherited via `extends`) now exists, so the
-    // target maps can be built and shared by import-target resolution below and
-    // the navigation-binding pass further down.
-    let mut set_targets: HashMap<String, Weak<EntitySet>> = HashMap::new();
-    let mut singleton_targets: HashMap<String, Weak<Singleton>> = HashMap::new();
-    for element in &elements {
-        match element.as_ref() {
-            EntityContainerElement::EntitySet(set) => {
-                set_targets.insert(set.name.clone(), Arc::downgrade(set));
-            }
-            EntityContainerElement::Singleton(singleton) => {
-                singleton_targets.insert(singleton.name.clone(), Arc::downgrade(singleton));
-            }
-            EntityContainerElement::FunctionImport(_) | EntityContainerElement::ActionImport(_) => {
-            }
-        }
-    }
-
-    for fi in &container.function_imports {
-        if element_names.contains_key(&fi.name) {
-            visiting.pop();
-            return Err(ResolveError::DuplicateName(format!(
-                "{}.{}",
-                container.name, fi.name
-            )));
-        }
-
-        let function = fi
-            .function
-            .as_deref()
-            .ok_or_else(|| ResolveError::MissingTypeName {
-                element_kind: "FunctionImport",
-                element_name: fi.name.clone(),
-            })?
-            .to_owned();
-
-        resolve_operation_ref(&function, function_defs, ns, aliases)?;
-
-        element_names.insert(fi.name.clone(), ());
-        elements.push(Arc::new(EntityContainerElement::FunctionImport(Arc::new(
-            FunctionImport {
-                name: fi.name.clone(),
-                function,
-                entity_set: fi.entity_set.as_deref().map(|target| {
-                    resolve_binding_target(
-                        target,
-                        &container.name,
-                        &set_targets,
-                        &singleton_targets,
-                    )
-                }),
-            },
-        ))));
-    }
-
-    for ai in &container.action_imports {
-        if element_names.contains_key(&ai.name) {
-            visiting.pop();
-            return Err(ResolveError::DuplicateName(format!(
-                "{}.{}",
-                container.name, ai.name
-            )));
-        }
-
-        let action = ai
-            .action
-            .as_deref()
-            .ok_or_else(|| ResolveError::MissingTypeName {
-                element_kind: "ActionImport",
-                element_name: ai.name.clone(),
-            })?
-            .to_owned();
-
-        resolve_operation_ref(&action, action_defs, ns, aliases)?;
-
-        element_names.insert(ai.name.clone(), ());
-        elements.push(Arc::new(EntityContainerElement::ActionImport(Arc::new(
-            ActionImport {
-                name: ai.name.clone(),
-                action,
-                entity_set: ai.entity_set.as_deref().map(|target| {
-                    resolve_binding_target(
-                        target,
-                        &container.name,
-                        &set_targets,
-                        &singleton_targets,
-                    )
-                }),
-            },
-        ))));
-    }
-
-    // Phase 2: now that every set/singleton Arc exists (including any inherited
-    // from `extends`), resolve each binding's path and target against the EDM
-    // graph and fill the deferred `OnceLock`.
-    for (set, csdl_set, source) in &pending_sets {
-        let bindings = resolve_bindings(
-            &csdl_set.navigation_property_bindings,
-            source,
-            &container.name,
-            &set_targets,
-            &singleton_targets,
-        );
-        let _ = set.navigation_property_bindings.set(bindings);
-    }
-    for (singleton, csdl_singleton, source) in &pending_singletons {
-        let bindings = resolve_bindings(
-            &csdl_singleton.navigation_property_bindings,
-            source,
-            &container.name,
-            &set_targets,
-            &singleton_targets,
-        );
-        let _ = singleton.navigation_property_bindings.set(bindings);
-    }
-
-    visiting.pop();
-
-    Ok(Arc::new(EntityContainer {
-        name: container.name.clone(),
-        elements,
-    }))
-}
-
 fn entity_container_element_name(element: &Arc<EntityContainerElement>) -> &str {
     match element.as_ref() {
         EntityContainerElement::EntitySet(set) => set.name.as_str(),
@@ -1746,22 +1524,6 @@ fn entity_container_element_name(element: &Arc<EntityContainerElement>) -> &str 
         EntityContainerElement::FunctionImport(import_) => import_.name.as_str(),
         EntityContainerElement::ActionImport(import_) => import_.name.as_str(),
     }
-}
-
-fn resolve_bindings(
-    bindings: &[csdl::NavigationPropertyBinding],
-    source: &Arc<EntityType>,
-    container_name: &str,
-    sets: &HashMap<String, Weak<EntitySet>>,
-    singletons: &HashMap<String, Weak<Singleton>>,
-) -> Vec<NavigationPropertyBinding> {
-    bindings
-        .iter()
-        .map(|binding| NavigationPropertyBinding {
-            path: resolve_binding_path(source, &binding.path),
-            target: resolve_binding_target(&binding.target, container_name, sets, singletons),
-        })
-        .collect()
 }
 
 /// Resolve an effective key string (`Prop` or `Prop/SubProp/...`) into typed
@@ -1905,7 +1667,14 @@ fn resolve_partner_path(
     out.into()
 }
 
-fn resolve_binding_path(source: &Arc<EntityType>, path: &str) -> Arc<[BindingPathSegment]> {
+fn resolve_binding_path(
+    source: &Arc<EntityType>,
+    path: &str,
+    entities: &HashMap<String, Arc<EntityType>>,
+    complexes: &HashMap<String, Arc<ComplexType>>,
+    ns: &str,
+    aliases: &HashMap<String, String>,
+) -> Arc<[BindingPathSegment]> {
     enum Ctx {
         Entity(Arc<EntityType>),
         Complex(Arc<ComplexType>),
@@ -1913,14 +1682,39 @@ fn resolve_binding_path(source: &Arc<EntityType>, path: &str) -> Arc<[BindingPat
 
     let mut out: Vec<BindingPathSegment> = Vec::new();
     let mut ctx = Ctx::Entity(source.clone());
-    let parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+    let parts: Vec<&str> = path.split('/').collect();
 
     for (i, part) in parts.iter().enumerate() {
         let is_last = i + 1 == parts.len();
 
-        // Qualified segment ⇒ type-cast; not resolved in v1.
         if part.contains('.') {
-            out.push(BindingPathSegment::Unresolved((*part).to_owned()));
+            let qualified = qualify_name(part, ns, aliases).unwrap();
+            let cast = match &ctx {
+                Ctx::Entity(base) => entities
+                    .get(qualified.as_ref())
+                    .filter(|ty| Arc::ptr_eq(ty, base) || entity_is_strict_subtype(ty, base))
+                    .map(|ty| {
+                        (
+                            BindingPathSegment::EntityTypeCast(Arc::downgrade(ty)),
+                            Ctx::Entity(ty.clone()),
+                        )
+                    }),
+                Ctx::Complex(base) => complexes
+                    .get(qualified.as_ref())
+                    .filter(|ty| Arc::ptr_eq(ty, base) || complex_is_strict_subtype(ty, base))
+                    .map(|ty| {
+                        (
+                            BindingPathSegment::ComplexTypeCast(Arc::downgrade(ty)),
+                            Ctx::Complex(ty.clone()),
+                        )
+                    }),
+            };
+            if let Some((segment, next)) = cast {
+                out.push(segment);
+                ctx = next;
+                continue;
+            }
+            out.push(BindingPathSegment::Unresolved((*part).into()));
             break;
         }
 
@@ -1951,103 +1745,6 @@ fn resolve_binding_path(source: &Arc<EntityType>, path: &str) -> Arc<[BindingPat
     }
 
     Arc::from(out)
-}
-
-/// Resolve a binding `Target` to an entity set / singleton, optionally through a
-/// leading same-container qualifier and a trailing chain of containment
-/// navigation properties. Cross-container / namespace-qualified targets are not
-/// resolved in v1. Unresolved heads become [`BindingPathSegment::Unresolved`].
-fn resolve_binding_target(
-    target: &str,
-    container_name: &str,
-    sets: &HashMap<String, Weak<EntitySet>>,
-    singletons: &HashMap<String, Weak<Singleton>>,
-) -> Arc<[BindingPathSegment]> {
-    let mut out: Vec<BindingPathSegment> = Vec::new();
-    let mut parts: Vec<&str> = target.split('/').filter(|s| !s.is_empty()).collect();
-    if parts.is_empty() {
-        return Arc::from(out);
-    }
-
-    // Optional leading container qualifier (`Container` or `Namespace.Container`)
-    // on a multi-segment target.
-    if parts.len() > 1 {
-        let head = parts[0];
-        let head_local = head.rsplit('.').next().unwrap_or(head);
-        if head.contains('.') {
-            if head_local == container_name {
-                parts.remove(0);
-            } else {
-                // Cross-container target — not resolved in v1.
-                out.push(BindingPathSegment::Unresolved(target.to_owned()));
-                return Arc::from(out);
-            }
-        } else if head == container_name {
-            parts.remove(0);
-        }
-    }
-
-    let Some(first) = parts.first().copied() else {
-        return Arc::from(out);
-    };
-
-    let mut current: Arc<EntityType> = if let Some(weak) = sets.get(first) {
-        out.push(BindingPathSegment::EntitySet(weak.clone()));
-        match weak.upgrade() {
-            Some(set) => set.target.clone(),
-            None => return Arc::from(out),
-        }
-    } else if let Some(weak) = singletons.get(first) {
-        out.push(BindingPathSegment::Singleton(weak.clone()));
-        match weak.upgrade() {
-            Some(singleton) => singleton.target.clone(),
-            None => return Arc::from(out),
-        }
-    } else {
-        out.push(BindingPathSegment::Unresolved(first.to_owned()));
-        return Arc::from(out);
-    };
-
-    // Trailing segments must be containment navigation properties.
-    for part in &parts[1..] {
-        let nav = current
-            .navigation_properties()
-            .iter()
-            .find(|n| n.name == *part && n.contains_target == Some(true))
-            .cloned();
-        match nav {
-            Some(nav) => {
-                out.push(BindingPathSegment::NavigationProperty(Arc::downgrade(&nav)));
-                match nav.target.upgrade() {
-                    Some(target) => current = target,
-                    None => break,
-                }
-            }
-            None => {
-                out.push(BindingPathSegment::Unresolved((*part).to_owned()));
-                break;
-            }
-        }
-    }
-
-    Arc::from(out)
-}
-
-fn resolve_operation_ref<'a, T>(
-    type_name: &str,
-    defs: &HashMap<String, &'a T>,
-    ns: &str,
-    aliases: &HashMap<String, String>,
-) -> Result<(), ResolveError> {
-    let Some(short) = qualify_name(type_name, ns, aliases) else {
-        return Err(ResolveError::UnknownType(type_name.to_string()));
-    };
-
-    if defs.contains_key(short.as_ref()) {
-        Ok(())
-    } else {
-        Err(ResolveError::UnknownType(type_name.to_string()))
-    }
 }
 
 fn resolve_entity_ref(

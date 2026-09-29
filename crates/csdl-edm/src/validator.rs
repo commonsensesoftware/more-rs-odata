@@ -19,6 +19,11 @@ enum KeyPathClassification {
 
 #[derive(Debug, Clone)]
 pub enum ValidationError {
+    InvalidImport {
+        container: String,
+        import: String,
+        reason: &'static str,
+    },
     InvalidOperation {
         operation: String,
         reason: &'static str,
@@ -111,6 +116,41 @@ pub fn validate_document(document: &DocumentModel) -> Result<(), Vec<ValidationE
     for schema in &document.schemas {
         errors.extend(engine.validate_model_collect(schema.as_ref()));
         if document.version == "4.0" {
+            for container in schema.containers() {
+                for element in &container.elements {
+                    let (kind, name, bindings) = match element.as_ref() {
+                        EntityContainerElement::EntitySet(set) => (
+                            "EntitySet.NavigationPropertyBinding",
+                            &set.name,
+                            set.navigation_property_bindings(),
+                        ),
+                        EntityContainerElement::Singleton(singleton) => (
+                            "Singleton.NavigationPropertyBinding",
+                            &singleton.name,
+                            singleton.navigation_property_bindings(),
+                        ),
+                        _ => continue,
+                    };
+                    for binding in bindings {
+                        if matches!(
+                            binding.path.last(),
+                            Some(
+                                BindingPathSegment::EntityTypeCast(_)
+                                    | BindingPathSegment::ComplexTypeCast(_)
+                            )
+                        ) {
+                            errors.push(ValidationError::InvalidNavigationPropertyBinding {
+                                container: container.name.clone(),
+                                source_kind: kind,
+                                source: name.clone(),
+                                attribute: "Path",
+                                value: binding.path_string(),
+                                reason: "Terminal binding type casts require CSDL 4.01",
+                            });
+                        }
+                    }
+                }
+            }
             for element in &schema.elements {
                 if let SchemaElement::EntityType(entity) = element.as_ref() {
                     if !entity.is_abstract && entity.keys().is_empty() {
@@ -218,6 +258,7 @@ impl Default for ValidatorEngine {
                 Box::new(UniqueEntityContainerChildNamesRule),
                 Box::new(NavigationPropertyBindingSemanticsRule),
                 Box::new(KnownEntityContainerTargetsRule),
+                Box::new(ContainerSemanticsRule),
                 Box::new(NavigationPartnerConsistencyRule),
                 Box::new(NavigationSemanticsRule),
                 Box::new(ReferentialConstraintConsistencyRule),
@@ -274,7 +315,7 @@ impl ValidatorEngine {
             }
         }
 
-        if let Some(container) = model.entity_container.as_ref() {
+        for container in model.containers() {
             self.apply_rules(|rule| rule.visit_entity_container(container, ctx));
         }
     }
@@ -518,52 +559,222 @@ impl ValidationRule for NavigationPropertyBindingSemanticsRule {
     }
 
     fn visit_model(&self, model: &Model, ctx: &mut ValidationContext) {
-        let Some(container) = model.entity_container.as_ref() else {
-            return;
-        };
+        for container in model.containers() {
+            for element in &container.elements {
+                match element.as_ref() {
+                    EntityContainerElement::EntitySet(set) => {
+                        for binding in set.navigation_property_bindings() {
+                            validate_navigation_binding_path(
+                                container.name.as_str(),
+                                "EntitySet.NavigationPropertyBinding",
+                                set.name.as_str(),
+                                binding,
+                                ctx,
+                            );
 
+                            validate_navigation_binding_target(
+                                container,
+                                "EntitySet.NavigationPropertyBinding",
+                                set.name.as_str(),
+                                binding,
+                                ctx,
+                            );
+                        }
+                    }
+                    EntityContainerElement::Singleton(singleton) => {
+                        for binding in singleton.navigation_property_bindings() {
+                            validate_navigation_binding_path(
+                                container.name.as_str(),
+                                "Singleton.NavigationPropertyBinding",
+                                singleton.name.as_str(),
+                                binding,
+                                ctx,
+                            );
+
+                            validate_navigation_binding_target(
+                                container,
+                                "Singleton.NavigationPropertyBinding",
+                                singleton.name.as_str(),
+                                binding,
+                                ctx,
+                            );
+                        }
+                    }
+                    EntityContainerElement::FunctionImport(_)
+                    | EntityContainerElement::ActionImport(_) => {}
+                }
+            }
+        }
+    }
+}
+
+struct ContainerSemanticsRule;
+
+fn binding_segment_identity(segment: &BindingPathSegment) -> (u8, usize, String) {
+    match segment {
+        BindingPathSegment::EntitySet(v) => (0, v.as_ptr() as usize, String::new()),
+        BindingPathSegment::Singleton(v) => (1, v.as_ptr() as usize, String::new()),
+        BindingPathSegment::EntityContainer(v) => (2, v.as_ptr() as usize, String::new()),
+        BindingPathSegment::EntityTypeCast(v) => (3, v.as_ptr() as usize, String::new()),
+        BindingPathSegment::ComplexTypeCast(v) => (4, v.as_ptr() as usize, String::new()),
+        BindingPathSegment::Property(v) => (5, v.as_ptr() as usize, String::new()),
+        BindingPathSegment::NavigationProperty(v) => (6, v.as_ptr() as usize, String::new()),
+        BindingPathSegment::Unresolved(v) => (7, 0, v.clone()),
+    }
+}
+
+fn binding_terminal_entity(path: &[BindingPathSegment]) -> Option<std::sync::Arc<EntityType>> {
+    if path
+        .iter()
+        .any(|p| matches!(p, BindingPathSegment::Unresolved(_)))
+    {
+        return None;
+    }
+    match path.last()? {
+        BindingPathSegment::EntitySet(set) => set.upgrade().map(|s| s.target.clone()),
+        BindingPathSegment::Singleton(singleton) => singleton.upgrade().map(|s| s.target.clone()),
+        BindingPathSegment::NavigationProperty(nav) => {
+            nav.upgrade().and_then(|n| n.target.upgrade())
+        }
+        BindingPathSegment::EntityTypeCast(ty) => ty.upgrade(),
+        _ => None,
+    }
+}
+
+fn validate_binding_set(
+    container: &str,
+    source_kind: &'static str,
+    source: &str,
+    bindings: &[NavigationPropertyBinding],
+    ctx: &mut ValidationContext,
+) {
+    let mut seen = HashSet::new();
+    for binding in bindings {
+        let signature = binding
+            .path
+            .iter()
+            .map(binding_segment_identity)
+            .collect::<Vec<_>>();
+        let reason = if !seen.insert(signature) {
+            Some("Binding paths must be unique within a source")
+        } else if let (Some(source), Some(target)) = (
+            binding_terminal_entity(&binding.path),
+            binding_terminal_entity(&binding.target),
+        ) {
+            (!entity_derives_from(&source, &target) && !entity_derives_from(&target, &source))
+                .then_some("Binding target type is incompatible with the navigation type")
+        } else {
+            None
+        };
+        if let Some(reason) = reason {
+            ctx.push(ValidationError::InvalidNavigationPropertyBinding {
+                container: container.into(),
+                source_kind,
+                source: source.into(),
+                attribute: "Path",
+                value: binding.path_string(),
+                reason,
+            });
+        }
+    }
+}
+
+fn validate_import_return(
+    container: &str,
+    name: &str,
+    target: Option<&[BindingPathSegment]>,
+    return_type: Option<&crate::edm::OperationReturnType>,
+    ctx: &mut ValidationContext,
+) {
+    let Some(target) = target else {
+        return;
+    };
+    let reason = if !matches!(
+        return_type.map(|r| &r.ty),
+        Some(crate::edm::TermType::Entity(_))
+    ) {
+        Some("Import EntitySet requires an entity-valued operation return")
+    } else if target
+        .iter()
+        .any(|s| matches!(s, BindingPathSegment::Unresolved(_)))
+    {
+        None // The existing unknown-target rule supplies the precise diagnostic.
+    } else if !matches!(target.last(), Some(BindingPathSegment::EntitySet(_))) {
+        Some("Import EntitySet must resolve to an entity set")
+    } else {
+        let returned = match &return_type.unwrap().ty {
+            crate::edm::TermType::Entity(e) => e,
+            _ => unreachable!(),
+        };
+        binding_terminal_entity(target).and_then(|target| {
+            (!entity_derives_from(returned, &target) && !entity_derives_from(&target, returned))
+                .then_some("Import EntitySet type is incompatible with the return type")
+        })
+    };
+    if let Some(reason) = reason {
+        ctx.push(ValidationError::InvalidImport {
+            container: container.into(),
+            import: name.into(),
+            reason,
+        });
+    }
+}
+
+impl ValidationRule for ContainerSemanticsRule {
+    fn name(&self) -> &'static str {
+        "container_semantics"
+    }
+    fn visit_entity_container(&self, container: &EntityContainer, ctx: &mut ValidationContext) {
         for element in &container.elements {
             match element.as_ref() {
                 EntityContainerElement::EntitySet(set) => {
-                    for binding in set.navigation_property_bindings() {
-                        validate_navigation_binding_path(
-                            container.name.as_str(),
-                            "EntitySet.NavigationPropertyBinding",
-                            set.name.as_str(),
-                            binding,
-                            ctx,
-                        );
-
-                        validate_navigation_binding_target(
-                            container,
-                            "EntitySet.NavigationPropertyBinding",
-                            set.name.as_str(),
-                            binding,
-                            ctx,
-                        );
+                    if set.target.keys().is_empty() {
+                        ctx.push(ValidationError::MissingEntityKey {
+                            entity: set.target.name.clone(),
+                        });
                     }
+                    validate_binding_set(
+                        &container.name,
+                        "EntitySet.NavigationPropertyBinding",
+                        &set.name,
+                        set.navigation_property_bindings(),
+                        ctx,
+                    );
                 }
                 EntityContainerElement::Singleton(singleton) => {
-                    for binding in singleton.navigation_property_bindings() {
-                        validate_navigation_binding_path(
-                            container.name.as_str(),
-                            "Singleton.NavigationPropertyBinding",
-                            singleton.name.as_str(),
-                            binding,
-                            ctx,
-                        );
-
-                        validate_navigation_binding_target(
-                            container,
-                            "Singleton.NavigationPropertyBinding",
-                            singleton.name.as_str(),
-                            binding,
+                    validate_binding_set(
+                        &container.name,
+                        "Singleton.NavigationPropertyBinding",
+                        &singleton.name,
+                        singleton.navigation_property_bindings(),
+                        ctx,
+                    );
+                }
+                EntityContainerElement::FunctionImport(import) => {
+                    if import.include_in_service_document
+                        && !import.overloads.iter().any(|f| f.parameters.is_empty())
+                    {
+                        ctx.push(ValidationError::InvalidImport { container: container.name.clone(), import: import.name.clone(), reason: "Service-document function import needs a parameterless overload" });
+                    }
+                    for function in &import.overloads {
+                        validate_import_return(
+                            &container.name,
+                            &import.name,
+                            import.entity_set.as_deref(),
+                            function.return_type.as_ref(),
                             ctx,
                         );
                     }
                 }
-                EntityContainerElement::FunctionImport(_)
-                | EntityContainerElement::ActionImport(_) => {}
+                EntityContainerElement::ActionImport(import) => {
+                    validate_import_return(
+                        &container.name,
+                        &import.name,
+                        import.entity_set.as_deref(),
+                        import.operation.return_type.as_ref(),
+                        ctx,
+                    );
+                }
             }
         }
     }
@@ -1611,6 +1822,25 @@ fn validate_navigation_binding_target(
         return;
     }
 
+    if !matches!(
+        target.last(),
+        Some(
+            BindingPathSegment::EntitySet(_)
+                | BindingPathSegment::Singleton(_)
+                | BindingPathSegment::NavigationProperty(_)
+                | BindingPathSegment::Unresolved(_)
+        )
+    ) {
+        ctx.push(ValidationError::InvalidNavigationPropertyBinding {
+            container: container.name.clone(),
+            source_kind,
+            source: source_name.into(),
+            attribute: "Target",
+            value: binding.target_string(),
+            reason: "Target must end at an entity set, singleton, or containment navigation",
+        });
+        return;
+    }
     let start = match &target[0] {
         BindingPathSegment::EntitySet(_) => BindingTargetStart::EntitySet,
         BindingPathSegment::Singleton(singleton) => {

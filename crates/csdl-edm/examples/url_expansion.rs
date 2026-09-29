@@ -222,6 +222,7 @@ fn build_demo_schema() -> Schema {
                 singletons: vec![Singleton {
                     name: "me".to_owned(),
                     type_name: Some("Customer".to_owned()),
+                    nullable: None,
                     include_in_service_document: None,
                     navigation_property_bindings: vec![],
                     annotations: vec![],

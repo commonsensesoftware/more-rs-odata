@@ -563,6 +563,33 @@ fn emit_container_child(
     mut obj: Map<String, Value>,
     _namespace: &str,
 ) -> Result<()> {
+    for key in ["$Function", "$Action", "$Type", "$EntitySet"] {
+        if obj.get(key).is_some_and(|value| !value.is_string()) {
+            return Err(Error::Csdl(format!(
+                "Container child {key} must be a string"
+            )));
+        }
+    }
+    for key in ["$Collection", "$Nullable", "$IncludeInServiceDocument"] {
+        if obj.get(key).is_some_and(|value| !value.is_boolean()) {
+            return Err(Error::Csdl(format!(
+                "Container child {key} must be boolean"
+            )));
+        }
+    }
+    if obj.contains_key("$Function") && obj.contains_key("$Action") {
+        return Err(Error::Csdl(
+            "Container import cannot specify both $Function and $Action".into(),
+        ));
+    }
+    if obj
+        .get("$NavigationPropertyBinding")
+        .is_some_and(|value| !value.is_object())
+    {
+        return Err(Error::Csdl(
+            "$NavigationPropertyBinding must be an object".into(),
+        ));
+    }
     let function_ref = take_string(&mut obj, "$Function");
     let action_ref = take_string(&mut obj, "$Action");
     let is_collection = take_bool(&mut obj, "$Collection").unwrap_or(false);
@@ -570,6 +597,7 @@ fn emit_container_child(
     let entity_set = take_string(&mut obj, "$EntitySet");
     let include_in_service_doc = take_bool(&mut obj, "$IncludeInServiceDocument");
     let bindings = obj.shift_remove("$NavigationPropertyBinding");
+    let nullable = take_bool(&mut obj, "$Nullable");
 
     if let Some(func) = function_ref {
         let mut attrs = vec![("Name".into(), name.into())];
@@ -581,6 +609,7 @@ fn emit_container_child(
             attrs.push(("IncludeInServiceDocument".into(), bool_str(b).into()));
         }
         start(out, "FunctionImport", attrs);
+        emit_inline_annotations(out, obj)?;
         end(out, "FunctionImport");
         return Ok(());
     }
@@ -595,6 +624,7 @@ fn emit_container_child(
             attrs.push(("IncludeInServiceDocument".into(), bool_str(b).into()));
         }
         start(out, "ActionImport", attrs);
+        emit_inline_annotations(out, obj)?;
         end(out, "ActionImport");
         return Ok(());
     }
@@ -605,6 +635,9 @@ fn emit_container_child(
         "Singleton"
     };
     let mut attrs = vec![("Name".into(), name.into())];
+    if kind == "Singleton" {
+        push_opt_bool_attr(&mut attrs, "Nullable", nullable);
+    }
     if let Some(t) = raw_type {
         let key = if kind == "EntitySet" {
             "EntityType"
@@ -623,7 +656,11 @@ fn emit_container_child(
         for (path, target) in map {
             let target = match target {
                 Value::String(s) => s,
-                _ => continue,
+                _ => {
+                    return Err(Error::Csdl(
+                        "NavigationPropertyBinding target must be a string".into(),
+                    ));
+                }
             };
             start(
                 out,

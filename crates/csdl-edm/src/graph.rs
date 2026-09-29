@@ -178,7 +178,7 @@ impl Builder {
             }
         }
 
-        if let Some(container) = &schema.entity_container {
+        for container in schema.containers() {
             let cid = self.node(
                 format!("{ns}.{}", container.name),
                 "EntityContainer",
@@ -297,7 +297,7 @@ impl Builder {
             }
         }
 
-        if let Some(container) = &schema.entity_container {
+        for container in schema.containers() {
             if let Some(cid) = self.lookup(arc_ptr(container)) {
                 self.edge(&schema_id, &cid, "Contains", "has");
                 self.container_edges_and_paths(&cid, container);

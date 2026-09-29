@@ -70,9 +70,13 @@ Related detailed design TODO:
       nullability, and typed EntitySetPath navigation/casts with return compatibility.
       JSON default types/nullability and malformed declaration checks are covered.
       General type/facet coverage remains tracked in sections 2 and 3.
-- [ ] Container features: `FunctionImport`, `ActionImport`, and
-      `NavigationPropertyBinding` resolution (initial resolver mapping done; semantic target/operation validation pending).
-- [x] Entity container inheritance (`EntityContainer.Extends`) for same-schema container inheritance in resolver.
+- [x] Container features: imports retain resolved unbound operations; import return
+      compatibility and service-document inclusion are validated. Binding paths
+      support entity/complex casts, containment and complex traversal, duplicate
+      detection, and compatible targets across document containers/schemas.
+- [x] Entity container inheritance (`EntityContainer.Extends`) across document
+      schemas, with cycle checks, shared inherited resources, subtype narrowing,
+      and all declared containers retained by `Model::containers()`.
 - [x] Collection-valued term support.
 
 ## 2. Validation Gaps
@@ -83,7 +87,9 @@ Related detailed design TODO:
       member consistency) (key compatibility is now enforced in resolver; broader validation remains).
 - [ ] Add navigation validation (partner consistency, referential constraints,
       containment rules).
-- [ ] Add container-level binding/import validation (initial unknown-target checks are implemented; full semantic validation is pending).
+- [x] Add container-level binding/import validation, including entity-set keys,
+      path/target kinds and multiplicity, target type compatibility, overload
+      selection, and function-import service-document rules.
 - [ ] Add annotation semantic validation (term applicability and target checks).
 
 ## 3. Primitive and Type Coverage

@@ -167,6 +167,7 @@ fn validates_navigation_property_binding_path_and_target_semantics() {
                 singletons: vec![csdl::Singleton {
                     name: "MainSupplier".to_owned(),
                     type_name: Some("Demo.Supplier".to_owned()),
+                    nullable: None,
                     include_in_service_document: None,
                     navigation_property_bindings: Vec::new(),
                     annotations: Vec::new(),
@@ -361,6 +362,7 @@ fn resolves_entity_container_extends_and_inherits_elements() {
                 singletons: vec![csdl::Singleton {
                     name: "PrimaryThing".to_owned(),
                     type_name: Some("Demo.Thing".to_owned()),
+                    nullable: None,
                     include_in_service_document: None,
                     navigation_property_bindings: Vec::new(),
                     annotations: Vec::new(),
@@ -496,6 +498,7 @@ fn resolves_container_imports_and_navigation_bindings() {
                 singletons: vec![csdl::Singleton {
                     name: "MainThing".to_owned(),
                     type_name: Some("Demo.Thing".to_owned()),
+                    nullable: None,
                     include_in_service_document: None,
                     navigation_property_bindings: vec![csdl::NavigationPropertyBinding {
                         path: "Nav".to_owned(),

@@ -74,6 +74,18 @@ pub struct Model {
     pub alias: Option<String>,
     pub elements: Vec<Arc<SchemaElement>>,
     pub entity_container: Option<Arc<EntityContainer>>,
+    /// All declared containers; `entity_container` remains the first for compatibility.
+    pub entity_containers: Vec<Arc<EntityContainer>>,
+}
+
+impl Model {
+    pub fn containers(&self) -> &[Arc<EntityContainer>] {
+        if self.entity_containers.is_empty() {
+            self.entity_container.as_slice()
+        } else {
+            &self.entity_containers
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -280,6 +292,7 @@ pub enum ConstraintPathSegment {
 #[derive(Debug)]
 pub struct EntityContainer {
     pub name: String,
+    pub extends: Option<Arc<EntityContainer>>,
     pub elements: Vec<Arc<EntityContainerElement>>,
 }
 
@@ -295,6 +308,7 @@ pub enum EntityContainerElement {
 pub struct EntitySet {
     pub name: String,
     pub target: Arc<EntityType>,
+    pub include_in_service_document: bool,
     /// Filled by the resolver after every container element exists, so that
     /// binding targets can reference sibling sets/singletons.
     pub navigation_property_bindings: OnceLock<Vec<NavigationPropertyBinding>>,
@@ -313,6 +327,7 @@ impl EntitySet {
 pub struct Singleton {
     pub name: String,
     pub target: Arc<EntityType>,
+    pub nullable: Option<bool>,
     /// See [`EntitySet::navigation_property_bindings`].
     pub navigation_property_bindings: OnceLock<Vec<NavigationPropertyBinding>>,
 }
@@ -340,6 +355,8 @@ impl NavigationPropertyBinding {
 pub struct FunctionImport {
     pub name: String,
     pub function: String,
+    pub overloads: Vec<Arc<Function>>,
+    pub include_in_service_document: bool,
     /// Resolved against the container; ends at an `EntitySet`/`Singleton`. Shares
     /// the binding-target representation (see [`BindingPathSegment`]).
     pub entity_set: Option<Arc<[BindingPathSegment]>>,
@@ -357,6 +374,7 @@ impl FunctionImport {
 pub struct ActionImport {
     pub name: String,
     pub action: String,
+    pub operation: Arc<Action>,
     /// See [`FunctionImport::entity_set`].
     pub entity_set: Option<Arc<[BindingPathSegment]>>,
 }

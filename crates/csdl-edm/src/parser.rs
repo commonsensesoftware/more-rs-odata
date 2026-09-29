@@ -780,6 +780,7 @@ fn parse_singleton(raw: &RawElement) -> io::Result<Singleton> {
     Ok(Singleton {
         name,
         type_name,
+        nullable: raw_attr_bool(raw, "Nullable"),
         include_in_service_document: raw_attr_bool(raw, "IncludeInServiceDocument"),
         navigation_property_bindings,
         annotations,

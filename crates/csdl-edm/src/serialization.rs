@@ -757,6 +757,9 @@ fn write_singleton<W: io::Write>(
     singleton: &Singleton,
 ) -> io::Result<()> {
     let mut attrs = vec![("Name".to_string(), singleton.name.clone())];
+    if let Some(nullable) = singleton.nullable {
+        attrs.push(("Nullable".into(), nullable.to_string()));
+    }
     if let Some(type_name) = &singleton.type_name {
         attrs.push(("Type".to_string(), type_name.clone()));
     }
@@ -1792,6 +1795,7 @@ fn entity_set_to_json(set: &EntitySet, namespace: &str) -> Value {
 
 fn singleton_to_json(singleton: &Singleton, namespace: &str) -> Value {
     let mut obj = Map::new();
+    insert_optional_bool(&mut obj, "$Nullable", singleton.nullable);
     if let Some(type_name) = &singleton.type_name {
         obj.insert(
             "$Type".to_string(),
