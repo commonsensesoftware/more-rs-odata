@@ -102,7 +102,8 @@ Related detailed design TODO:
 
 - [x] Scalar defaults: JSON numbers/booleans, type-definition representation,
       integer/enum ranges, string facets, decimal facets, and temporal literals.
-- [ ] Spatial default representations.
+- [x] Spatial default representations: WKT/GeoJSON conversion, shape checks,
+      coordinate structure, ring closure, and effective SRID validation.
 - [x] Omitted XML annotation expressions use the declared term default;
       JSON serialization materializes explicit values without fabricating true.
 

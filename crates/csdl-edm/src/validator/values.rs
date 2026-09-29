@@ -87,6 +87,7 @@ fn check(
                 effective.precision = t.facets.precision.clone().or(effective.precision);
                 effective.scale = t.facets.scale.or(effective.scale);
                 effective.unicode = t.facets.unicode.or(effective.unicode);
+                effective.srid = t.facets.srid.or(effective.srid);
                 primitive(value, &t.underlying_type, &effective)
             }
             TermType::Enum(t) => {
@@ -94,7 +95,9 @@ fn check(
                 (t.is_flags || names.len() == 1)
                     && names
                         .iter()
-                        .all(|name| t.members.iter().any(|m| m.name == *name))
+                        .all(|name| t.members.iter().any(|m| m.name == *name)
+                            || name.parse::<i64>().is_ok_and(|n| (!t.is_flags || n >= 0)
+                                && primitive(name, &t.underlying_type, &TypeFacets::default())))
             }
             _ => false,
         }
@@ -108,6 +111,34 @@ fn check(
 }
 
 pub(super) fn primitive(value: &str, ty: &PrimitiveType, facets: &TypeFacets) -> bool {
+    let type_name = format!("{ty:?}");
+    if let Some(shape) = type_name
+        .strip_prefix("Geography")
+        .or_else(|| type_name.strip_prefix("Geometry"))
+    {
+        let default_srid = if type_name.starts_with("Geography") {
+            4326
+        } else {
+            0
+        };
+        let expected_srid = match facets.srid {
+            Some(crate::csdl::SridFacet::Number(n)) => Some(n),
+            Some(crate::csdl::SridFacet::Variable) => None,
+            None => Some(default_srid),
+        };
+        let Some(spatial) =
+            crate::spatial::SpatialValue::parse(value, expected_srid.unwrap_or(default_srid))
+        else {
+            return false;
+        };
+        let expected_shape = if shape == "Collection" {
+            "GeometryCollection"
+        } else {
+            shape
+        };
+        return (shape.is_empty() || spatial.geometry["type"].as_str() == Some(expected_shape))
+            && expected_srid.is_none_or(|srid| srid == spatial.srid);
+    }
     use crate::edm::PrimitiveType::*;
     let precision = facets
         .precision
@@ -172,8 +203,7 @@ pub(super) fn primitive(value: &str, ty: &PrimitiveType, facets: &TypeFacets) ->
                 && value.len() - unpadded.len() <= 2
         }
         PrimitiveType => true,
-        // Spatial and stream defaults have no scalar textual representation
-        // handled by this parser; preserve them and report explicit diagnostics.
+        // Streams are resources rather than scalar literal values.
         _ => false,
     }) && match facets.max_length {
         Some(MaxLengthFacet::Number(max)) if *ty == String => value.chars().count() as u64 <= max,

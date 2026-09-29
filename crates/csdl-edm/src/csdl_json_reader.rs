@@ -928,6 +928,11 @@ fn take_default_value(obj: &mut Map<String, Value>) -> Result<Option<String>> {
         Some(Value::String(value)) => Ok(Some(value)),
         Some(Value::Bool(value)) => Ok(Some(value.to_string())),
         Some(Value::Number(value)) => Ok(Some(value.to_string())),
+        Some(value @ Value::Object(_))
+            if crate::spatial::SpatialValue::from_json(value.clone(), 0).is_some() =>
+        {
+            Ok(Some(value.to_string()))
+        }
         Some(_) => Err(csdl_err(
             "$DefaultValue must be a primitive or enumeration value",
         )),

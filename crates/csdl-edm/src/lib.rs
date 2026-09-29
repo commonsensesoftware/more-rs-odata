@@ -9,6 +9,7 @@ pub mod parser;
 pub mod path_expansion;
 pub mod resolver;
 pub mod serialization;
+mod spatial;
 pub mod validator;
 
 pub use csdl::CsdlDocument;

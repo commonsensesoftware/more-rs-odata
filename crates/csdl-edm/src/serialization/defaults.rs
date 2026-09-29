@@ -1,5 +1,87 @@
 use super::*;
 
+pub(super) fn normalize_xml_spatial(edmx: &mut Edmx) {
+    let mut definitions = BTreeMap::new();
+    let mut aliases = BTreeMap::new();
+    for schema in &edmx.schemas {
+        if let Some(alias) = &schema.alias {
+            aliases.insert(alias.clone(), schema.namespace.clone());
+        }
+        for element in &schema.elements {
+            if let SchemaElement::TypeDefinition(t) = element {
+                definitions.insert(
+                    format!("{}.{}", schema.namespace, t.name),
+                    (t.underlying_type.clone(), t.srid),
+                );
+            }
+        }
+    }
+    for schema in &mut edmx.schemas {
+        let normalize =
+            |name: Option<&str>, srid: Option<SridFacet>, default: &mut Option<String>| {
+                let Some(value) = default.as_ref().filter(|v| v.starts_with('{')) else {
+                    return;
+                };
+                let name = name.unwrap_or("Edm.String");
+                let name = match name.rsplit_once('.') {
+                    Some((prefix, short)) => format!(
+                        "{}.{short}",
+                        aliases.get(prefix).map(String::as_str).unwrap_or(prefix)
+                    ),
+                    None => format!("{}.{name}", schema.namespace),
+                };
+                let (ty, srid) = definitions
+                    .get(&name)
+                    .map(|(ty, inherited)| (ty.as_str(), inherited.or(srid)))
+                    .unwrap_or((&name, srid));
+                if !ty.starts_with("Edm.Geography") && !ty.starts_with("Edm.Geometry") {
+                    return;
+                }
+                let srid = match srid {
+                    Some(SridFacet::Number(n)) => n,
+                    _ => {
+                        if ty.starts_with("Edm.Geography") {
+                            4326
+                        } else {
+                            0
+                        }
+                    }
+                };
+                if let Some(spatial) = crate::spatial::SpatialValue::parse(value, srid) {
+                    *default = Some(spatial.to_wkt());
+                }
+            };
+        for element in &mut schema.elements {
+            match element {
+                SchemaElement::EntityType(t) => {
+                    for p in &mut t.properties {
+                        normalize(p.type_name.as_deref(), p.srid, &mut p.default_value);
+                    }
+                }
+                SchemaElement::ComplexType(t) => {
+                    for p in &mut t.properties {
+                        normalize(p.type_name.as_deref(), p.srid, &mut p.default_value);
+                    }
+                }
+                SchemaElement::Term(t) => {
+                    normalize(t.type_name.as_deref(), t.srid, &mut t.default_value)
+                }
+                SchemaElement::Function(f) => {
+                    for p in &mut f.parameters {
+                        normalize(p.type_name.as_deref(), p.srid, &mut p.default_value);
+                    }
+                }
+                SchemaElement::Action(a) => {
+                    for p in &mut a.parameters {
+                        normalize(p.type_name.as_deref(), p.srid, &mut p.default_value);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
 pub(super) fn materialize_annotations(edmx: &mut Edmx) {
     let mut terms = BTreeMap::new();
     let mut types = BTreeMap::new();
@@ -207,7 +289,7 @@ pub(super) fn normalize(out: &mut Map<String, Value>, edmx: &Edmx) {
             if let SchemaElement::TypeDefinition(t) = element {
                 definitions.insert(
                     format!("{}.{}", schema.namespace, t.name),
-                    t.underlying_type.clone(),
+                    (t.underlying_type.clone(), t.srid),
                 );
             }
         }
@@ -222,7 +304,7 @@ pub(super) fn normalize(out: &mut Map<String, Value>, edmx: &Edmx) {
 fn walk(
     value: &mut Value,
     ns: &str,
-    definitions: &BTreeMap<String, String>,
+    definitions: &BTreeMap<String, (String, Option<SridFacet>)>,
     aliases: &BTreeMap<String, String>,
 ) {
     match value {
@@ -246,7 +328,7 @@ fn walk(
             };
             let ty = definitions
                 .get(&qualified)
-                .map(String::as_str)
+                .map(|(name, _)| name.as_str())
                 .unwrap_or(&qualified);
             if let Some(Value::String(default)) = obj.get("$DefaultValue") {
                 let replacement = match ty {
@@ -260,6 +342,26 @@ fn walk(
                         .ok()
                         .and_then(Number::from_f64)
                         .map(Value::Number),
+                    spatial
+                        if spatial.starts_with("Edm.Geography")
+                            || spatial.starts_with("Edm.Geometry") =>
+                    {
+                        let inherited =
+                            definitions
+                                .get(&qualified)
+                                .and_then(|(_, srid)| match srid {
+                                    Some(SridFacet::Number(n)) => Some(*n),
+                                    _ => None,
+                                });
+                        let srid = inherited
+                            .or_else(|| obj.get("$SRID").and_then(Value::as_u64))
+                            .unwrap_or(if spatial.starts_with("Edm.Geography") {
+                                4326
+                            } else {
+                                0
+                            });
+                        crate::spatial::SpatialValue::parse(default, srid).map(|v| v.to_json(srid))
+                    }
                     _ => None,
                 };
                 if let Some(value) = replacement {

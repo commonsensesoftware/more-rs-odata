@@ -44,7 +44,13 @@ impl CsdlDocument {
                     .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err.to_string()))?;
                 writer.write_all(b"\n")
             }
-            CsdlFormat::Xml => write_xml_document(&mut writer, self),
+            CsdlFormat::Xml => {
+                let mut document = self.clone();
+                if let Some(edmx) = &mut document.edmx {
+                    defaults::normalize_xml_spatial(edmx);
+                }
+                write_xml_document(&mut writer, &document)
+            }
         }
     }
 }

@@ -42,7 +42,8 @@ This checklist is now split into:
 ### C. Structural property semantics
 
 - [x] No conflicts with inherited property/navigation names.
-- [ ] Default values are type-compatible.
+- [x] Default values are type-compatible, including type-definition facets,
+      enumeration values, temporal literals, and spatial shape/SRID checks.
 - [x] Facets (`Precision`, `Scale`, `MaxLength`, `Unicode`, `SRID`) are type-valid; type-definition facets cannot be re-specified.
 
 ### D. Complex type semantics
@@ -53,7 +54,8 @@ This checklist is now split into:
 
 ### E. Navigation property semantics
 
-- [ ] Multiplicity is semantically valid for target entity.
+- [x] Multiplicity and built-in target restrictions are validated, including
+      collection-containment keys and collection navigation nullability.
 - [x] Partner paths resolve through complex properties/derived casts, target the
       declaring entity or a base, and reciprocate when both partners are declared.
 - [x] Complex-type navigations cannot declare Partner; collection navigations
