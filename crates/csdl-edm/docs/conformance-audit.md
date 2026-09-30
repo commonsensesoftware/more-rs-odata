@@ -31,8 +31,8 @@ inventory completeness, unique IDs, override integrity, and real code/test links
 | Disposition | Paragraphs | Meaning |
 |---|---:|---|
 | covered | 18 | Direct evidence for the complete paragraph identified here |
-| partial | 404 | Implementation exists, but behavior or independent clause-level evidence is incomplete |
-| unsupported | 4 | Known static obligation not completely implemented |
+| partial | 408 | Implementation exists, but behavior or independent clause-level evidence is incomplete |
+| unsupported | 0 | No remaining paragraph assigned this disposition; partial does not imply complete implementation |
 | advisory | 26 | SHOULD guidance that does not reject documents |
 | outside-static-scope | 33 | HTTP, runtime values/execution, metarules, or example text |
 
@@ -57,7 +57,7 @@ by a capitalized MUST paragraph.
 2. [Reference annotations and complete scope isolation](../TODO/conformance-reference-metadata.md):
    implemented reference/Include metadata, schema-version loader hints, and scope
    checks for structural paths and expression bindings, including dependencies
-   loaded transitively. Additional path syntax is the next task.
+   loaded transitively. Path syntax is recorded in the following delivery item.
 3. [Complete annotation path grammar](../TODO/conformance-expression-paths.md):
    implemented key predicates, ordered indexes, `$count`, empty paths, collection
    traversal limits, implicit media terms, and target-relative starting contexts.
@@ -75,23 +75,28 @@ by a capitalized MUST paragraph.
    equivalence is not evaluated. Guarded output checks grammar/version before writing; it does not
    substitute for validation of a graph resolved with the caller's loader.
 6. [Tolerant recovery and exhaustive evidence](../TODO/conformance-consumer-evidence.md):
-   preserving or ignoring unavailable annotation constructs without rejecting a
-   well-formed document, and a complete clause-level paired-format fixture corpus.
+   tolerant profile parsing now omits unavailable/invalid annotation expressions
+   with optional recovery diagnostics. The official grammar artifacts and initial
+   clause decomposition are imported. Complete clause-level paired-format evidence
+   remains open; this task is not complete.
 
 ## Profiles and recommendations
 
 Strict source parsing runs before normalization; semantic strict reports include
 annotation diagnostics. Tolerant semantic reports exclude annotation diagnostics
 from validity. Legacy parsing/output APIs retain their compatibility behavior.
-The distinction does not yet solve recovery from every malformed or future
-annotation expression at the parser boundary.
+`from_xml_reader_with_report` and `from_json_reader_with_report` expose source
+recovery diagnostics. Profile parsing uses the same recovery behavior and discards
+the report when the caller requests only a document. Legacy APIs retain their
+earlier error behavior. Malformed XML/JSON is never recovered as a valid document.
 
 Case-only identifier collisions, future AppliesTo values, absent navigation
 bindings, 4.0 collection nullability, and compact JSON default omission are
-advisory. No separate warning stream is implemented yet. Reference filtering
-SHOULD rules are implemented and tested. Choosing queryable service-document
-entries and fetching a requested schema version belong to caller policy; the
-missing reference metadata still prevents conveying the latter policy completely.
+advisory. [advisory-policies.json](advisory-policies.json) accounts for every
+SHOULD/SHOULD NOT/RECOMMENDED paragraph, including mixed MUST/SHOULD paragraphs.
+It distinguishes implemented behavior from explicit caller policy. No general
+authoring-lint warning stream is claimed. Reference filtering is implemented;
+`DocumentLoader::inspect_reference` conveys schema-version retrieval policy.
 
 Runtime expression evaluation, service-data key uniqueness, referential integrity,
 delete execution, function side effects, HTTP negotiation, and validating actual
@@ -104,8 +109,9 @@ The XSD declaration/expression families were compared with parser owner/attribut
 tables, arity checks, and the syntactic model. The audit found and fixed empty XML
 containers/enumerations and attribute entity decoding. Existing tests exercise
 document cardinalities, namespace boundaries, expression arity, and new operators.
-Reference annotations, complete source interleaving, and tolerant extension
-recovery remain explicit gaps.
+Reference annotations and tolerant expression recovery are implemented. Source
+interleaving is retained where meaningful; serialization groups declarations by
+kind as documented in the source-parity delivery record.
 
 The JSON prose adds alias-only spelling and media-type output requirements beyond
 the normalized EDM. Both are recorded above. The JSON schema is complementary;
@@ -113,17 +119,31 @@ it does not prove reference resolution, inheritance, or expression assignability
 
 ABNF identifier/qualified-name rules map to `conformance.rs`, scalar lexical
 families to `validator/values.rs`, and CSDL expression paths to the resolver.
-The complete referenced ABNF test corpus and every JSON-schema branch have **not**
-been imported as executable tests. That evidence gap is tracked rather than
-counted as covered. Unicode identifier tests alone do not prove path/literal ABNF.
+The five unmodified official grammar artifacts are now vendored with source URLs
+and SHA-256 hashes. [grammar-evidence.json](grammar-evidence.json) classifies 192
+families and all 813 ABNF cases. Sixty-six primitive/identifier cases execute;
+primitive cases use independently constructed XML and JSON inputs. Boolean URL
+case-insensitivity is explicitly adapted to CSDL payload lexical rules. The
+remaining URL/path families require context-specific adaptation or belong to
+other components. XSD/JSON-schema families remain partial: importing a schema is
+not evidence that every branch has been exercised.
+
+[conformance-obligations.json](conformance-obligations.json) begins the reviewed
+decomposition of mixed paragraphs into individual static rules and caller/runtime
+policies. It deliberately does not label automatic sentence splitting as proof.
+Remaining mixed paragraphs and independent positive/negative cases are tracked in
+follow-up 6. A paragraph is promoted only when all its applicable obligations have
+direct evidence; covered sub-obligations alone do not promote the paragraph.
 
 ## Regression evidence added by the audit
 
-`conformance_audit.rs` checks XML attribute escaping and cardinalities, positive
-and negative two-operand If contexts in both formats, matrix integrity, and a
-known unsupported `$count` path. The last test deliberately asserts an explicit
-diagnostic, not conformance of that path. Replace it with a positive semantic
-test when the path task is implemented. Existing suites supply referenced-document
+`conformance_audit.rs` checks XML escaping/cardinalities, two-operand If contexts,
+matrix/policy/obligation integrity, and resolved `$count` paths. `consumer_recovery.rs`
+covers positive/negative recovery boundaries in both source formats.
+`imported_grammar.rs` checks corpus identity and executes imported scalar cases;
+these exposed missing omitted-seconds and leap-second handling, now fixed.
+`conformance_clauses.rs` independently authors XML and JSON cases for duplicate
+reference URIs and enum member names. Existing suites supply referenced-document
 cycles/scopes/filtering and semantic/format round trips.
 
 ## OASIS notice

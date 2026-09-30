@@ -55,7 +55,7 @@ fn declaration(name: &str) -> bool {
         )
 }
 
-fn expression(name: &str) -> bool {
+pub(super) fn expression(name: &str) -> bool {
     matches!(
         name,
         "Binary"
@@ -109,9 +109,10 @@ fn expression(name: &str) -> bool {
 
 /// Resolve namespaces before the legacy token reader sees local names.
 /// Unknown extension subtrees never contribute declarations or expressions.
-pub(super) fn xml_source<R: io::BufRead>(
+pub(super) fn xml_source_with_diagnostics<R: io::BufRead>(
     source: R,
     profile: ValidationProfile,
+    diagnostics: &mut Vec<super::ParseDiagnostic>,
 ) -> io::Result<Vec<u8>> {
     let mut reader = NsReader::from_reader(source);
     let mut writer = Writer::new(Vec::new());
@@ -120,6 +121,9 @@ pub(super) fn xml_source<R: io::BufRead>(
     let mut depth = 0usize;
     let mut roots = 0usize;
     let mut names = Vec::new();
+    // Start depth, output offset, name-stack length, term. Dropping the complete
+    // outer annotation avoids changing operator arity or inventing a default.
+    let mut annotation: Option<(usize, usize, usize, String)> = None;
     loop {
         buffer.clear();
         let event = reader
@@ -146,6 +150,23 @@ pub(super) fn xml_source<R: io::BufRead>(
                 let bound = matches!(&ns, ResolveResult::Bound(n) if n.as_ref() == expected);
                 let known = declaration(name) || expression(name);
                 if !bound || !known {
+                    if let Some((start_depth, offset, stack_len, term)) = annotation.take() {
+                        if profile == ValidationProfile::Strict {
+                            return Err(invalid(format!(
+                                "Unavailable expression {name} in annotation {term}"
+                            )));
+                        }
+                        writer.get_mut().truncate(offset);
+                        names.truncate(stack_len);
+                        skipped = depth - start_depth + 1;
+                        diagnostics.push(super::ParseDiagnostic {
+                            location: term,
+                            message: format!(
+                                "Annotation omitted because expression {name} is unavailable"
+                            ),
+                        });
+                        continue;
+                    }
                     if profile == ValidationProfile::Strict
                         && (depth <= usize::from(!empty)
                             || (known
@@ -161,6 +182,16 @@ pub(super) fn xml_source<R: io::BufRead>(
                     }
                     continue;
                 }
+                if name == "Annotation" && annotation.is_none() && !empty {
+                    let term = e
+                        .attributes()
+                        .filter_map(Result::ok)
+                        .find(|a| a.key.as_ref() == b"Term")
+                        .map(|a| String::from_utf8_lossy(&a.value).into_owned())
+                        .unwrap_or_default();
+                    annotation = Some((depth, writer.get_ref().len(), names.len(), term));
+                }
+                let offset = writer.get_ref().len();
                 let mut start = BytesStart::new(name);
                 for attr in e.attributes() {
                     let attr = attr.map_err(io::Error::other)?;
@@ -196,11 +227,25 @@ pub(super) fn xml_source<R: io::BufRead>(
                         Event::Start(start)
                     })
                     .map_err(io::Error::other)?;
+                if empty && name == "Annotation" && profile == ValidationProfile::Tolerant {
+                    if let Some(problem) = annotation_problem(&writer.get_ref()[offset..]) {
+                        writer.get_mut().truncate(offset);
+                        diagnostics.push(super::ParseDiagnostic {
+                            location: "Annotation".into(),
+                            message: format!("Annotation omitted: {problem}"),
+                        });
+                    }
+                }
                 if !empty {
                     names.push(name.to_owned());
                 }
             }
             Event::End(e) => {
+                let completed = if annotation.as_ref().is_some_and(|(d, _, _, _)| *d == depth) {
+                    annotation.take()
+                } else {
+                    None
+                };
                 depth = depth
                     .checked_sub(1)
                     .ok_or_else(|| invalid("Unexpected closing element"))?;
@@ -214,6 +259,18 @@ pub(super) fn xml_source<R: io::BufRead>(
                 writer
                     .write_event(Event::End(BytesEnd::new(name)))
                     .map_err(io::Error::other)?;
+                if profile == ValidationProfile::Tolerant {
+                    if let Some((_, offset, _, term)) = completed {
+                        let problem = annotation_problem(&writer.get_ref()[offset..]);
+                        if let Some(problem) = problem {
+                            writer.get_mut().truncate(offset);
+                            diagnostics.push(super::ParseDiagnostic {
+                                location: term,
+                                message: format!("Annotation omitted: {problem}"),
+                            });
+                        }
+                    }
+                }
             }
             Event::Eof => break,
             Event::DocType(_) => {
@@ -246,6 +303,17 @@ pub(super) fn xml_source<R: io::BufRead>(
         return Err(invalid("CSDL requires one complete root element"));
     }
     Ok(writer.into_inner())
+}
+
+fn annotation_problem(source: &[u8]) -> Option<String> {
+    let mut reader = crate::csdl_xml_reader::CsdlReader::from_reader(source);
+    loop {
+        match reader.next_unit() {
+            Ok(Some(_)) => {}
+            Ok(None) => return None,
+            Err(e) => return Some(e.to_string()),
+        }
+    }
 }
 
 pub(super) fn document(roots: &[RawElement], json: bool) -> io::Result<()> {

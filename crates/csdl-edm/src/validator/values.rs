@@ -93,11 +93,13 @@ fn check(
             TermType::Enum(t) => {
                 let names = value.split(',').map(str::trim).collect::<Vec<_>>();
                 (t.is_flags || names.len() == 1)
-                    && names
-                        .iter()
-                        .all(|name| t.members.iter().any(|m| m.name == *name)
-                            || name.parse::<i64>().is_ok_and(|n| (!t.is_flags || n >= 0)
-                                && primitive(name, &t.underlying_type, &TypeFacets::default())))
+                    && names.iter().all(|name| {
+                        t.members.iter().any(|m| m.name == *name)
+                            || name.parse::<i64>().is_ok_and(|n| {
+                                (!t.is_flags || n >= 0)
+                                    && primitive(name, &t.underlying_type, &TypeFacets::default())
+                            })
+                    })
             }
             _ => false,
         }
@@ -171,11 +173,11 @@ pub(super) fn primitive(value: &str, ty: &PrimitiveType, facets: &TypeFacets) ->
         }
         Date => date(value),
         TimeOfDay => time(value, precision.unwrap_or(0)),
-        DateTimeOffset => value.split_once('T').is_some_and(|(d, t)| {
+        DateTimeOffset => value.split_once(['T', 't']).is_some_and(|(d, t)| {
             if !date(d) {
                 return false;
             }
-            if let Some(t) = t.strip_suffix('Z') {
+            if let Some(t) = t.strip_suffix(['Z', 'z']) {
                 return time(t, precision.unwrap_or(0));
             }
             let Some(index) = t.rfind(['+', '-']) else {
@@ -302,8 +304,8 @@ fn time(value: &str, precision: usize) -> bool {
         return false;
     }
     let parts = value.split(':').collect::<Vec<_>>();
-    parts.len() == 3
-        && parts.iter().zip([24, 60, 60]).all(|(p, max)| {
+    (parts.len() == 3 || parts.len() == 2 && fraction.is_none())
+        && parts.iter().zip([24, 60, 61]).all(|(p, max)| {
             p.len() == 2
                 && p.bytes().all(|b| b.is_ascii_digit())
                 && p.parse::<u8>().is_ok_and(|n| n < max)

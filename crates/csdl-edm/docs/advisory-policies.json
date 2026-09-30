@@ -1,0 +1,20 @@
+{
+  "scope": "Every inventoried SHOULD/SHOULD NOT/RECOMMENDED paragraph has an explicit non-rejection policy. This does not mark its MUST clauses covered.",
+  "policies": [
+    {"ids":["xml-1.1-1","json-1.2-1"],"policy":"Specification terminology, not a document warning."},
+    {"ids":["xml-3.1-2","json-3.1-2","xml-5-3","json-5-3","xml-7-3","json-7-3","xml-8-3","json-8-3","xml-10.3-1","json-10.3-1","xml-17-16","json-17-14"],"policy":"Names remain case-sensitive. Authors may apply a case-collision lint to resolved uniqueness scopes; the validator deliberately does not reject or warn on case-only distinctions."},
+    {"ids":["xml-4.1-1","json-4.1-1"],"policy":"Caller DocumentLoader owns retrieval and well-known schema identity; no implicit network access or dereferenceability warning."},
+    {"ids":["xml-4.1-2","json-4.1-2"],"policy":"DocumentLoader::inspect_reference receives the resolved Core.SchemaVersion. The caller chooses whether and how to use $schemaversion in retrieval."},
+    {"ids":["xml-4.3-1","xml-4.3-2","json-4.3-1","json-4.3-2"],"policy":"Implemented namespace/qualifier/target-namespace filtering by the document resolver; no caller warning needed."},
+    {"ids":["xml-5-1","json-5-1"],"policy":"Document scope uniqueness is enforced. Global namespace uniqueness outside the supplied document graph is the author's responsibility and cannot be inferred by this crate."},
+    {"ids":["xml-7.2.1-2","xml-17-14"],"policy":"Tolerant XML consumption preserves unknown collection nullability; strict 4.01 authoring requires the facet. Options-based JSON conversion rejects unrepresentable unknown nullability."},
+    {"ids":["xml-7.2.2-1","json-7.2.2-1","xml-7.2.7-1","json-7.2.7-1"],"policy":"Absent facets/defaults stay absent. Callers must not infer an unprovided maximum length or service default."},
+    {"ids":["xml-7.2.3-3","json-7.2.3-3"],"policy":"Arbitrary precision decimal text is retained. Client precision limits, data editing and PATCH selection are caller responsibilities; the metadata validator does not reject a valid high-precision model."},
+    {"ids":["xml-7.2.4-4","json-7.2.4-4"],"policy":"Facet parsing accepts symbolic scale values case-insensitively and serialization emits lowercase values."},
+    {"ids":["xml-13.2-4","json-13.2-4"],"policy":"The service author selects IncludeInServiceDocument using runtime queryability; static validation cannot infer which query options a service requires."},
+    {"ids":["xml-13.4-1","json-13.4-1"],"policy":"Missing navigation bindings are accepted. Services may intentionally omit bindings; callers needing navigability warnings inspect resolved bindings against their routing requirements."},
+    {"ids":["xml-14-1","json-14-1"],"policy":"Tolerant profile parsing omits unavailable/invalid expression annotations; report APIs retain recovery diagnostics. Resolved annotation diagnostics do not invalidate tolerant semantic reports. Legacy parser APIs retain their original error behavior."},
+    {"ids":["xml-14.1.2-1","json-14.1.2-1","xml-17-13","json-17-13"],"policy":"Unknown AppliesTo values are retained. Applicability diagnostics are available during annotation validation but do not invalidate tolerant reports; strict authoring keeps its stronger validation policy."},
+    {"ids":["json-2.1.2.1-1","json-2.1.2.3-1","json-2.2-1","json-7-4","json-7.1-3"],"policy":"Metadata controls and default omission are output-size preferences. SerializationOptions selects metadata policy; explicit record types are retained when omission may change interpretation. Legacy output may retain computable fields."}
+  ]
+}

@@ -137,3 +137,73 @@ fn every_inventoried_obligation_has_a_matrix_disposition_and_real_evidence_links
         }
     }
 }
+
+#[test]
+fn every_advisory_has_an_explicit_implementation_or_caller_policy() {
+    let inventory: serde_json::Value =
+        serde_json::from_str(include_str!("../docs/conformance-requirements.json")).unwrap();
+    let policies: serde_json::Value =
+        serde_json::from_str(include_str!("../docs/advisory-policies.json")).unwrap();
+    let required = inventory["requirements"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|row| {
+            row["keywords"].as_array().unwrap().iter().any(|keyword| {
+                matches!(
+                    keyword.as_str(),
+                    Some("SHOULD" | "SHOULD NOT" | "RECOMMENDED")
+                )
+            })
+        })
+        .map(|row| row["id"].as_str().unwrap())
+        .collect::<HashSet<_>>();
+    let mut accounted = HashSet::new();
+    for policy in policies["policies"].as_array().unwrap() {
+        assert!(!policy["policy"].as_str().unwrap().is_empty());
+        for id in policy["ids"].as_array().unwrap() {
+            assert!(
+                accounted.insert(id.as_str().unwrap()),
+                "Duplicate policy for {id}"
+            );
+        }
+    }
+    assert_eq!(required, accounted);
+}
+
+#[test]
+fn decomposed_obligations_link_real_paragraphs_and_focused_evidence() {
+    let inventory: serde_json::Value =
+        serde_json::from_str(include_str!("../docs/conformance-requirements.json")).unwrap();
+    let obligations: serde_json::Value =
+        serde_json::from_str(include_str!("../docs/conformance-obligations.json")).unwrap();
+    let paragraphs = inventory["requirements"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["id"].as_str().unwrap())
+        .collect::<HashSet<_>>();
+    let mut ids = HashSet::new();
+    for obligation in obligations["obligations"].as_array().unwrap() {
+        assert!(ids.insert(obligation["id"].as_str().unwrap()));
+        for paragraph in obligation["paragraphs"].as_array().unwrap() {
+            assert!(paragraphs.contains(paragraph.as_str().unwrap()));
+        }
+        if obligation["status"] == "covered" {
+            assert!(!obligation["tests"].as_array().unwrap().is_empty());
+        }
+        for test in obligation["tests"].as_array().into_iter().flatten() {
+            let link = test.as_str().unwrap();
+            let (file, function) = link
+                .split_once("::")
+                .map_or((link, None), |(f, n)| (f, Some(n)));
+            let source = std::fs::read_to_string(
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(file),
+            )
+            .unwrap();
+            if let Some(function) = function {
+                assert!(source.contains(&format!("fn {function}(")), "{link}");
+            }
+        }
+    }
+}

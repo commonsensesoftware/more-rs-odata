@@ -6,32 +6,74 @@ use crate::csdl_xml_reader::{CsdlReader, SyntaxUnit};
 use crate::expr::CsdlAnnotationExpression;
 
 mod json_rules;
+mod recovery;
 pub(crate) mod validation;
+
+/// A recoverable source construct omitted during tolerant consumption.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParseDiagnostic {
+    pub location: String,
+    pub message: String,
+}
+
+/// Parsed declarations plus a record of tolerant annotation recovery.
+#[derive(Debug, Clone)]
+pub struct ParseReport {
+    pub document: CsdlDocument,
+    pub diagnostics: Vec<ParseDiagnostic>,
+}
+
+pub fn from_xml_reader_with_report<R: io::BufRead>(
+    reader: R,
+    profile: ValidationProfile,
+) -> io::Result<ParseReport> {
+    let mut diagnostics = Vec::new();
+    let xml = validation::xml_source_with_diagnostics(reader, profile, &mut diagnostics)?;
+    let mut reader = CsdlReader::from_reader(xml.as_slice());
+    let document = from_units_profile(
+        || reader.next_unit().map_err(io::Error::other),
+        profile,
+        false,
+    )?;
+    Ok(ParseReport {
+        document,
+        diagnostics,
+    })
+}
+
+pub fn from_json_reader_with_report<R: io::Read>(
+    reader: R,
+    profile: ValidationProfile,
+) -> io::Result<ParseReport> {
+    let mut value = validation::json_source(reader, profile)?;
+    let mut diagnostics = Vec::new();
+    if profile == ValidationProfile::Tolerant {
+        recovery::json(&mut value, "", &mut diagnostics);
+    }
+    let mut units = crate::csdl_json_reader::JsonCsdlReader::new(value)
+        .into_units()
+        .map_err(io::Error::other)?
+        .into_iter();
+    let document = from_units_profile(|| Ok(units.next()), profile, true)?;
+    Ok(ParseReport {
+        document,
+        diagnostics,
+    })
+}
 
 /// Parse with namespace-aware extension handling and optional authoring checks.
 pub fn from_xml_reader_with_profile<R: io::BufRead>(
     reader: R,
     profile: ValidationProfile,
 ) -> io::Result<CsdlDocument> {
-    let xml = validation::xml_source(reader, profile)?;
-    let mut reader = CsdlReader::from_reader(xml.as_slice());
-    from_units_profile(
-        || reader.next_unit().map_err(io::Error::other),
-        profile,
-        false,
-    )
+    from_xml_reader_with_report(reader, profile).map(|report| report.document)
 }
 
 pub fn from_json_reader_with_profile<R: io::Read>(
     reader: R,
     profile: ValidationProfile,
 ) -> io::Result<CsdlDocument> {
-    let value = validation::json_source(reader, profile)?;
-    let mut units = crate::csdl_json_reader::JsonCsdlReader::new(value)
-        .into_units()
-        .map_err(io::Error::other)?
-        .into_iter();
-    from_units_profile(|| Ok(units.next()), profile, true)
+    from_json_reader_with_report(reader, profile).map(|report| report.document)
 }
 
 #[derive(Debug, Clone)]

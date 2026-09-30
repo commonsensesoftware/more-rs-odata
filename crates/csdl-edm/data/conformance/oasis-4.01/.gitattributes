@@ -1,0 +1,4 @@
+*.xsd -text
+csdl.schema.json -text
+odata-abnf-construction-rules.txt -text
+odata-abnf-testcases.xml -text

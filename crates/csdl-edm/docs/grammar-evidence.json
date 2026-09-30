@@ -1,0 +1,1851 @@
+{
+  "sources": [
+    {
+      "file": "csdl.schema.json",
+      "source": "https://docs.oasis-open.org/odata/odata-csdl-json/v4.01/os/schemas/csdl.schema.json",
+      "sha256": "fbcfb22d487e41ece992d43dea0f1a395577455579ba3d307e85ee866e953811"
+    },
+    {
+      "file": "edm.xsd",
+      "source": "https://docs.oasis-open.org/odata/odata-csdl-xml/v4.01/os/schemas/edm.xsd",
+      "sha256": "c812c4409477d820bb35374dd9ca3cf38c86c441d3d38587e00c0aca6fc8ac58"
+    },
+    {
+      "file": "edmx.xsd",
+      "source": "https://docs.oasis-open.org/odata/odata-csdl-xml/v4.01/os/schemas/edmx.xsd",
+      "sha256": "ceb670c2b45569a0387d6dadc8388c0fe61ca5583774e93fdd90f34fdd08ee25"
+    },
+    {
+      "file": "odata-abnf-construction-rules.txt",
+      "source": "https://docs.oasis-open.org/odata/odata/v4.01/os/abnf/odata-abnf-construction-rules.txt",
+      "sha256": "ab33cfdf4dce526e17b244c9595fa6af776c7d2ebad137daa4f7657c7282b83e"
+    },
+    {
+      "file": "odata-abnf-testcases.xml",
+      "source": "https://docs.oasis-open.org/odata/odata/v4.01/os/abnf/odata-abnf-testcases.xml",
+      "sha256": "b178862fe09ea02607f4b580d22c2d86b0a620f3af0e38225fe14b1330598b78"
+    }
+  ],
+  "families": [
+    {
+      "source": "edm.xsd",
+      "family": "element:Schema",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TEntityType",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TEntityKeyElement",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TPropertyRef",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TComplexType",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TProperty",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TTypeDefinition",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TNavigationProperty",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TReferentialConstraint",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TOnDelete",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TEnumType",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TEnumTypeMember",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TActionFunctionReturnType",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TAction",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TFunction",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TActionFunctionParameter",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TTerm",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "element:Annotations",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TAnnotations",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "element:Annotation",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "group:GExpression",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "attributeGroup:GInlineExpressions",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TBinaryConstantExpression",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TBoolConstantExpression",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TDateConstantExpression",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TDateTimeOffsetConstantExpression",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TDecimalConstantExpression",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TDurationConstantExpression",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TFloatConstantExpression",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TGuidConstantExpression",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "simpleType:TDecimalLiteral",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "simpleType:TGuidLiteral",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TIntConstantExpression",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TStringConstantExpression",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TTimeOfDayConstantExpression",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TApplyExpression",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TCastOrIsOfExpression",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TCollectionExpression",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TIfExpression",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TOneChildExpression",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TTwoChildrenExpression",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TLabeledElementExpression",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TLabeledElementReferenceExpression",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TNullExpression",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TRecordExpression",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TPropertyValue",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "attributeGroup:TFacetAttributes",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "attributeGroup:TCommonPropertyAttributes",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "attributeGroup:TActionFunctionParameterAttributes",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "attributeGroup:TActionAttributes",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "attributeGroup:TFunctionAttributes",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "attributeGroup:TTypeAttributes",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "attributeGroup:TDerivableTypeAttributes",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TEntityContainer",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TEntitySet",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TNavigationPropertyBinding",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "attributeGroup:TEntitySetAttributes",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TSingleton",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TActionImport",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "complexType:TFunctionImport",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "attributeGroup:TActionFunctionImportAttributes",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "simpleType:TSimpleIdentifier",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "simpleType:TNamespaceName",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "simpleType:TQualifiedName",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "simpleType:TEnumMemberList",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "simpleType:TTypeName",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "simpleType:TPath",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "simpleType:TInstancePath",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "simpleType:TModelPath",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "simpleType:TTarget",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "simpleType:TClientFunction",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "simpleType:TPrimitiveType",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "simpleType:TAbstractType",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "simpleType:TAppliesTo",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "simpleType:TAppliesToElements",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "simpleType:TFloating",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "simpleType:TMax",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "simpleType:TVariable",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "simpleType:TMaxLengthFacet",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "simpleType:TPrecisionFacet",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "simpleType:TScaleFacet",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "simpleType:TSridFacet",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "simpleType:TUnicodeFacet",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "simpleType:TOnDeleteAction",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "simpleType:binary",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "simpleType:boolean",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "simpleType:date",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "simpleType:time",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "simpleType:dateTimeStamp",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edm.xsd",
+      "family": "simpleType:dayTimeDuration",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edmx.xsd",
+      "family": "element:Edmx",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edmx.xsd",
+      "family": "complexType:TEdmx",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edmx.xsd",
+      "family": "complexType:TReference",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edmx.xsd",
+      "family": "complexType:TInclude",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edmx.xsd",
+      "family": "complexType:TIncludeAnnotations",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edmx.xsd",
+      "family": "complexType:TDataServices",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "edmx.xsd",
+      "family": "simpleType:TVersion",
+      "disposition": "partial",
+      "responsibility": "CSDL parser shape and lexical rules; semantic rules also require resolver/validator checks. Family inventory is not exhaustive branch evidence."
+    },
+    {
+      "source": "csdl.schema.json",
+      "family": "Action",
+      "disposition": "partial",
+      "responsibility": "Strict JSON source checks and shared CSDL grammar. Independent positive/negative branch evidence remains to be mapped."
+    },
+    {
+      "source": "csdl.schema.json",
+      "family": "ActionImport",
+      "disposition": "partial",
+      "responsibility": "Strict JSON source checks and shared CSDL grammar. Independent positive/negative branch evidence remains to be mapped."
+    },
+    {
+      "source": "csdl.schema.json",
+      "family": "Annotation",
+      "disposition": "partial",
+      "responsibility": "Strict JSON source checks and shared CSDL grammar. Independent positive/negative branch evidence remains to be mapped."
+    },
+    {
+      "source": "csdl.schema.json",
+      "family": "ComplexType",
+      "disposition": "partial",
+      "responsibility": "Strict JSON source checks and shared CSDL grammar. Independent positive/negative branch evidence remains to be mapped."
+    },
+    {
+      "source": "csdl.schema.json",
+      "family": "EntityContainer",
+      "disposition": "partial",
+      "responsibility": "Strict JSON source checks and shared CSDL grammar. Independent positive/negative branch evidence remains to be mapped."
+    },
+    {
+      "source": "csdl.schema.json",
+      "family": "EntitySet",
+      "disposition": "partial",
+      "responsibility": "Strict JSON source checks and shared CSDL grammar. Independent positive/negative branch evidence remains to be mapped."
+    },
+    {
+      "source": "csdl.schema.json",
+      "family": "EntityType",
+      "disposition": "partial",
+      "responsibility": "Strict JSON source checks and shared CSDL grammar. Independent positive/negative branch evidence remains to be mapped."
+    },
+    {
+      "source": "csdl.schema.json",
+      "family": "EnumType",
+      "disposition": "partial",
+      "responsibility": "Strict JSON source checks and shared CSDL grammar. Independent positive/negative branch evidence remains to be mapped."
+    },
+    {
+      "source": "csdl.schema.json",
+      "family": "Function",
+      "disposition": "partial",
+      "responsibility": "Strict JSON source checks and shared CSDL grammar. Independent positive/negative branch evidence remains to be mapped."
+    },
+    {
+      "source": "csdl.schema.json",
+      "family": "FunctionImport",
+      "disposition": "partial",
+      "responsibility": "Strict JSON source checks and shared CSDL grammar. Independent positive/negative branch evidence remains to be mapped."
+    },
+    {
+      "source": "csdl.schema.json",
+      "family": "MaxLength",
+      "disposition": "partial",
+      "responsibility": "Strict JSON source checks and shared CSDL grammar. Independent positive/negative branch evidence remains to be mapped."
+    },
+    {
+      "source": "csdl.schema.json",
+      "family": "NavigationProperty",
+      "disposition": "partial",
+      "responsibility": "Strict JSON source checks and shared CSDL grammar. Independent positive/negative branch evidence remains to be mapped."
+    },
+    {
+      "source": "csdl.schema.json",
+      "family": "NavigationPropertyBinding",
+      "disposition": "partial",
+      "responsibility": "Strict JSON source checks and shared CSDL grammar. Independent positive/negative branch evidence remains to be mapped."
+    },
+    {
+      "source": "csdl.schema.json",
+      "family": "Parameter",
+      "disposition": "partial",
+      "responsibility": "Strict JSON source checks and shared CSDL grammar. Independent positive/negative branch evidence remains to be mapped."
+    },
+    {
+      "source": "csdl.schema.json",
+      "family": "Precision",
+      "disposition": "partial",
+      "responsibility": "Strict JSON source checks and shared CSDL grammar. Independent positive/negative branch evidence remains to be mapped."
+    },
+    {
+      "source": "csdl.schema.json",
+      "family": "Property",
+      "disposition": "partial",
+      "responsibility": "Strict JSON source checks and shared CSDL grammar. Independent positive/negative branch evidence remains to be mapped."
+    },
+    {
+      "source": "csdl.schema.json",
+      "family": "ReturnType",
+      "disposition": "partial",
+      "responsibility": "Strict JSON source checks and shared CSDL grammar. Independent positive/negative branch evidence remains to be mapped."
+    },
+    {
+      "source": "csdl.schema.json",
+      "family": "Scale",
+      "disposition": "partial",
+      "responsibility": "Strict JSON source checks and shared CSDL grammar. Independent positive/negative branch evidence remains to be mapped."
+    },
+    {
+      "source": "csdl.schema.json",
+      "family": "Schema",
+      "disposition": "partial",
+      "responsibility": "Strict JSON source checks and shared CSDL grammar. Independent positive/negative branch evidence remains to be mapped."
+    },
+    {
+      "source": "csdl.schema.json",
+      "family": "Singleton",
+      "disposition": "partial",
+      "responsibility": "Strict JSON source checks and shared CSDL grammar. Independent positive/negative branch evidence remains to be mapped."
+    },
+    {
+      "source": "csdl.schema.json",
+      "family": "SRID",
+      "disposition": "partial",
+      "responsibility": "Strict JSON source checks and shared CSDL grammar. Independent positive/negative branch evidence remains to be mapped."
+    },
+    {
+      "source": "csdl.schema.json",
+      "family": "Term",
+      "disposition": "partial",
+      "responsibility": "Strict JSON source checks and shared CSDL grammar. Independent positive/negative branch evidence remains to be mapped."
+    },
+    {
+      "source": "csdl.schema.json",
+      "family": "TypeDefinition",
+      "disposition": "partial",
+      "responsibility": "Strict JSON source checks and shared CSDL grammar. Independent positive/negative branch evidence remains to be mapped."
+    },
+    {
+      "source": "csdl.schema.json",
+      "family": "Unicode",
+      "disposition": "partial",
+      "responsibility": "Strict JSON source checks and shared CSDL grammar. Independent positive/negative branch evidence remains to be mapped."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "anyExpr",
+      "cases": 4,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "binary",
+      "cases": 10,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "boolCommonExpr",
+      "cases": 54,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "booleanValue",
+      "cases": 5,
+      "disposition": "executed",
+      "responsibility": "tests/imported_grammar.rs: original positive/negative inputs, with explicit CSDL representation adaptation."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "byteValue",
+      "cases": 1,
+      "disposition": "executed",
+      "responsibility": "tests/imported_grammar.rs: original positive/negative inputs, with explicit CSDL representation adaptation."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "commonExpr",
+      "cases": 106,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "compute",
+      "cases": 3,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "context",
+      "cases": 43,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "customQueryOption",
+      "cases": 3,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "dateTimeOffsetValue",
+      "cases": 15,
+      "disposition": "executed",
+      "responsibility": "tests/imported_grammar.rs: original positive/negative inputs, with explicit CSDL representation adaptation."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "dateTimeOffsetValueInUrl",
+      "cases": 1,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "dateValue",
+      "cases": 8,
+      "disposition": "executed",
+      "responsibility": "tests/imported_grammar.rs: original positive/negative inputs, with explicit CSDL representation adaptation."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "decimalValue",
+      "cases": 10,
+      "disposition": "executed",
+      "responsibility": "tests/imported_grammar.rs: original positive/negative inputs, with explicit CSDL representation adaptation."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "deltatoken",
+      "cases": 1,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "doubleValue",
+      "cases": 7,
+      "disposition": "executed",
+      "responsibility": "tests/imported_grammar.rs: original positive/negative inputs, with explicit CSDL representation adaptation."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "dummyStartRule",
+      "cases": 1,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "duration",
+      "cases": 2,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "durationValue",
+      "cases": 3,
+      "disposition": "executed",
+      "responsibility": "tests/imported_grammar.rs: original positive/negative inputs, with explicit CSDL representation adaptation."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "entitySetName",
+      "cases": 1,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "enum",
+      "cases": 4,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "expand",
+      "cases": 32,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "filter",
+      "cases": 24,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "firstMemberExpr",
+      "cases": 20,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "functionParameter",
+      "cases": 1,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "geographyCollection",
+      "cases": 1,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "geographyLineString",
+      "cases": 1,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "geographyMultiLineString",
+      "cases": 1,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "geographyMultiPoint",
+      "cases": 2,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "geographyMultiPolygon",
+      "cases": 1,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "geographyPoint",
+      "cases": 3,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "geographyPolygon",
+      "cases": 1,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "geometryCollection",
+      "cases": 1,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "geometryLineString",
+      "cases": 1,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "geometryMultiLineString",
+      "cases": 1,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "geometryMultiPoint",
+      "cases": 2,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "geometryMultiPolygon",
+      "cases": 1,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "geometryPoint",
+      "cases": 1,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "geometryPolygon",
+      "cases": 1,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "guidValue",
+      "cases": 3,
+      "disposition": "executed",
+      "responsibility": "tests/imported_grammar.rs: original positive/negative inputs, with explicit CSDL representation adaptation."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "header",
+      "cases": 12,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "includeAnnotationsPreference",
+      "cases": 2,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "int16Value",
+      "cases": 1,
+      "disposition": "executed",
+      "responsibility": "tests/imported_grammar.rs: original positive/negative inputs, with explicit CSDL representation adaptation."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "int32Value",
+      "cases": 1,
+      "disposition": "executed",
+      "responsibility": "tests/imported_grammar.rs: original positive/negative inputs, with explicit CSDL representation adaptation."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "int64Value",
+      "cases": 1,
+      "disposition": "executed",
+      "responsibility": "tests/imported_grammar.rs: original positive/negative inputs, with explicit CSDL representation adaptation."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "isofExpr",
+      "cases": 5,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "maxpagesizePreference",
+      "cases": 2,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "notExpr",
+      "cases": 1,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "nullValue",
+      "cases": 1,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "odataIdentifier",
+      "cases": 4,
+      "disposition": "executed",
+      "responsibility": "tests/imported_grammar.rs: original positive/negative inputs, with explicit CSDL representation adaptation."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "odataRelativeUri",
+      "cases": 154,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "odataUri",
+      "cases": 24,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "orderby",
+      "cases": 11,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "prefer",
+      "cases": 2,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "preference",
+      "cases": 34,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "primitiveLiteral",
+      "cases": 2,
+      "disposition": "partial",
+      "responsibility": "Related CSDL lexical/path family; URL grammar requires adaptation before use as CSDL evidence."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "primitiveValue",
+      "cases": 6,
+      "disposition": "partial",
+      "responsibility": "Related CSDL lexical/path family; URL grammar requires adaptation before use as CSDL evidence."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "propertyPathExpr",
+      "cases": 4,
+      "disposition": "partial",
+      "responsibility": "Related CSDL lexical/path family; URL grammar requires adaptation before use as CSDL evidence."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "queryOptions",
+      "cases": 80,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "request-id",
+      "cases": 2,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "resourcePath",
+      "cases": 37,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "sbyteValue",
+      "cases": 1,
+      "disposition": "executed",
+      "responsibility": "tests/imported_grammar.rs: original positive/negative inputs, with explicit CSDL representation adaptation."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "search",
+      "cases": 3,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "searchExpr",
+      "cases": 2,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "select",
+      "cases": 20,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "singleValue",
+      "cases": 1,
+      "disposition": "executed",
+      "responsibility": "tests/imported_grammar.rs: original positive/negative inputs, with explicit CSDL representation adaptation."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "skiptoken",
+      "cases": 2,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "string",
+      "cases": 7,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "stringInUrl",
+      "cases": 1,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "systemQueryOption",
+      "cases": 4,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "timeOfDayValue",
+      "cases": 5,
+      "disposition": "executed",
+      "responsibility": "tests/imported_grammar.rs: original positive/negative inputs, with explicit CSDL representation adaptation."
+    },
+    {
+      "source": "odata-abnf-testcases.xml",
+      "family": "timeOfDayValueInUrl",
+      "cases": 1,
+      "disposition": "outside-static-scope",
+      "responsibility": "URL/query parser, HTTP protocol, runtime values, or ABNF helper production; not a standalone CSDL declaration rule."
+    }
+  ],
+  "abnf_total_cases": 813,
+  "executable_cases": [
+    {
+      "index": 15,
+      "rule": "booleanValue",
+      "name": "Boolean - true",
+      "input": "true",
+      "type": "Edm.Boolean",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 16,
+      "rule": "booleanValue",
+      "name": "Boolean - false",
+      "input": "false",
+      "type": "Edm.Boolean",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 17,
+      "rule": "booleanValue",
+      "name": "Boolean - literals are case-insensitive",
+      "input": "tRUe",
+      "type": "Edm.Boolean",
+      "valid": false,
+      "adaptation": "CSDL XML Bool uses xs:boolean and JSON Boolean uses lowercase JSON literals; URL case-insensitive tokens are not payload Booleans."
+    },
+    {
+      "index": 18,
+      "rule": "dateValue",
+      "name": "Date in URL or body",
+      "input": "2012-09-03",
+      "type": "Edm.Date",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 19,
+      "rule": "dateValue",
+      "name": "Date",
+      "input": "2012-09-10",
+      "type": "Edm.Date",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 20,
+      "rule": "dateValue",
+      "name": "Date",
+      "input": "2012-09-20",
+      "type": "Edm.Date",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 21,
+      "rule": "dateValue",
+      "name": "Date",
+      "input": "2012-09-03",
+      "type": "Edm.Date",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 22,
+      "rule": "dateValue",
+      "name": "Date: year zero",
+      "input": "0000-01-01",
+      "type": "Edm.Date",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 23,
+      "rule": "dateValue",
+      "name": "Date: negative",
+      "input": "-10000-04-01",
+      "type": "Edm.Date",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 24,
+      "rule": "dateValue",
+      "name": "Date: negative Infinity",
+      "input": "-INF",
+      "type": "Edm.Date",
+      "valid": false,
+      "adaptation": null
+    },
+    {
+      "index": 25,
+      "rule": "dateValue",
+      "name": "Date: positive Infinity",
+      "input": "INF",
+      "type": "Edm.Date",
+      "valid": false,
+      "adaptation": null
+    },
+    {
+      "index": 26,
+      "rule": "dateTimeOffsetValue",
+      "name": "DateTimeOffset: no seconds",
+      "input": "2012-09-03T13:52Z",
+      "type": "Edm.DateTimeOffset",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 27,
+      "rule": "dateTimeOffsetValue",
+      "name": "DateTimeOffset: seconds",
+      "input": "2012-09-03T22:09:02Z",
+      "type": "Edm.DateTimeOffset",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 28,
+      "rule": "dateTimeOffsetValue",
+      "name": "DateTimeOffset: leap second",
+      "input": "1972-06-30T23:59:60Z",
+      "type": "Edm.DateTimeOffset",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 29,
+      "rule": "dateTimeOffsetValue",
+      "name": "DateTimeOffset: subseconds",
+      "input": "2012-08-31T18:19:22.1Z",
+      "type": "Edm.DateTimeOffset",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 30,
+      "rule": "dateTimeOffsetValue",
+      "name": "DateTimeOffset: year zero",
+      "input": "0000-01-01T00:00Z",
+      "type": "Edm.DateTimeOffset",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 31,
+      "rule": "dateTimeOffsetValue",
+      "name": "DateTimeOffset: negative",
+      "input": "-10000-04-01T00:00Z",
+      "type": "Edm.DateTimeOffset",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 32,
+      "rule": "dateTimeOffsetValue",
+      "name": "DateTimeOffset: Midnight this day",
+      "input": "2011-12-31T24:00Z",
+      "type": "Edm.DateTimeOffset",
+      "valid": false,
+      "adaptation": null
+    },
+    {
+      "index": 33,
+      "rule": "dateTimeOffsetValue",
+      "name": "DateTimeOffset: Midnight this day with seconds",
+      "input": "2011-12-31T24:00:00Z",
+      "type": "Edm.DateTimeOffset",
+      "valid": false,
+      "adaptation": null
+    },
+    {
+      "index": 34,
+      "rule": "dateTimeOffsetValue",
+      "name": "DateTimeOffset: CEST",
+      "input": "2012-09-03T14:53+02:00",
+      "type": "Edm.DateTimeOffset",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 35,
+      "rule": "dateTimeOffsetValue",
+      "name": "DateTimeOffset: UTC",
+      "input": "2012-09-03T12:53Z",
+      "type": "Edm.DateTimeOffset",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 36,
+      "rule": "dateTimeOffsetValue",
+      "name": "DateTimeOffset: 24:00",
+      "input": "2012-09-03T24:00-03:00",
+      "type": "Edm.DateTimeOffset",
+      "valid": false,
+      "adaptation": null
+    },
+    {
+      "index": 37,
+      "rule": "dateTimeOffsetValue",
+      "name": "DateTimeOffset: negative infinitiy",
+      "input": "-INF",
+      "type": "Edm.DateTimeOffset",
+      "valid": false,
+      "adaptation": null
+    },
+    {
+      "index": 38,
+      "rule": "dateTimeOffsetValue",
+      "name": "DateTimeOffset: positive infinitiy",
+      "input": "INF",
+      "type": "Edm.DateTimeOffset",
+      "valid": false,
+      "adaptation": null
+    },
+    {
+      "index": 39,
+      "rule": "dateTimeOffsetValue",
+      "name": "DateTimeOffset: no percent-encoding in payloads",
+      "input": "2012-09-03T23%3A59Z",
+      "type": "Edm.DateTimeOffset",
+      "valid": false,
+      "adaptation": null
+    },
+    {
+      "index": 40,
+      "rule": "dateTimeOffsetValue",
+      "name": "DateTimeOffset: no percent-encoding in payloads",
+      "input": "2012-09-03T23:59+01%3A00",
+      "type": "Edm.DateTimeOffset",
+      "valid": false,
+      "adaptation": null
+    },
+    {
+      "index": 42,
+      "rule": "decimalValue",
+      "name": "Decimal",
+      "input": "3.14",
+      "type": "Edm.Decimal",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 43,
+      "rule": "decimalValue",
+      "name": "Decimal - exponential notation",
+      "input": "-1.234567e3",
+      "type": "Edm.Decimal",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 44,
+      "rule": "decimalValue",
+      "name": "Decimal - exponential notation",
+      "input": "1e-101",
+      "type": "Edm.Decimal",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 45,
+      "rule": "decimalValue",
+      "name": "Decimal - negative infinitiy",
+      "input": "-INF",
+      "type": "Edm.Decimal",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 46,
+      "rule": "decimalValue",
+      "name": "Decimal - positive infinitiy",
+      "input": "INF",
+      "type": "Edm.Decimal",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 47,
+      "rule": "decimalValue",
+      "name": "Decimal - not a number",
+      "input": "NaN",
+      "type": "Edm.Decimal",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 48,
+      "rule": "durationValue",
+      "name": "Duration in body",
+      "input": "P6DT23H59M59.9999S",
+      "type": "Edm.Duration",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 49,
+      "rule": "durationValue",
+      "name": "Duration in body: no years allowed",
+      "input": "P1Y6DT23H59M59.9999S",
+      "type": "Edm.Duration",
+      "valid": false,
+      "adaptation": null
+    },
+    {
+      "index": 50,
+      "rule": "durationValue",
+      "name": "Duration in body: no months allowed",
+      "input": "P1M6DT23H59M59.9999S",
+      "type": "Edm.Duration",
+      "valid": false,
+      "adaptation": null
+    },
+    {
+      "index": 53,
+      "rule": "decimalValue",
+      "name": "Decimal: integer",
+      "input": "-2",
+      "type": "Edm.Decimal",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 54,
+      "rule": "decimalValue",
+      "name": "Decimal: integer",
+      "input": "+42.",
+      "type": "Edm.Decimal",
+      "valid": false,
+      "adaptation": null
+    },
+    {
+      "index": 55,
+      "rule": "decimalValue",
+      "name": "Decimal: no digit before decimal point",
+      "input": ".1",
+      "type": "Edm.Decimal",
+      "valid": false,
+      "adaptation": null
+    },
+    {
+      "index": 56,
+      "rule": "decimalValue",
+      "name": "Decimal in URL",
+      "input": "3.14",
+      "type": "Edm.Decimal",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 57,
+      "rule": "doubleValue",
+      "name": "Double",
+      "input": "3.14",
+      "type": "Edm.Double",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 58,
+      "rule": "doubleValue",
+      "name": "Double with exponent",
+      "input": "-0.314e1",
+      "type": "Edm.Double",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 59,
+      "rule": "doubleValue",
+      "name": "Double with at most one exponent",
+      "input": "-0.314e1e2",
+      "type": "Edm.Double",
+      "valid": false,
+      "adaptation": null
+    },
+    {
+      "index": 60,
+      "rule": "doubleValue",
+      "name": "Negative infinity",
+      "input": "-INF",
+      "type": "Edm.Double",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 61,
+      "rule": "doubleValue",
+      "name": "Positive infinity",
+      "input": "INF",
+      "type": "Edm.Double",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 62,
+      "rule": "doubleValue",
+      "name": "Not a Number",
+      "input": "NaN",
+      "type": "Edm.Double",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 63,
+      "rule": "doubleValue",
+      "name": "Double in URL",
+      "input": "-0.314e1",
+      "type": "Edm.Double",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 64,
+      "rule": "singleValue",
+      "name": "Single in URL",
+      "input": "-0.314e1",
+      "type": "Edm.Single",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 65,
+      "rule": "byteValue",
+      "name": "Byte",
+      "input": "255",
+      "type": "Edm.Byte",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 66,
+      "rule": "sbyteValue",
+      "name": "SByte",
+      "input": "-128",
+      "type": "Edm.SByte",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 67,
+      "rule": "int16Value",
+      "name": "Int16",
+      "input": "+32000",
+      "type": "Edm.Int16",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 68,
+      "rule": "int32Value",
+      "name": "Int32",
+      "input": "-2000000000",
+      "type": "Edm.Int32",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 69,
+      "rule": "int64Value",
+      "name": "Int64",
+      "input": "1234567890123456789",
+      "type": "Edm.Int64",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 88,
+      "rule": "guidValue",
+      "name": "Correct Guid",
+      "input": "01234567-89ab-cdef-0123-456789abcdef",
+      "type": "Edm.Guid",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 89,
+      "rule": "guidValue",
+      "name": "Guid with wrong character",
+      "input": "01234g67-89ab-cdef-0123-456789abcdef",
+      "type": "Edm.Guid",
+      "valid": false,
+      "adaptation": null
+    },
+    {
+      "index": 90,
+      "rule": "guidValue",
+      "name": "Guid with less than 32 digits",
+      "input": "01234567-89ab-cdef-456789abcdef",
+      "type": "Edm.Guid",
+      "valid": false,
+      "adaptation": null
+    },
+    {
+      "index": 91,
+      "rule": "timeOfDayValue",
+      "name": "TimeOfDay",
+      "input": "11:22:33",
+      "type": "Edm.TimeOfDay",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 93,
+      "rule": "timeOfDayValue",
+      "name": "TimeOfDay - no percent-encoding in payloads",
+      "input": "11%3A22%3a33",
+      "type": "Edm.TimeOfDay",
+      "valid": false,
+      "adaptation": null
+    },
+    {
+      "index": 94,
+      "rule": "timeOfDayValue",
+      "name": "TimeOfDay: no seconds",
+      "input": "11:22",
+      "type": "Edm.TimeOfDay",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 95,
+      "rule": "timeOfDayValue",
+      "name": "TimeOfDay: fractional seconds",
+      "input": "11:22:33.4444444",
+      "type": "Edm.TimeOfDay",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 96,
+      "rule": "timeOfDayValue",
+      "name": "TimeOfDay: 24:00",
+      "input": "24:00:00",
+      "type": "Edm.TimeOfDay",
+      "valid": false,
+      "adaptation": null
+    },
+    {
+      "index": 97,
+      "rule": "odataIdentifier",
+      "name": "Identifier",
+      "input": "TheQuickBrownFoxSays42",
+      "type": "identifier",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 98,
+      "rule": "odataIdentifier",
+      "name": "Identifier with leading underscores",
+      "input": "__ID",
+      "type": "identifier",
+      "valid": true,
+      "adaptation": null
+    },
+    {
+      "index": 99,
+      "rule": "odataIdentifier",
+      "name": "Identifier: no starting digit",
+      "input": "0time",
+      "type": "identifier",
+      "valid": false,
+      "adaptation": null
+    },
+    {
+      "index": 100,
+      "rule": "odataIdentifier",
+      "name": "Identifier: no dots within",
+      "input": "No.Dot",
+      "type": "identifier",
+      "valid": false,
+      "adaptation": null
+    },
+    {
+      "index": 316,
+      "rule": "booleanValue",
+      "name": "5.1.1.1.1 boolean - only true and false",
+      "input": "0",
+      "type": "Edm.Boolean",
+      "valid": false,
+      "adaptation": "CSDL XML Bool uses xs:boolean and JSON Boolean uses lowercase JSON literals; URL case-insensitive tokens are not payload Booleans."
+    },
+    {
+      "index": 317,
+      "rule": "booleanValue",
+      "name": "5.1.1.1.1 boolean - only true and false",
+      "input": "1",
+      "type": "Edm.Boolean",
+      "valid": false,
+      "adaptation": "CSDL XML Bool uses xs:boolean and JSON Boolean uses lowercase JSON literals; URL case-insensitive tokens are not payload Booleans."
+    }
+  ]
+}

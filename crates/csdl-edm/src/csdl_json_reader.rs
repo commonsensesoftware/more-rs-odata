@@ -47,7 +47,7 @@ impl JsonCsdlReader {
     }
 }
 
-fn normalize_type_controls(value: &mut Value) -> Result<()> {
+pub(crate) fn normalize_type_controls(value: &mut Value) -> Result<()> {
     if let Some(items) = value.as_array_mut() {
         for item in items {
             normalize_type_controls(item)?;
@@ -1140,7 +1140,7 @@ fn parse_annotation_key(key: &str) -> Option<(Option<String>, String, Option<Str
     Some((target, term, qualifier))
 }
 
-fn json_to_expr(value: Value) -> Result<CsdlAnnotationExpression> {
+pub(crate) fn json_to_expr(value: Value) -> Result<CsdlAnnotationExpression> {
     Ok(match value {
         Value::Null => CsdlAnnotationExpression::Null,
         Value::Bool(b) => CsdlAnnotationExpression::Bool(b),
