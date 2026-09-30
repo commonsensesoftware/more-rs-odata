@@ -1377,7 +1377,7 @@ fn validate_navigation_members(
                         "Recursive containment partner must be nullable and single-valued",
                         ctx,
                     );
-                } else if !recursive && partner.nullable.unwrap_or(true) {
+                } else if !recursive && !partner.is_collection && partner.nullable.unwrap_or(true) {
                     invalid_navigation(
                         owner,
                         nav,

@@ -2,10 +2,14 @@
 use csdl_edm::{conformance::ValidationProfile as P, parser, resolver::Resolver, validator};
 
 fn check(xml: &str, json: &str, valid: bool) {
+    check_version(xml, json, "4.01", valid);
+}
+
+fn check_version(xml: &str, json: &str, version: &str, valid: bool) {
     let xml = format!(
-        r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N">{xml}</Schema></edmx:DataServices></edmx:Edmx>"#
+        r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="{version}"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N">{xml}</Schema></edmx:DataServices></edmx:Edmx>"#
     );
-    let json = format!(r#"{{"$Version":"4.01","N":{{{json}}}}}"#);
+    let json = format!(r#"{{"$Version":"{version}","N":{{{json}}}}}"#);
     for parsed in [
         parser::from_xml_reader_with_profile(xml.as_bytes(), P::Strict),
         parser::from_json_reader_with_profile(json.as_bytes(), P::Strict),
@@ -206,6 +210,96 @@ fn constraint_types_must_match_unless_both_are_complex() {
                 ),
                 valid,
             );
+        }
+    }
+}
+
+#[test]
+fn containment_partner_cardinality_depends_on_recursion() {
+    for recursive in [false, true] {
+        for collection in [false, true] {
+            for nullable in [false, true] {
+                // Collection navigations cannot author Nullable; collection-valued
+                // partners are tested once with the required source shape.
+                if collection && nullable {
+                    continue;
+                }
+                let target = if recursive { "N.Owner" } else { "N.Child" };
+                let reverse_type = if collection {
+                    "Collection(N.Owner)"
+                } else {
+                    "N.Owner"
+                };
+                let xml_nullable = if collection {
+                    String::new()
+                } else {
+                    format!(r#" Nullable="{nullable}""#)
+                };
+                let json_nullable = if collection {
+                    String::new()
+                } else {
+                    format!(r#", "$Nullable":{nullable}"#)
+                };
+                let xml_reverse = format!(
+                    r#"<NavigationProperty Name="Parent" Type="{reverse_type}"{xml_nullable} Partner="Child"/>"#
+                );
+                let json_reverse = format!(
+                    r#""Parent":{{"$Kind":"NavigationProperty","$Type":"N.Owner","$Collection":{collection}{json_nullable},"$Partner":"Child"}}"#
+                );
+                let (xml_owner, json_owner, xml_child, json_child) = if recursive {
+                    (
+                        xml_reverse,
+                        format!(",{json_reverse}"),
+                        String::new(),
+                        String::new(),
+                    )
+                } else {
+                    (
+                        String::new(),
+                        String::new(),
+                        format!(r#"<EntityType Name="Child">{xml_reverse}</EntityType>"#),
+                        format!(r#", "Child":{{"$Kind":"EntityType",{json_reverse}}}"#),
+                    )
+                };
+                check(
+                    &format!(
+                        r#"<EntityType Name="Owner"><NavigationProperty Name="Child" Type="{target}" ContainsTarget="true" Partner="Parent"/>{xml_owner}</EntityType>{xml_child}"#
+                    ),
+                    &format!(
+                        r#""Owner":{{"$Kind":"EntityType","Child":{{"$Kind":"NavigationProperty","$Type":"{target}","$ContainsTarget":true,"$Partner":"Parent"}}{json_owner}}}{json_child}"#
+                    ),
+                    if recursive {
+                        nullable && !collection
+                    } else {
+                        !nullable
+                    },
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn collections_of_containing_complex_types_require_401() {
+    for version in ["4.0", "4.01"] {
+        for collection in [false, true] {
+            for containment in [false, true] {
+                let ty = if collection {
+                    "Collection(N.Value)"
+                } else {
+                    "N.Value"
+                };
+                check_version(
+                    &format!(
+                        r#"<EntityType Name="Owner" Abstract="true"><Property Name="Values" Type="{ty}" Nullable="false"/></EntityType><ComplexType Name="Value"><NavigationProperty Name="Child" Type="N.Owner" ContainsTarget="{containment}"/></ComplexType>"#
+                    ),
+                    &format!(
+                        r#""Owner":{{"$Kind":"EntityType","$Abstract":true,"Values":{{"$Type":"N.Value","$Collection":{collection}}}}},"Value":{{"$Kind":"ComplexType","Child":{{"$Kind":"NavigationProperty","$Type":"N.Owner","$ContainsTarget":{containment}}}}}"#
+                    ),
+                    version,
+                    version == "4.01" || !collection || !containment,
+                );
+            }
         }
     }
 }
