@@ -15,6 +15,7 @@
                 Alias="self">
             <Term Name="Length"
                   Type="Edm.Decimal"
+                  Nullable="false"
                   AppliesTo="Property"
                   Precision="8"
                   Scale="2" />

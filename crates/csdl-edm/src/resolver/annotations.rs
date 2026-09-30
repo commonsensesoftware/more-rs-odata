@@ -196,7 +196,7 @@ pub(super) fn resolve(
         }
     }
     for schema in schemas {
-        for group in super::documents::annotation_groups(schema) {
+        for group in crate::csdl::annotation_groups(schema) {
             if group.annotations.iter().any(|a| {
                 scope.canonical(&a.term, &schema.namespace) == "Org.OData.Core.V1.Ordered"
                     && matches!(a.expression, Some(Expr::Bool(true)))

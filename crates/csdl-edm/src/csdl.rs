@@ -484,3 +484,129 @@ pub(crate) fn nest_annotations(values: &mut Vec<Annotation>) {
         nest_annotations(&mut a.annotations);
     }
 }
+
+pub(crate) fn annotation_groups(schema: &Schema) -> Vec<Annotations> {
+    fn add(out: &mut Vec<Annotations>, path: &str, annotations: &[Annotation]) {
+        for annotation in annotations {
+            let mut annotation = annotation.clone();
+            let target = annotation
+                .target
+                .take()
+                .map(|p| format!("{path}/{p}"))
+                .unwrap_or_else(|| path.into());
+            out.push(Annotations {
+                target,
+                annotations: vec![annotation],
+            });
+        }
+    }
+    fn members(
+        out: &mut Vec<Annotations>,
+        path: &str,
+        properties: &[Property],
+        navs: &[NavigationProperty],
+    ) {
+        for p in properties {
+            add(out, &format!("{path}/{}", p.name), &p.annotations);
+        }
+        for n in navs {
+            let path = format!("{path}/{}", n.name);
+            add(out, &path, &n.annotations);
+            for c in &n.referential_constraints {
+                add(out, &format!("{path}/{}", c.property), &c.annotations);
+            }
+        }
+    }
+    fn callable(
+        out: &mut Vec<Annotations>,
+        path: &str,
+        params: &[Parameter],
+        ret: &Option<ReturnType>,
+        annotations: &[Annotation],
+    ) {
+        let signature = params
+            .iter()
+            .map(|p| {
+                let ty = p.type_name.as_deref().unwrap_or("Edm.String");
+                if p.is_collection {
+                    format!("Collection({ty})")
+                } else {
+                    ty.into()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        let path = format!("{path}({signature})");
+        add(out, &path, annotations);
+        for p in params {
+            add(out, &format!("{path}/{}", p.name), &p.annotations);
+        }
+        if let Some(r) = ret {
+            add(out, &format!("{path}/$ReturnType"), &r.annotations);
+        }
+    }
+    let mut out = schema.external_annotations.clone();
+    add(&mut out, &schema.namespace, &schema.annotations);
+    for e in &schema.elements {
+        match e {
+            SchemaElement::EntityType(t) => {
+                let path = format!("{}.{}", schema.namespace, t.name);
+                add(&mut out, &path, &t.annotations);
+                members(&mut out, &path, &t.properties, &t.navigation_properties);
+            }
+            SchemaElement::ComplexType(t) => {
+                let path = format!("{}.{}", schema.namespace, t.name);
+                add(&mut out, &path, &t.annotations);
+                members(&mut out, &path, &t.properties, &t.navigation_properties);
+            }
+            SchemaElement::EnumType(t) => {
+                let path = format!("{}.{}", schema.namespace, t.name);
+                add(&mut out, &path, &t.annotations);
+                for m in &t.members {
+                    add(&mut out, &format!("{path}/{}", m.name), &m.annotations);
+                }
+            }
+            SchemaElement::TypeDefinition(t) => add(
+                &mut out,
+                &format!("{}.{}", schema.namespace, t.name),
+                &t.annotations,
+            ),
+            SchemaElement::Term(t) => add(
+                &mut out,
+                &format!("{}.{}", schema.namespace, t.name),
+                &t.annotations,
+            ),
+            SchemaElement::Function(f) => callable(
+                &mut out,
+                &format!("{}.{}", schema.namespace, f.name),
+                &f.parameters,
+                &f.return_type,
+                &f.annotations,
+            ),
+            SchemaElement::Action(f) => callable(
+                &mut out,
+                &format!("{}.{}", schema.namespace, f.name),
+                &f.parameters,
+                &f.return_type,
+                &f.annotations,
+            ),
+            SchemaElement::EntityContainer(c) => {
+                let path = format!("{}.{}", schema.namespace, c.name);
+                add(&mut out, &path, &c.annotations);
+                for s in &c.entity_sets {
+                    add(&mut out, &format!("{path}/{}", s.name), &s.annotations);
+                }
+                for s in &c.singletons {
+                    add(&mut out, &format!("{path}/{}", s.name), &s.annotations);
+                }
+                for s in &c.function_imports {
+                    add(&mut out, &format!("{path}/{}", s.name), &s.annotations);
+                }
+                for s in &c.action_imports {
+                    add(&mut out, &format!("{path}/{}", s.name), &s.annotations);
+                }
+            }
+        }
+    }
+    out
+}

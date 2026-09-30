@@ -475,6 +475,9 @@ impl Checker<'_> {
                         });
             }
             E::String(value) if matches!(expected.ty, TermType::Enum(_)) => {
+                if self.annotation.source_format == Some(crate::CsdlFormat::Xml) {
+                    return false;
+                }
                 let TermType::Enum(t) = &expected.ty else {
                     unreachable!()
                 };
@@ -622,7 +625,7 @@ impl Checker<'_> {
                     collection: *collection,
                     ..Expected::scalar(ty.clone())
                 };
-                if !matches!(expr.as_ref(), E::Null) {
+                if !matches!(expr.as_ref(), E::Null) && !self.check(expr, &target) {
                     let source = self.infer(expr)?;
                     if !matches!(e, E::IsOf { .. })
                         && (source.collection != target.collection
@@ -723,7 +726,13 @@ impl Checker<'_> {
                 &text,
                 primitive(&result.ty)?,
                 &TypeFacets {
-                    precision: Some("12".into()),
+                    precision: matches!(
+                        primitive(&result.ty),
+                        Some(P::DateTimeOffset | P::TimeOfDay | P::Duration)
+                    )
+                    .then(|| "12".into()),
+                    scale: (primitive(&result.ty) == Some(&P::Decimal))
+                        .then_some(crate::csdl::ScaleFacet::Floating),
                     ..Default::default()
                 },
             ) {

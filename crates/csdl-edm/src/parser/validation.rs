@@ -760,13 +760,16 @@ pub(super) fn attribute_allowed(name: &str, key: &str, json: bool) -> bool {
 }
 
 pub(super) fn json_source<R: io::Read>(
-    reader: R,
+    mut reader: R,
     profile: ValidationProfile,
 ) -> io::Result<serde_json::Value> {
     let value: serde_json::Value = if profile == ValidationProfile::Strict {
-        serde_json::from_reader::<_, UniqueValue>(reader)
-            .map_err(io::Error::other)?
-            .0
+        let mut source = String::new();
+        reader.read_to_string(&mut source)?;
+        // Check duplicates separately so serde_json's arbitrary-precision number
+        // protocol never becomes an ordinary object in the normalized tree.
+        serde_json::from_str::<UniqueValue>(&source).map_err(io::Error::other)?;
+        serde_json::from_str(&source).map_err(io::Error::other)?
     } else {
         serde_json::from_reader(reader).map_err(io::Error::other)?
     };

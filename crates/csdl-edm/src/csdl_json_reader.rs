@@ -38,12 +38,88 @@ impl JsonCsdlReader {
     /// Walks the document once and produces the full SyntaxUnit stream.
     /// We don't bother with streaming here — the JSON document is already
     /// fully in memory as a `serde_json::Value`.
-    pub fn into_units(self) -> Result<Vec<SyntaxUnit>> {
+    pub fn into_units(mut self) -> Result<Vec<SyntaxUnit>> {
+        normalize_type_controls(&mut self.value)?;
         let mut out = Vec::new();
         let obj = expect_object(self.value, "document root")?;
         emit_edmx(&mut out, obj)?;
         Ok(out)
     }
+}
+
+fn normalize_type_controls(value: &mut Value) -> Result<()> {
+    if let Some(items) = value.as_array_mut() {
+        for item in items {
+            normalize_type_controls(item)?;
+        }
+    }
+    let Some(map) = value.as_object_mut() else {
+        return Ok(());
+    };
+    let keys = map
+        .keys()
+        .filter(|k| k.ends_with("@type") || k.ends_with("@odata.type"))
+        .cloned()
+        .collect::<Vec<_>>();
+    for key in keys {
+        let control = map.shift_remove(&key).unwrap();
+        let raw = control
+            .as_str()
+            .ok_or_else(|| csdl_err("Type control must be a string"))?;
+        let raw = raw.rsplit_once('#').map(|(_, t)| t).unwrap_or(raw);
+        let collection = raw
+            .strip_prefix("Collection(")
+            .and_then(|s| s.strip_suffix(')'));
+        let name = collection.unwrap_or(raw);
+        let name = if name.contains('.') {
+            name.to_owned()
+        } else {
+            format!("Edm.{name}")
+        };
+        if !crate::conformance::is_qualified_name(&name) {
+            return Err(csdl_err("Invalid type control"));
+        }
+        let target = key
+            .strip_suffix("@odata.type")
+            .or_else(|| key.strip_suffix("@type"))
+            .unwrap();
+        if target.is_empty() {
+            if map
+                .get("$Type")
+                .and_then(Value::as_str)
+                .is_some_and(|t| t != name)
+            {
+                return Err(csdl_err("Conflicting record type controls"));
+            }
+            map.insert("$Type".into(), Value::String(name));
+        } else if let Some(value) = map.get_mut(target) {
+            if value.is_object()
+                && !value
+                    .as_object()
+                    .unwrap()
+                    .keys()
+                    .any(|k| k.starts_with('$'))
+                && collection.is_none()
+            {
+                value
+                    .as_object_mut()
+                    .unwrap()
+                    .insert("$Type".into(), Value::String(name));
+            } else {
+                let original = value.take();
+                *value = serde_json::json!({"$Cast":original,"$Type":name});
+                if collection.is_some() {
+                    value["$Collection"] = Value::Bool(true);
+                }
+            }
+        } else {
+            return Err(csdl_err("Type control has no value"));
+        }
+    }
+    for value in map.values_mut() {
+        normalize_type_controls(value)?;
+    }
+    Ok(())
 }
 
 fn emit_edmx(out: &mut Vec<SyntaxUnit>, mut root: Map<String, Value>) -> Result<()> {
@@ -954,10 +1030,10 @@ fn emit_term(
 ) -> Result<()> {
     validate_callable_type(&obj)?;
     let is_collection = take_bool(&mut obj, "$Collection")?.unwrap_or(false);
-    let raw_type = take_string(&mut obj, "$Type");
+    let raw_type = take_string(&mut obj, "$Type").or_else(|| Some("Edm.String".into()));
     let base_term = take_string(&mut obj, "$BaseTerm");
     let default_value = take_default_value(&mut obj)?;
-    let nullable = take_bool(&mut obj, "$Nullable")?;
+    let nullable = Some(take_bool(&mut obj, "$Nullable")?.unwrap_or(false));
     let max_length = take_string_or_number(&mut obj, "$MaxLength");
     let precision = take_string_or_number(&mut obj, "$Precision");
     let scale = take_string_or_number(&mut obj, "$Scale");
@@ -966,8 +1042,7 @@ fn emit_term(
     let applies_to = obj.shift_remove("$AppliesTo");
 
     let mut attrs = vec![("Name".into(), name.into())];
-    // Literal pass-through: only emit Type when the source carried it. The
-    // CSDL Edm.String default lives in the semantic layer, not the model.
+    // Materialize JSON defaults so XML output preserves the same term type.
     push_type_attrs(&mut attrs, raw_type.as_deref(), is_collection, namespace);
     if let Some(bt) = base_term {
         attrs.push(("BaseTerm".into(), bt));
@@ -1072,10 +1147,13 @@ fn json_to_expr(value: Value) -> Result<CsdlAnnotationExpression> {
         Value::Number(n) => {
             if let Some(i) = n.as_i64() {
                 CsdlAnnotationExpression::Int(i)
-            } else if let Some(f) = n.as_f64() {
+            } else if let Some(f) = n.as_f64().filter(|f| {
+                serde_json::Number::from_f64(*f)
+                    .is_some_and(|roundtrip| roundtrip.to_string() == n.to_string())
+            }) {
                 CsdlAnnotationExpression::Float(f)
             } else {
-                CsdlAnnotationExpression::String(n.to_string())
+                CsdlAnnotationExpression::Decimal(n.to_string())
             }
         }
         Value::String(s) => CsdlAnnotationExpression::String(s),

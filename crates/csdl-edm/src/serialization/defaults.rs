@@ -1,7 +1,7 @@
 use super::*;
 
 pub(super) fn normalize_xml_spatial(edmx: &mut Edmx) {
-    normalize_annotations(edmx, true);
+    normalize_annotations(edmx, true, None);
     let entities = edmx
         .schemas
         .iter()
@@ -116,10 +116,24 @@ pub(super) fn normalize_xml_spatial(edmx: &mut Edmx) {
 }
 
 pub(super) fn materialize_annotations(edmx: &mut Edmx) {
-    normalize_annotations(edmx, false);
+    normalize_annotations(edmx, false, None);
 }
 
-fn normalize_annotations(edmx: &mut Edmx, xml: bool) {
+pub(super) fn materialize_with_catalog(edmx: &mut Edmx, catalog: &super::options::Catalog) {
+    normalize_annotations(edmx, true, Some(catalog));
+}
+
+fn normalize_annotations(edmx: &mut Edmx, xml: bool, supplied: Option<&super::options::Catalog>) {
+    let local = super::options::Catalog::new(edmx);
+    let catalog = supplied.unwrap_or(&local);
+    if xml {
+        for r in &mut edmx.references {
+            visit_annotations(&mut r.annotations, &|a| catalog.xml_annotation(a, ""));
+            for i in &mut r.includes {
+                visit_annotations(&mut i.annotations, &|a| catalog.xml_annotation(a, ""));
+            }
+        }
+    }
     let mut terms = BTreeMap::new();
     let mut types = BTreeMap::new();
     let mut aliases = BTreeMap::new();
@@ -165,34 +179,7 @@ fn normalize_annotations(edmx: &mut Edmx, xml: bool) {
         let ns = schema.namespace.clone();
         let materialize = |annotation: &mut Annotation| {
             if xml {
-                if let (Some(term), Some(CsdlAnnotationExpression::String(value))) = (
-                    terms.get(&qualified(&annotation.term, &ns, &aliases)),
-                    &annotation.expression,
-                ) {
-                    let name = qualified(
-                        term.type_name.as_deref().unwrap_or("Edm.String"),
-                        &ns,
-                        &aliases,
-                    );
-                    let underlying = types.get(&name).map(String::as_str).unwrap_or(&name);
-                    if let Some(enum_name) = underlying.strip_prefix("Enum:") {
-                        if value
-                            .split(',')
-                            .all(|v| crate::conformance::is_simple_identifier(v.trim()))
-                        {
-                            annotation.expression = Some(CsdlAnnotationExpression::EnumMember(
-                                value
-                                    .split(',')
-                                    .map(|v| format!("{enum_name}/{}", v.trim()))
-                                    .collect::<Vec<_>>()
-                                    .join(" "),
-                            ));
-                        }
-                    } else if underlying.starts_with("Edm.") {
-                        annotation.expression =
-                            Some(crate::expr::default_literal(underlying, Some(value)));
-                    }
-                }
+                catalog.xml_annotation(annotation, &ns);
             } else if annotation.expression.is_none() {
                 let term = terms.get(&qualified(&annotation.term, &ns, &aliases));
                 annotation.expression = Some(match term {

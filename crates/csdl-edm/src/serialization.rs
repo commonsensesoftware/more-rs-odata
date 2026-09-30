@@ -9,6 +9,8 @@ use serde_json::{Map, Number, Value};
 use crate::csdl::*;
 use crate::expr::{CsdlAnnotationExpression, PropertyValue};
 mod defaults;
+mod options;
+pub use options::{MetadataLevel, SerializationOptions};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CsdlFormat {

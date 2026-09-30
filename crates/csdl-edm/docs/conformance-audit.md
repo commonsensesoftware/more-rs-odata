@@ -31,8 +31,8 @@ inventory completeness, unique IDs, override integrity, and real code/test links
 | Disposition | Paragraphs | Meaning |
 |---|---:|---|
 | covered | 18 | Direct evidence for the complete paragraph identified here |
-| partial | 402 | Implementation exists, but behavior or independent clause-level evidence is incomplete |
-| unsupported | 6 | Known static obligation not completely implemented |
+| partial | 404 | Implementation exists, but behavior or independent clause-level evidence is incomplete |
+| unsupported | 4 | Known static obligation not completely implemented |
 | advisory | 26 | SHOULD guidance that does not reject documents |
 | outside-static-scope | 33 | HTTP, runtime values/execution, metarules, or example text |
 
@@ -70,9 +70,9 @@ by a capitalized MUST paragraph.
    Unavailable URL-result types remain explicit diagnostics; validation does not
    retrieve or execute resources. Exhaustive clause evidence remains below.
 5. [Lossless and configurable format output](../TODO/conformance-output-options.md):
-   IEEE754Compatible, arbitrary precision decimals, metadata modes, nested typed
-   literal conversion, reference URI rebasing, and full semantic round-trip
-   equivalence. Guarded output checks grammar/version before writing; it does not
+   implemented IEEE754Compatible, arbitrary precision decimals, metadata modes, nested typed
+   literal conversion, reference URI rebasing, and loader-backed graph checks. Runtime
+   equivalence is not evaluated. Guarded output checks grammar/version before writing; it does not
    substitute for validation of a graph resolved with the caller's loader.
 6. [Tolerant recovery and exhaustive evidence](../TODO/conformance-consumer-evidence.md):
    preserving or ignoring unavailable annotation constructs without rejecting a

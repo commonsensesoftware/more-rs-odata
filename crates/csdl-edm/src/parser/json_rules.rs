@@ -98,12 +98,20 @@ fn visit(
         };
     };
     for (key, value) in map {
-        if owner != "Expression" && match key.as_str() {
-            "$Name" => owner != "Parameter",
-            "$Namespace" => owner != "Include",
-            "$Uri" | "$EntityType" | "$Property" | "$ReferencedProperty" | "$Term" | "$Target" | "$Value" => true,
-            _ => false,
-        } {
+        if owner != "Expression"
+            && match key.as_str() {
+                "$Name" => owner != "Parameter",
+                "$Namespace" => owner != "Include",
+                "$Uri"
+                | "$EntityType"
+                | "$Property"
+                | "$ReferencedProperty"
+                | "$Term"
+                | "$Target"
+                | "$Value" => true,
+                _ => false,
+            }
+        {
             return Err(invalid(format!("{owner} does not allow {key}")));
         }
         if key.starts_with('$')
@@ -114,6 +122,15 @@ fn visit(
         }
         if key.contains('@') {
             qualified(key, aliases)?;
+            if key.ends_with("@type") || key.ends_with("@odata.type") {
+                let text = value
+                    .as_str()
+                    .ok_or_else(|| invalid("Type control must be a string"))?;
+                qualified(
+                    text.rsplit_once('#').map(|(_, t)| t).unwrap_or(text),
+                    aliases,
+                )?;
+            }
             visit(value, "Expression", namespace, container, aliases)?;
             continue;
         }
