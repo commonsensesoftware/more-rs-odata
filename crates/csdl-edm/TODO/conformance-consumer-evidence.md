@@ -41,7 +41,7 @@ The focused evidence suites now independently author XML and JSON for reference/
 include shapes, schema declarations, structured inheritance, scalar/complex/related
 keys, facet bounds, navigation nullability/partners, enums and type definitions.
 These cases exposed and fixed reserved schema namespaces and symbolic-scale casing
-at the strict source boundary, plus declaring-type member name collisions in semantic validation. The matrix now records 99 covered and 327 partial
+at the strict source boundary, plus declaring-type member name collisions in semantic validation. The matrix now records 103 covered and 323 partial
 paragraphs; advisory and outside-static-scope dispositions remain unchanged.
 
 The next evidence pass covers structural member redeclaration, partner/constraint

@@ -21,6 +21,96 @@ fn valid(xml: &str, json: &str, version: &str, expected: bool) {
 }
 
 #[test]
+fn member_redeclarations_require_narrowing_and_401() {
+    for navigation in [false, true] {
+        let target_kind = if navigation {
+            "EntityType"
+        } else {
+            "ComplexType"
+        };
+        let member_kind = if navigation {
+            "NavigationProperty"
+        } else {
+            "Property"
+        };
+        for owner_kind in ["EntityType", "ComplexType"] {
+            for version in ["4.0", "4.01"] {
+                for target in ["Specific", "Target", "Unrelated"] {
+                    let owner_abstract_xml = if owner_kind == "EntityType" {
+                        r#" Abstract="true""#
+                    } else {
+                        ""
+                    };
+                    let owner_abstract_json = if owner_kind == "EntityType" {
+                        r#", "$Abstract":true"#
+                    } else {
+                        ""
+                    };
+                    let target_abstract_xml = if navigation {
+                        r#" Abstract="true""#
+                    } else {
+                        ""
+                    };
+                    let target_abstract_json = if navigation {
+                        r#", "$Abstract":true"#
+                    } else {
+                        ""
+                    };
+                    let xml = format!(
+                        r#"<{target_kind} Name="Target"{target_abstract_xml}/><{target_kind} Name="Specific" BaseType="N.Target"{target_abstract_xml}/><{target_kind} Name="Unrelated"{target_abstract_xml}/><{owner_kind} Name="Base"{owner_abstract_xml}><{member_kind} Name="Value" Type="N.Target"/></{owner_kind}><{owner_kind} Name="Derived" BaseType="N.Base"{owner_abstract_xml}><{member_kind} Name="Value" Type="N.{target}"/></{owner_kind}>"#
+                    );
+                    let json = format!(
+                        r#""Target":{{"$Kind":"{target_kind}"{target_abstract_json}}},"Specific":{{"$Kind":"{target_kind}","$BaseType":"N.Target"{target_abstract_json}}},"Unrelated":{{"$Kind":"{target_kind}"{target_abstract_json}}},"Base":{{"$Kind":"{owner_kind}"{owner_abstract_json},"Value":{{"$Kind":"{member_kind}","$Type":"N.Target"}}}},"Derived":{{"$Kind":"{owner_kind}","$BaseType":"N.Base"{owner_abstract_json},"Value":{{"$Kind":"{member_kind}","$Type":"N.{target}"}}}}"#
+                    );
+                    for document in documents(&xml, &json, version) {
+                        let result = Resolver::resolve_document(document.edmx.unwrap())
+                            .map_err(|e| format!("{e:?}"))
+                            .and_then(|m| {
+                                validator::validate_document(&m).map_err(|e| format!("{e:?}"))
+                            });
+                        assert_eq!(
+                            result.is_ok(),
+                            version == "4.01" && target == "Specific",
+                            "{version} {owner_kind} {member_kind} {target}: {result:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn inherited_members_cannot_change_between_structural_and_navigation_kinds() {
+    for (base_kind, derived_kind) in [
+        ("Property", "NavigationProperty"),
+        ("NavigationProperty", "Property"),
+    ] {
+        for owner_kind in ["EntityType", "ComplexType"] {
+            let base_ty = if base_kind == "Property" {
+                "Edm.String"
+            } else {
+                "N.Target"
+            };
+            let derived_ty = if derived_kind == "Property" {
+                "Edm.String"
+            } else {
+                "N.Target"
+            };
+            let xml = format!(
+                r#"<EntityType Name="Target"/><{owner_kind} Name="Base"><{base_kind} Name="Value" Type="{base_ty}"/></{owner_kind}><{owner_kind} Name="Derived" BaseType="N.Base"><{derived_kind} Name="Value" Type="{derived_ty}"/></{owner_kind}>"#
+            );
+            let json = format!(
+                r#""Target":{{"$Kind":"EntityType"}},"Base":{{"$Kind":"{owner_kind}","Value":{{"$Kind":"{base_kind}","$Type":"{base_ty}"}}}},"Derived":{{"$Kind":"{owner_kind}","$BaseType":"N.Base","Value":{{"$Kind":"{derived_kind}","$Type":"{derived_ty}"}}}}"#
+            );
+            for document in documents(&xml, &json, "4.01") {
+                assert!(Resolver::resolve_document(document.edmx.unwrap()).is_err());
+            }
+        }
+    }
+}
+
+#[test]
 fn entity_and_complex_inheritance_reject_direct_and_indirect_cycles() {
     for kind in ["EntityType", "ComplexType"] {
         for (base, cyclic) in [("N.A", true), ("N.B", true), ("N.C", false)] {
@@ -195,6 +285,14 @@ fn structural_and_navigation_members_share_a_unique_scope() {
             true,
         );
         for (xml_members, json_members) in [
+            (
+                r#"<Property Name="1Invalid" Type="Edm.String"/>"#,
+                r#""1Invalid":{}"#,
+            ),
+            (
+                r#"<NavigationProperty Name="1Invalid" Type="N.Target"/>"#,
+                r#""1Invalid":{"$Kind":"NavigationProperty","$Type":"N.Target"}"#,
+            ),
             (
                 r#"<Property Name="Value" Type="Edm.String"/><Property Name="Value" Type="Edm.Int32"/>"#,
                 r#""Value":{},"Value":{"$Type":"Edm.Int32"}"#,
