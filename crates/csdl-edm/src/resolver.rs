@@ -11,7 +11,7 @@ use crate::{csdl, edm::*};
 mod annotations;
 mod containers;
 mod documents;
-pub use documents::{DocumentLoader, DocumentRegistry};
+pub use documents::{DocumentLoader, DocumentRegistry, ReferenceRequest};
 
 #[derive(Debug)]
 pub enum ResolveError {
@@ -86,30 +86,7 @@ impl Resolver {
                 }
             }
         }
-        let references = document
-            .references
-            .into_iter()
-            .map(|r| Reference {
-                uri: r.uri,
-                includes: r
-                    .includes
-                    .into_iter()
-                    .map(|i| Include {
-                        namespace: i.namespace,
-                        alias: i.alias,
-                    })
-                    .collect(),
-                include_annotations: r
-                    .include_annotations
-                    .into_iter()
-                    .map(|a| IncludeAnnotations {
-                        term_namespace: a.term_namespace,
-                        target_namespace: a.target_namespace,
-                        qualifier: a.qualifier,
-                    })
-                    .collect(),
-            })
-            .collect();
+        let source_references = document.references;
 
         let schemas = Self::resolve_scope(document.schemas, &document_aliases, scopes)?
             .into_iter()
@@ -145,6 +122,11 @@ impl Resolver {
                     .ok_or_else(|| ResolveError::InvalidEntityContainer(name.clone()))
             })
             .transpose()?;
+        let references = annotations::references(
+            &source_references,
+            schemas.iter().map(Arc::as_ref),
+            &document_aliases,
+        );
         Ok(DocumentModel {
             schema_versions,
             referenced_schemas: Vec::new(),

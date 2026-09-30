@@ -6,6 +6,40 @@ use url::Url;
 /// Resolves document identities; the caller chooses storage/network policy.
 pub trait DocumentLoader {
     fn load(&mut self, absolute_uri: &str) -> Result<CsdlDocument, String>;
+
+    /// Called for every reference, including cache hits. Callers can inspect
+    /// version hints, configure retrieval, or reject conflicting requirements.
+    /// The resolver neither rewrites the URI nor performs network requests.
+    fn inspect_reference(&mut self, _request: ReferenceRequest<'_>) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+pub struct ReferenceRequest<'a> {
+    pub absolute_uri: &'a str,
+    pub reference: &'a Reference,
+    /// Constant Core.SchemaVersion value, with document-local aliases resolved.
+    pub schema_version: Option<&'a str>,
+}
+
+fn schema_version<'a>(reference: &'a Reference, document: &Edmx) -> Option<&'a str> {
+    let mut aliases = super::collect_document_aliases(&document.references);
+    aliases.extend(
+        document
+            .schemas
+            .iter()
+            .filter_map(|s| s.alias.as_ref().map(|a| (a.clone(), s.namespace.clone()))),
+    );
+    reference.annotations.iter().find_map(|a| {
+        let term = super::qualify_name(&a.term, "", &aliases)?;
+        if term != "Org.OData.Core.V1.SchemaVersion" || a.qualifier.is_some() {
+            return None;
+        }
+        match &a.expression {
+            Some(E::String(value)) => Some(value.as_str()),
+            _ => None,
+        }
+    })
 }
 
 impl<F> DocumentLoader for F
@@ -85,6 +119,13 @@ impl Resolver {
                 if !seen.insert(target.clone()) {
                     return Err(error(&uri, "Duplicate reference URI"));
                 }
+                loader
+                    .inspect_reference(ReferenceRequest {
+                        absolute_uri: &target,
+                        reference: &reference,
+                        schema_version: schema_version(&reference, &docs[&uri]),
+                    })
+                    .map_err(|e| error(&target, e))?;
                 if !docs.contains_key(&target) {
                     let doc = loader
                         .load(&target)
@@ -285,29 +326,20 @@ impl Resolver {
         });
         result.schemas = local_schemas;
         result.referenced_schemas = imported;
-        result.references = original_references
-            .into_iter()
-            .map(|r| crate::edm::Reference {
-                uri: r.uri,
-                includes: r
-                    .includes
-                    .into_iter()
-                    .map(|i| crate::edm::Include {
-                        namespace: i.namespace,
-                        alias: i.alias,
-                    })
-                    .collect(),
-                include_annotations: r
-                    .include_annotations
-                    .into_iter()
-                    .map(|i| crate::edm::IncludeAnnotations {
-                        term_namespace: i.term_namespace,
-                        target_namespace: i.target_namespace,
-                        qualifier: i.qualifier,
-                    })
-                    .collect(),
-            })
+        let root_scope = &scopes[&root_uri];
+        let aliases = root_scope
+            .aliases
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
+        result.references = super::annotations::references(
+            &original_references,
+            result
+                .all_schemas()
+                .filter(|m| root_scope.namespaces.contains_key(&m.namespace))
+                .map(std::sync::Arc::as_ref),
+            &aliases,
+        );
         Ok(result)
     }
 }
@@ -527,6 +559,20 @@ impl Scope {
         }
         Ok(())
     }
+    fn structural_path(&self, value: &mut String) -> Result<(), ResolveError> {
+        *value = self.path(value);
+        for segment in value.split(['/', '@', '(', ')', ',', '#']) {
+            if let Some((namespace, _)) = segment.rsplit_once('.') {
+                if namespace != "Edm" && !self.namespaces.contains_key(namespace) {
+                    return Err(error(
+                        &self.uri,
+                        format!("Namespace is not in scope: {namespace}"),
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
     fn annotation(&self, a: &mut Annotation) {
         self.annotations(&mut a.annotations);
         a.term = self.path(&a.term);
@@ -623,6 +669,11 @@ fn canonical_schema(
         match element {
             SchemaElement::EntityType(t) => {
                 scope.ty(&mut t.base_type, &ns, deps)?;
+                if let Some(key) = &mut t.key {
+                    for property in &mut key.property_refs {
+                        scope.structural_path(&mut property.name)?;
+                    }
+                }
                 members(
                     &mut t.properties,
                     &mut t.navigation_properties,
@@ -664,14 +715,14 @@ fn canonical_schema(
             SchemaElement::Action(t) => {
                 callable(&mut t.parameters, &mut t.return_type, scope, &ns, deps)?;
                 if let Some(p) = &mut t.entity_set_path {
-                    *p = scope.path(p);
+                    scope.structural_path(p)?;
                 }
                 scope.annotations(&mut t.annotations);
             }
             SchemaElement::Function(t) => {
                 callable(&mut t.parameters, &mut t.return_type, scope, &ns, deps)?;
                 if let Some(p) = &mut t.entity_set_path {
-                    *p = scope.path(p);
+                    scope.structural_path(p)?;
                 }
                 scope.annotations(&mut t.annotations);
             }
@@ -682,30 +733,30 @@ fn canonical_schema(
                     scope.ty(&mut s.entity_type, &ns, deps)?;
                     scope.annotations(&mut s.annotations);
                     for b in &mut s.navigation_property_bindings {
-                        b.path = scope.path(&b.path);
-                        b.target = scope.path(&b.target);
+                        scope.structural_path(&mut b.path)?;
+                        scope.structural_path(&mut b.target)?;
                     }
                 }
                 for s in &mut c.singletons {
                     scope.ty(&mut s.type_name, &ns, deps)?;
                     scope.annotations(&mut s.annotations);
                     for b in &mut s.navigation_property_bindings {
-                        b.path = scope.path(&b.path);
-                        b.target = scope.path(&b.target);
+                        scope.structural_path(&mut b.path)?;
+                        scope.structural_path(&mut b.target)?;
                     }
                 }
                 for i in &mut c.function_imports {
                     scope.ty(&mut i.function, &ns, deps)?;
                     scope.annotations(&mut i.annotations);
                     if let Some(p) = &mut i.entity_set {
-                        *p = scope.path(p);
+                        scope.structural_path(p)?;
                     }
                 }
                 for i in &mut c.action_imports {
                     scope.ty(&mut i.action, &ns, deps)?;
                     scope.annotations(&mut i.annotations);
                     if let Some(p) = &mut i.entity_set {
-                        *p = scope.path(p);
+                        scope.structural_path(p)?;
                     }
                 }
             }
@@ -729,11 +780,11 @@ fn members(
         scope.ty(&mut n.type_name, ns, deps)?;
         scope.annotations(&mut n.annotations);
         if let Some(p) = &mut n.partner {
-            *p = scope.path(p);
+            scope.structural_path(p)?;
         }
         for c in &mut n.referential_constraints {
-            c.property = scope.path(&c.property);
-            c.referenced_property = scope.path(&c.referenced_property);
+            scope.structural_path(&mut c.property)?;
+            scope.structural_path(&mut c.referenced_property)?;
             scope.annotations(&mut c.annotations);
         }
     }

@@ -187,7 +187,10 @@ fn write_reference<W: io::Write>(
         attrs.push(("Uri".to_string(), reference.uri.clone()));
     }
 
-    if reference.includes.is_empty() && reference.include_annotations.is_empty() {
+    if reference.includes.is_empty()
+        && reference.include_annotations.is_empty()
+        && reference.annotations.is_empty()
+    {
         write_empty(xml, "edmx:Reference", &attrs)?;
         return Ok(());
     }
@@ -205,6 +208,9 @@ fn write_reference<W: io::Write>(
             ia_attrs.push(("TargetNamespace".to_string(), t.clone()));
         }
         write_empty(xml, "edmx:IncludeAnnotations", &ia_attrs)?;
+    }
+    for annotation in &reference.annotations {
+        write_annotation(xml, annotation)?;
     }
     write_end(xml, "edmx:Reference")
 }
@@ -1279,6 +1285,9 @@ fn edmx_to_json(edmx: &Edmx) -> Value {
                     })
                     .collect::<Vec<_>>();
                 item.insert("$IncludeAnnotations".to_string(), Value::Array(arr));
+            }
+            for annotation in &reference.annotations {
+                item.extend(annotation_members(annotation));
             }
             refs.insert(reference.uri.clone(), Value::Object(item));
         }

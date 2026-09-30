@@ -3,6 +3,101 @@ use crate::expr::CsdlAnnotationExpression as Expr;
 
 type Path = Arc<[AnnotationTarget]>;
 
+pub(super) fn references<'a>(
+    sources: &[csdl::Reference],
+    models: impl Iterator<Item = &'a Model>,
+    aliases: &HashMap<String, String>,
+) -> Vec<Reference> {
+    let mut scope = Scope {
+        roots: HashMap::new(),
+        terms: HashMap::new(),
+        aliases,
+    };
+    for model in models {
+        scope.roots.insert(
+            model.namespace.clone(),
+            vec![AnnotationTarget::Schema(model.namespace.clone())],
+        );
+        for element in &model.elements {
+            let name = match element.as_ref() {
+                SchemaElement::EntityType(t) => &t.name,
+                SchemaElement::ComplexType(t) => &t.name,
+                SchemaElement::EnumType(t) => &t.name,
+                SchemaElement::TypeDefinition(t) => &t.name,
+                SchemaElement::Function(t) => &t.name,
+                SchemaElement::Action(t) => &t.name,
+                SchemaElement::Term(t) => {
+                    scope
+                        .terms
+                        .insert(format!("{}.{}", model.namespace, t.name), t.clone());
+                    &t.name
+                }
+            };
+            scope
+                .roots
+                .entry(format!("{}.{name}", model.namespace))
+                .or_default()
+                .push(AnnotationTarget::Element(element.clone()));
+        }
+        for container in model.containers() {
+            scope.roots.insert(
+                format!("{}.{}", model.namespace, container.name),
+                vec![AnnotationTarget::Container(container.clone())],
+            );
+        }
+    }
+    sources
+        .iter()
+        .enumerate()
+        .map(|(index, source)| {
+            // Internal roots avoid interpreting URI slashes as model path separators.
+            let owner = format!("$Reference{index}");
+            scope.roots.insert(
+                owner.clone(),
+                vec![AnnotationTarget::Reference(source.uri.clone())],
+            );
+            let mut annotations = Vec::new();
+            scope.attach("", &owner, &source.annotations, &mut annotations);
+            let includes = source
+                .includes
+                .iter()
+                .enumerate()
+                .map(|(i, include)| {
+                    let owner = format!("$Reference{index}Include{i}");
+                    scope.roots.insert(
+                        owner.clone(),
+                        vec![AnnotationTarget::Include {
+                            reference_uri: source.uri.clone(),
+                            namespace: include.namespace.clone(),
+                        }],
+                    );
+                    let mut annotations = Vec::new();
+                    scope.attach("", &owner, &include.annotations, &mut annotations);
+                    Include {
+                        namespace: include.namespace.clone(),
+                        alias: include.alias.clone(),
+                        annotations,
+                    }
+                })
+                .collect();
+            Reference {
+                uri: source.uri.clone(),
+                annotations,
+                includes,
+                include_annotations: source
+                    .include_annotations
+                    .iter()
+                    .map(|i| IncludeAnnotations {
+                        term_namespace: i.term_namespace.clone(),
+                        target_namespace: i.target_namespace.clone(),
+                        qualifier: i.qualifier.clone(),
+                    })
+                    .collect(),
+            }
+        })
+        .collect()
+}
+
 struct Scope<'a> {
     roots: HashMap<String, Vec<AnnotationTarget>>,
     terms: HashMap<String, Arc<Term>>,
@@ -324,7 +419,13 @@ impl Scope<'_> {
                 }
             }
             Expr::LabeledElement { name, .. } | Expr::LabeledElementReference(name) => {
-                out.labels.insert(name.clone(), self.canonical(name, ns));
+                let canonical = self.canonical(name, ns);
+                if canonical
+                    .rsplit_once('.')
+                    .is_some_and(|(namespace, _)| self.roots.contains_key(namespace))
+                {
+                    out.labels.insert(name.clone(), canonical);
+                }
             }
             _ => {}
         }

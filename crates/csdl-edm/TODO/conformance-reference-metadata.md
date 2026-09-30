@@ -2,6 +2,12 @@
 
 Audit follow-up 2; depends on source provenance.
 
+Implemented. `tests/reference_metadata.rs` covers paired-format metadata
+round trips, resolved targets, loader policy, hidden structural casts and
+expression bindings, and nested IncludeAnnotations filtering. The loader's
+`inspect_reference` hook runs before retrieval and on cache hits; callers own
+version negotiation and conflict policy. URI identity remains unchanged.
+
 - Preserve/serialize/resolve annotations on references and included schemas.
 - Expose Core.SchemaVersion to caller loader policy without automatic network use.
 - Check namespace visibility on all structural and expression paths, cast types,

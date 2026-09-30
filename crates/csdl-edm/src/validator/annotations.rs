@@ -27,7 +27,17 @@ pub struct AnnotationDiagnostic {
 /// validate_document fail: CSDL requires consumers to tolerate unknown/invalid
 /// annotations, including unavailable referenced vocabularies.
 pub fn validate_annotations(document: &DocumentModel) -> Vec<AnnotationDiagnostic> {
-    let mut diagnostics = collect(document.all_schemas().map(Arc::as_ref));
+    let mut diagnostics = collect_annotations(
+        document
+            .all_schemas()
+            .flat_map(|m| m.annotations.get().into_iter().flatten())
+            .chain(document.references.iter().flat_map(|r| {
+                r.annotations
+                    .iter()
+                    .chain(r.includes.iter().flat_map(|i| &i.annotations))
+            }))
+            .collect(),
+    );
     for model in document.all_schemas() {
         let version = document.schema_version(&model.namespace);
         for annotation in model.annotations.get().into_iter().flatten() {
@@ -55,6 +65,10 @@ fn collect<'a>(models: impl Iterator<Item = &'a Model>) -> Vec<AnnotationDiagnos
     let annotations = models
         .flat_map(|m| m.annotations.get().into_iter().flatten())
         .collect::<Vec<_>>();
+    collect_annotations(annotations)
+}
+
+fn collect_annotations(annotations: Vec<&ResolvedAnnotation>) -> Vec<AnnotationDiagnostic> {
     let mut errors = Vec::new();
     let labels = super::expressions::labels(&annotations);
     let mut applications = HashSet::new();
@@ -200,6 +214,11 @@ fn identity(path: &[AnnotationTarget]) -> Vec<String> {
     use AnnotationTarget as T;
     path.iter()
         .map(|target| match target {
+            T::Reference(uri) => format!("reference:{uri}"),
+            T::Include {
+                reference_uri,
+                namespace,
+            } => format!("include:{reference_uri}:{namespace}"),
             T::Expression { kind, ordinal } => format!("expression:{kind:?}:{ordinal}"),
             T::Schema(s) => format!("schema:{s}"),
             T::Element(e) => format!("element:{:p}", Arc::as_ptr(e)),
@@ -229,6 +248,8 @@ fn kind(target: &AnnotationTarget) -> AnnotationTargetKind {
     use AnnotationTarget as T;
     use AnnotationTargetKind as K;
     match target {
+        T::Reference(_) => K::Reference,
+        T::Include { .. } => K::Include,
         T::Expression { kind, .. } => kind.clone(),
         T::Schema(_) => K::Schema,
         T::Element(e) => match e.as_ref() {

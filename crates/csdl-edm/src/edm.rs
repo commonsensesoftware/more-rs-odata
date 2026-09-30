@@ -241,6 +241,7 @@ impl DocumentModel {
 
 #[derive(Debug)]
 pub struct Reference {
+    pub annotations: Vec<ResolvedAnnotation>,
     pub uri: String,
     pub includes: Vec<Include>,
     pub include_annotations: Vec<IncludeAnnotations>,
@@ -248,6 +249,7 @@ pub struct Reference {
 
 #[derive(Debug)]
 pub struct Include {
+    pub annotations: Vec<ResolvedAnnotation>,
     pub namespace: String,
     pub alias: Option<String>,
 }
@@ -273,6 +275,11 @@ pub struct Model {
 
 #[derive(Debug, Clone)]
 pub enum AnnotationTarget {
+    Reference(String),
+    Include {
+        reference_uri: String,
+        namespace: String,
+    },
     Expression {
         kind: AnnotationTargetKind,
         ordinal: usize,

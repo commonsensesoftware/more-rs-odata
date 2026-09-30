@@ -55,8 +55,9 @@ by a capitalized MUST paragraph.
    interleaving as documented in the delivery record. Expression-specific and
    cross-format output checks remain in the following tasks.
 2. [Reference annotations and complete scope isolation](../TODO/conformance-reference-metadata.md):
-   reference/Include metadata, schema-version loader hints, and scope checks for
-   every structural/expression path, including dependencies loaded transitively.
+   implemented reference/Include metadata, schema-version loader hints, and scope
+   checks for structural paths and expression bindings, including dependencies
+   loaded transitively. Additional path syntax is the next task.
 3. [Complete annotation path grammar](../TODO/conformance-expression-paths.md):
    key predicates, ordered indexes, `$count`, empty paths, collection traversal
    limits, implicit media terms, and all target-relative starting contexts.

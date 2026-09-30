@@ -22,6 +22,7 @@ pub struct Edmx {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Reference {
+    pub annotations: Vec<Annotation>,
     /// XML Base on this reference, resolved after the document's base.
     pub base_uri: Option<String>,
     pub uri: String,

@@ -214,6 +214,7 @@ fn parse_reference(raw: &RawElement) -> io::Result<Reference> {
         .collect::<io::Result<Vec<_>>>()?;
 
     Ok(Reference {
+        annotations: parse_annotations(raw)?,
         base_uri: raw_attr(raw, "base").map(str::to_owned),
         uri,
         includes,
