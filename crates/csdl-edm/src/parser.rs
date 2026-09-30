@@ -170,14 +170,24 @@ fn parse_edmx(raw: &RawElement, json: bool) -> io::Result<Edmx> {
     let entity_container = if json {
         raw_attr(raw, "EntityContainer").map(str::to_owned)
     } else {
-        let containers = schemas.iter().flat_map(|schema| schema.elements.iter().filter_map(|e| {
-            if let SchemaElement::EntityContainer(c) = e { Some(format!("{}.{}", schema.namespace, c.name)) }
-            else { None }
-        })).collect::<Vec<_>>();
+        let containers = schemas
+            .iter()
+            .flat_map(|schema| {
+                schema.elements.iter().filter_map(|e| {
+                    if let SchemaElement::EntityContainer(c) = e {
+                        Some(format!("{}.{}", schema.namespace, c.name))
+                    } else {
+                        None
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
         (containers.len() == 1).then(|| containers[0].clone())
     };
     Ok(Edmx {
-        base_uri: (!json).then(|| raw_attr(raw, "base").map(str::to_owned)).flatten(),
+        base_uri: (!json)
+            .then(|| raw_attr(raw, "base").map(str::to_owned))
+            .flatten(),
         entity_container,
         version,
         references,
@@ -219,12 +229,7 @@ fn parse_include_annotations(raw: &RawElement) -> io::Result<IncludeAnnotations>
 fn parse_include(raw: &RawElement) -> io::Result<Include> {
     let namespace = raw_attr(raw, "Namespace").unwrap_or("").to_string();
     let alias = raw_attr(raw, "Alias").map(str::to_string);
-    let annotations = raw
-        .children
-        .iter()
-        .filter(|n| n.name == "Annotation")
-        .map(parse_annotation)
-        .collect::<io::Result<Vec<_>>>()?;
+    let annotations = parse_annotations(raw)?;
 
     Ok(Include {
         namespace,
@@ -400,12 +405,7 @@ fn parse_enum_member(raw: &RawElement) -> io::Result<EnumMember> {
             })
         })
         .transpose()?;
-    let annotations = raw
-        .children
-        .iter()
-        .filter(|n| n.name == "Annotation")
-        .map(parse_annotation)
-        .collect::<io::Result<Vec<_>>>()?;
+    let annotations = parse_annotations(raw)?;
 
     Ok(EnumMember {
         name,
@@ -445,12 +445,7 @@ fn parse_property(raw: &RawElement) -> io::Result<Property> {
     let srid = raw_attr(raw, "SRID").map(parse_srid_facet).transpose()?;
     let unicode = checked_bool(raw, "Unicode")?;
     let default_value = raw_attr(raw, "DefaultValue").map(str::to_string);
-    let annotations = raw
-        .children
-        .iter()
-        .filter(|n| n.name == "Annotation")
-        .map(parse_annotation)
-        .collect::<io::Result<Vec<_>>>()?;
+    let annotations = parse_annotations(raw)?;
 
     Ok(Property {
         name,
@@ -564,12 +559,7 @@ fn parse_referential_constraint(raw: &RawElement) -> io::Result<ReferentialConst
             ));
         }
     }
-    let annotations = raw
-        .children
-        .iter()
-        .filter(|n| n.name == "Annotation")
-        .map(parse_annotation)
-        .collect::<io::Result<Vec<_>>>()?;
+    let annotations = parse_annotations(raw)?;
     Ok(ReferentialConstraint {
         property: raw_attr(raw, "Property").unwrap_or("").to_string(),
         referenced_property: raw_attr(raw, "ReferencedProperty")
@@ -672,12 +662,7 @@ fn parse_type_definition(raw: &RawElement) -> io::Result<TypeDefinition> {
     let scale = raw_attr(raw, "Scale").map(parse_scale_facet).transpose()?;
     let srid = raw_attr(raw, "SRID").map(parse_srid_facet).transpose()?;
     let unicode = checked_bool(raw, "Unicode")?;
-    let annotations = raw
-        .children
-        .iter()
-        .filter(|n| n.name == "Annotation")
-        .map(parse_annotation)
-        .collect::<io::Result<Vec<_>>>()?;
+    let annotations = parse_annotations(raw)?;
 
     Ok(TypeDefinition {
         name,
@@ -707,12 +692,7 @@ fn parse_term(raw: &RawElement) -> io::Result<Term> {
     let scale = raw_attr(raw, "Scale").map(parse_scale_facet).transpose()?;
     let srid = raw_attr(raw, "SRID").map(parse_srid_facet).transpose()?;
     let unicode = checked_bool(raw, "Unicode")?;
-    let annotations = raw
-        .children
-        .iter()
-        .filter(|n| n.name == "Annotation")
-        .map(parse_annotation)
-        .collect::<io::Result<Vec<_>>>()?;
+    let annotations = parse_annotations(raw)?;
 
     Ok(Term {
         name,
@@ -732,12 +712,7 @@ fn parse_term(raw: &RawElement) -> io::Result<Term> {
 }
 
 fn parse_parameter(raw: &RawElement) -> io::Result<Parameter> {
-    let annotations = raw
-        .children
-        .iter()
-        .filter(|n| n.name == "Annotation")
-        .map(parse_annotation)
-        .collect::<io::Result<Vec<_>>>()?;
+    let annotations = parse_annotations(raw)?;
     let (type_name, is_collection) = raw_type_attr(raw, "Type");
     Ok(Parameter {
         name: raw_attr(raw, "Name").unwrap_or("").to_string(),
@@ -757,12 +732,7 @@ fn parse_parameter(raw: &RawElement) -> io::Result<Parameter> {
 }
 
 fn parse_return_type(raw: &RawElement) -> io::Result<ReturnType> {
-    let annotations = raw
-        .children
-        .iter()
-        .filter(|n| n.name == "Annotation")
-        .map(parse_annotation)
-        .collect::<io::Result<Vec<_>>>()?;
+    let annotations = parse_annotations(raw)?;
     let (type_name, is_collection) = raw_type_attr(raw, "Type");
     Ok(ReturnType {
         type_name,
@@ -841,12 +811,7 @@ fn parse_entity_set(raw: &RawElement) -> io::Result<EntitySet> {
         .filter(|n| n.name == "NavigationPropertyBinding")
         .map(parse_navigation_property_binding)
         .collect::<io::Result<Vec<_>>>()?;
-    let annotations = raw
-        .children
-        .iter()
-        .filter(|n| n.name == "Annotation")
-        .map(parse_annotation)
-        .collect::<io::Result<Vec<_>>>()?;
+    let annotations = parse_annotations(raw)?;
 
     Ok(EntitySet {
         name,
@@ -866,12 +831,7 @@ fn parse_singleton(raw: &RawElement) -> io::Result<Singleton> {
         .filter(|n| n.name == "NavigationPropertyBinding")
         .map(parse_navigation_property_binding)
         .collect::<io::Result<Vec<_>>>()?;
-    let annotations = raw
-        .children
-        .iter()
-        .filter(|n| n.name == "Annotation")
-        .map(parse_annotation)
-        .collect::<io::Result<Vec<_>>>()?;
+    let annotations = parse_annotations(raw)?;
 
     Ok(Singleton {
         name,
@@ -915,6 +875,7 @@ fn parse_annotation(raw: &RawElement) -> io::Result<Annotation> {
     };
 
     Ok(Annotation {
+        annotations: parse_annotations(raw)?,
         term,
         qualifier,
         target,
@@ -926,11 +887,14 @@ fn parse_annotation(raw: &RawElement) -> io::Result<Annotation> {
 /// Used by every parse_* function that exposes a model field for own- and
 /// sibling-target annotations on the host element.
 fn parse_annotations(raw: &RawElement) -> io::Result<Vec<Annotation>> {
-    raw.children
+    let mut annotations = raw
+        .children
         .iter()
         .filter(|n| n.name == "Annotation")
         .map(parse_annotation)
-        .collect()
+        .collect::<io::Result<Vec<_>>>()?;
+    crate::csdl::nest_annotations(&mut annotations);
+    Ok(annotations)
 }
 
 fn raw_attr<'a>(raw: &'a RawElement, key: &str) -> Option<&'a str> {

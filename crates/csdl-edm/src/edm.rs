@@ -312,6 +312,7 @@ pub struct AnnotationExpressionPath {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AnnotationPathKind {
+    ModelElement,
     Value,
     Property,
     NavigationProperty,

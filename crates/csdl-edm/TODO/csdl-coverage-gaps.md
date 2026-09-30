@@ -187,7 +187,7 @@ required. Commit each completed task separately, including its tests and status.
       inclusion and `IncludeAnnotations` filtering. Resolve external types and
       terms without requiring manual schema merging. Handle repeated/cyclic
       references deterministically; automatic network access is not required.
-- [ ] **4. Complete annotation expression representation.** Implement
+- [x] **4. Complete annotation expression representation.** Implement
       `ModelElementPath`, `Has`, `In`, `Add`, `Sub`, `Neg`, `Mul`, `Div`,
       `DivBy`, and `Mod` throughout model, XML/JSON parsing, serialization, and
       resolution. Preserve annotations on expressions and cast/type-test facets

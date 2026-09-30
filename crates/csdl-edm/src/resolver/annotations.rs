@@ -77,13 +77,30 @@ pub(super) fn resolve(
         }
     }
     for (schema, model) in schemas.iter().zip(models) {
-        let visible = |key: &str| scopes.and_then(|s| s.get(&schema.namespace)).is_none_or(|namespaces| {
-            let root = key.split('(').next().unwrap_or(key);
-            namespaces.contains(root) || root.rsplit_once('.').is_some_and(|(ns, _)| namespaces.contains(ns))
-        });
+        let visible = |key: &str| {
+            scopes
+                .and_then(|s| s.get(&schema.namespace))
+                .is_none_or(|namespaces| {
+                    let root = key.split('(').next().unwrap_or(key);
+                    namespaces.contains(root)
+                        || root
+                            .rsplit_once('.')
+                            .is_some_and(|(ns, _)| namespaces.contains(ns))
+                })
+        };
         let scope = Scope {
-            roots: scope.roots.iter().filter(|(k, _)| visible(k)).map(|(k,v)| (k.clone(),v.clone())).collect(),
-            terms: scope.terms.iter().filter(|(k, _)| visible(k)).map(|(k,v)| (k.clone(),v.clone())).collect(),
+            roots: scope
+                .roots
+                .iter()
+                .filter(|(k, _)| visible(k))
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
+            terms: scope
+                .terms
+                .iter()
+                .filter(|(k, _)| visible(k))
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
             aliases,
         };
         let mut annotations = Vec::new();
@@ -426,6 +443,7 @@ impl Scope<'_> {
                     self.expression_paths(expression, ns, context, &mut expression_paths);
                 }
             }
+            let applied_target = target_path.clone();
             output.push(ResolvedAnnotation {
                 term: self.terms.get(&term_name).cloned(),
                 term_name: term_name.clone(),
@@ -465,6 +483,14 @@ impl Scope<'_> {
                     output,
                 );
             }
+            if !annotation.annotations.is_empty() {
+                let mut applied = format!("{applied_target}/@{term_name}");
+                if let Some(q) = &annotation.qualifier {
+                    applied.push('#');
+                    applied.push_str(q);
+                }
+                self.attach(ns, &applied, &annotation.annotations, output);
+            }
         }
     }
 
@@ -478,6 +504,24 @@ impl Scope<'_> {
         out: &mut Vec<ResolvedAnnotation>,
     ) {
         match expression {
+            Expr::Annotated {
+                expression,
+                annotations,
+            } => {
+                self.expression_annotations(
+                    annotations,
+                    AnnotationTargetKind::parse(expression.kind_name()),
+                    ns,
+                    owner,
+                    anchor,
+                    ordinal,
+                    out,
+                );
+                self.nested(expression, ns, owner, anchor, ordinal, out);
+            }
+            Expr::Faceted { expression, .. } | Expr::Neg(expression) => {
+                self.nested(expression, ns, owner, anchor, ordinal, out)
+            }
             Expr::Record {
                 annotations,
                 properties,
@@ -566,7 +610,9 @@ impl Scope<'_> {
                 target_path: format!("{owner}/expression[{index}]"),
                 targets,
                 expression: annotation.expression.clone().or_else(|| {
-                    self.terms.get(&term_name).and_then(|term| term.default_expression())
+                    self.terms
+                        .get(&term_name)
+                        .and_then(|term| term.default_expression())
                 }),
                 expression_paths: Vec::new(),
             });
@@ -621,6 +667,7 @@ impl Scope<'_> {
     ) {
         use AnnotationPathKind as K;
         let path = match expression {
+            Expr::ModelElementPath(p) => Some((p, K::ModelElement)),
             Expr::Path(p) => Some((p, K::Value)),
             Expr::PropertyPath(p) => Some((p, K::Property)),
             Expr::NavigationPropertyPath(p) => Some((p, K::NavigationProperty)),
@@ -628,6 +675,12 @@ impl Scope<'_> {
             _ => None,
         };
         if let Some((path, kind)) = path {
+            if path.starts_with('/') {
+                for segments in self.paths(path.trim_start_matches('/'), ns) {
+                    output.push(AnnotationExpressionPath { kind, segments });
+                }
+                return;
+            }
             let mut segments = context.to_vec();
             for part in path.split('/') {
                 let next = segments
@@ -642,6 +695,20 @@ impl Scope<'_> {
             });
         }
         match expression {
+            Expr::Annotated {
+                expression,
+                annotations,
+            } => {
+                self.expression_paths(expression, ns, context, output);
+                for a in annotations {
+                    if let Some(e) = &a.expression {
+                        self.expression_paths(e, ns, context, output);
+                    }
+                }
+            }
+            Expr::Faceted { expression, .. } | Expr::Neg(expression) => {
+                self.expression_paths(expression, ns, context, output)
+            }
             Expr::Not(e)
             | Expr::UrlRef(e)
             | Expr::Cast { expr: e, .. }

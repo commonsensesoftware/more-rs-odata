@@ -135,7 +135,7 @@ fn collect<'a>(models: impl Iterator<Item = &'a Model>) -> Vec<AnnotationDiagnos
                 .iter()
                 .any(|s| matches!(s, AnnotationTarget::Unresolved(_)))
                 || match path.kind {
-                    AnnotationPathKind::Value => false,
+                    AnnotationPathKind::Value | AnnotationPathKind::ModelElement => false,
                     AnnotationPathKind::Property => {
                         !matches!(path.segments.last(), Some(AnnotationTarget::Property(_)))
                     }
@@ -262,6 +262,9 @@ fn compatible(
 ) -> bool {
     use crate::expr::CsdlAnnotationExpression as E;
     use PrimitiveType as P;
+    if let E::Annotated { expression, .. } | E::Faceted { expression, .. } = expression {
+        return compatible(expression, ty, collection, nullable);
+    }
     if matches!(expression, E::Null) {
         return nullable && !collection;
     }
@@ -299,6 +302,7 @@ fn compatible(
             return matches!(
                 expression,
                 E::PropertyPath(_)
+                    | E::ModelElementPath(_)
                     | E::NavigationPropertyPath(_)
                     | E::AnnotationPath(_)
                     | E::String(_)

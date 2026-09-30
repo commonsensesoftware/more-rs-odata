@@ -164,14 +164,23 @@ impl<R: BufRead> CsdlReader<R> {
                         // An omitted expression uses the term's default. Preserve
                         // absence until the term is resolved.
                         let mut exprs: Vec<CsdlAnnotationExpression> = Vec::new();
-                        if let Some(idx) = find_inline_constant_idx(&attrs) {
+                        if let Some(idx) = find_inline_constant_idx(&attrs)? {
                             let (k, v) = attrs.swap_remove(idx);
                             exprs.push(constant_attr_to_expr(&k, v)?);
                         }
-                        exprs.extend(self.read_expression_list("Annotation")?);
+                        let (body, annotations) = self.read_expression_content("Annotation")?;
+                        exprs.extend(body);
+                        if exprs.len() > 1 {
+                            return Err(
+                                self.csdl_err("Annotation allows only one value expression")
+                            );
+                        }
                         for ex in exprs {
                             self.deferred
                                 .push_back(SyntaxUnit::AnnotationExpression(ex));
+                        }
+                        for annotation in annotations {
+                            self.queue_annotation(annotation);
                         }
                         self.deferred.push_back(SyntaxUnit::EndElement {
                             name: "Annotation".to_string(),
@@ -195,7 +204,7 @@ impl<R: BufRead> CsdlReader<R> {
                     let (name, mut attrs) = parse_start(&e)?;
 
                     if name == "Annotation" {
-                        if let Some(idx) = find_inline_constant_idx(&attrs) {
+                        if let Some(idx) = find_inline_constant_idx(&attrs)? {
                             let (k, v) = attrs.swap_remove(idx);
                             self.deferred.push_back(SyntaxUnit::AnnotationExpression(
                                 constant_attr_to_expr(&k, v)?,
@@ -227,138 +236,108 @@ impl<R: BufRead> CsdlReader<R> {
         name: &str,
         attrs: Vec<(String, String)>,
     ) -> Result<CsdlAnnotationExpression> {
-        match name {
-            "Binary" => Ok(CsdlAnnotationExpression::Binary(
-                self.read_text_body(name)?.into_bytes(),
-            )),
-            "Bool" => constant_attr_to_expr(name, self.read_text_body(name)?),
-            "Date" => Ok(CsdlAnnotationExpression::Date(self.read_text_body(name)?)),
-            "DateTimeOffset" => Ok(CsdlAnnotationExpression::DateTimeOffset(
-                self.read_text_body(name)?,
-            )),
-            "Decimal" => Ok(CsdlAnnotationExpression::Decimal(
-                self.read_text_body(name)?,
-            )),
-            "Duration" => Ok(CsdlAnnotationExpression::Duration(
-                self.read_text_body(name)?,
-            )),
-            "EnumMember" => Ok(CsdlAnnotationExpression::EnumMember(
-                self.read_text_body(name)?,
-            )),
-            "Float" => constant_attr_to_expr(name, self.read_text_body(name)?),
-            "Guid" => Ok(CsdlAnnotationExpression::Guid(self.read_text_body(name)?)),
-            "Int" => constant_attr_to_expr(name, self.read_text_body(name)?),
-            "String" => Ok(CsdlAnnotationExpression::String(self.read_text_body(name)?)),
-            "TimeOfDay" => Ok(CsdlAnnotationExpression::TimeOfDay(
-                self.read_text_body(name)?,
-            )),
-
-            "Path" => Ok(CsdlAnnotationExpression::Path(self.read_text_body(name)?)),
-            "PropertyPath" => Ok(CsdlAnnotationExpression::PropertyPath(
-                self.read_text_body(name)?,
-            )),
-            "NavigationPropertyPath" => Ok(CsdlAnnotationExpression::NavigationPropertyPath(
-                self.read_text_body(name)?,
-            )),
-            "AnnotationPath" => Ok(CsdlAnnotationExpression::AnnotationPath(
-                self.read_text_body(name)?,
-            )),
-            "LabeledElementReference" => Ok(CsdlAnnotationExpression::LabeledElementReference(
-                self.read_text_body(name)?,
-            )),
-
-            "Not" => {
-                let c = self.read_expression_list(name)?;
-                let [inner] = exact::<1>(name, c)?;
-                Ok(CsdlAnnotationExpression::Not(Box::new(inner)))
-            }
-            "And" | "Or" | "Eq" | "Ne" | "Gt" | "Ge" | "Lt" | "Le" => {
-                let c = self.read_expression_list(name)?;
-                let [lhs, rhs] = exact::<2>(name, c)?;
-                Ok(make_binop(name, lhs, rhs))
-            }
-
-            "If" => {
-                let mut c = self.read_expression_list(name)?;
-                if c.len() != 2 && c.len() != 3 {
-                    return Err(
-                        self.csdl_err(format!("<If> expects 2 or 3 children, got {}", c.len()))
-                    );
-                }
-                let else_ = if c.len() == 3 {
-                    Some(Box::new(c.swap_remove(2)))
-                } else {
-                    None
-                };
-                let then_ = Box::new(c.swap_remove(1));
-                let test = Box::new(c.swap_remove(0));
-                Ok(CsdlAnnotationExpression::If { test, then_, else_ })
-            }
-
-            "Apply" => {
-                let function = attr_value(&attrs, "Function").unwrap_or_default();
-                let args = self.read_expression_list(name)?;
-                Ok(CsdlAnnotationExpression::Apply { function, args })
-            }
-
-            "Cast" => {
-                let type_ = attr_value(&attrs, "Type").unwrap_or_default();
-                let c = self.read_expression_list(name)?;
-                let [expr] = exact::<1>(name, c)?;
-                Ok(CsdlAnnotationExpression::Cast {
-                    type_,
-                    expr: Box::new(expr),
-                })
-            }
-
-            "IsOf" => {
-                let type_ = attr_value(&attrs, "Type").unwrap_or_default();
-                let c = self.read_expression_list(name)?;
-                let [expr] = exact::<1>(name, c)?;
-                Ok(CsdlAnnotationExpression::IsOf {
-                    type_,
-                    expr: Box::new(expr),
-                })
-            }
-
-            "LabeledElement" => {
-                let label = attr_value(&attrs, "Name").unwrap_or_default();
-                let c = self.read_expression_list(name)?;
-                let [expr] = exact::<1>(name, c)?;
-                Ok(CsdlAnnotationExpression::LabeledElement {
-                    name: label,
-                    expr: Box::new(expr),
-                })
-            }
-
-            "UrlRef" => {
-                let c = self.read_expression_list(name)?;
-                let [expr] = exact::<1>(name, c)?;
-                Ok(CsdlAnnotationExpression::UrlRef(Box::new(expr)))
-            }
-
-            "Collection" => {
-                let items = self.read_expression_list(name)?;
-                Ok(CsdlAnnotationExpression::Collection(items))
-            }
-
-            "Record" => {
-                let type_ = attr_value(&attrs, "Type");
-                let (properties, annotations) = self.read_record_body(name)?;
-                Ok(CsdlAnnotationExpression::Record {
-                    type_,
-                    properties,
-                    annotations,
-                })
-            }
-
-            "Null" => {
-                self.expect_end(name)?;
-                Ok(CsdlAnnotationExpression::Null)
-            }
-
-            other => Err(self.csdl_err(format!("unknown expression element <{other}>"))),
+        use CsdlAnnotationExpression as E;
+        if (INLINE_CONSTANT_ATTRS.contains(&name) && name != "UrlRef")
+            || name == "LabeledElementReference"
+        {
+            return constant_attr_to_expr(name, self.read_text_body(name)?);
         }
+        if name == "Record" {
+            let (properties, annotations) = self.read_record_body(name)?;
+            return Ok(E::Record {
+                type_: attr_value(&attrs, "Type"),
+                properties,
+                annotations,
+            });
+        }
+        let (mut children, annotations) = self.read_expression_content(name)?;
+        if name == "LabeledElement" {
+            if let Some(idx) = find_inline_constant_idx(&attrs)? {
+                children.push(constant_attr_to_expr(&attrs[idx].0, attrs[idx].1.clone())?);
+            }
+        }
+        let mut expression = match name {
+            "Not" | "Neg" | "UrlRef" => {
+                let [child] = exact::<1>(name, children)?;
+                match name {
+                    "Not" => E::Not(Box::new(child)),
+                    "Neg" => E::Neg(Box::new(child)),
+                    _ => E::UrlRef(Box::new(child)),
+                }
+            }
+            n if BinaryOperator::parse(n).is_some() => {
+                let [lhs, rhs] = exact::<2>(name, children)?;
+                E::BinaryExpression {
+                    op: BinaryOperator::parse(name).unwrap(),
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(rhs),
+                }
+            }
+            "If" => {
+                if !(2..=3).contains(&children.len()) {
+                    return Err(self.csdl_err("If requires two or three operands"));
+                }
+                let mut children = children.into_iter();
+                E::If {
+                    test: Box::new(children.next().unwrap()),
+                    then_: Box::new(children.next().unwrap()),
+                    else_: children.next().map(Box::new),
+                }
+            }
+            "Apply" => E::Apply {
+                function: required_attr(&attrs, "Function")?,
+                args: children,
+            },
+            "Cast" | "IsOf" => {
+                let [expr] = exact::<1>(name, children)?;
+                let type_ = required_attr(&attrs, "Type")?;
+                let base = if name == "Cast" {
+                    E::Cast {
+                        type_,
+                        expr: Box::new(expr),
+                    }
+                } else {
+                    E::IsOf {
+                        type_,
+                        expr: Box::new(expr),
+                    }
+                };
+                let facets = crate::expr::ExpressionFacets::from_attributes(&attrs)?;
+                if facets == Default::default() {
+                    base
+                } else {
+                    E::Faceted {
+                        expression: Box::new(base),
+                        facets,
+                    }
+                }
+            }
+            "LabeledElement" => {
+                let [expr] = exact::<1>(name, children)?;
+                E::LabeledElement {
+                    name: required_attr(&attrs, "Name")?,
+                    expr: Box::new(expr),
+                }
+            }
+            "Collection" => {
+                if !annotations.is_empty() {
+                    return Err(self.csdl_err("Collection cannot contain Annotation children"));
+                }
+                E::Collection(children)
+            }
+            "Null" => {
+                exact::<0>(name, children)?;
+                E::Null
+            }
+            _ => return Err(self.csdl_err(format!("Unknown expression: {name}"))),
+        };
+        if !annotations.is_empty() {
+            expression = E::Annotated {
+                expression: Box::new(expression),
+                annotations,
+            };
+        }
+        Ok(expression)
     }
 
     fn read_text_body(&mut self, name: &str) -> Result<String> {
@@ -397,23 +376,35 @@ impl<R: BufRead> CsdlReader<R> {
 
     /// Read zero or more annotation expressions until the End tag of `parent`.
     /// Consumes the End tag.
-    fn read_expression_list(&mut self, parent: &str) -> Result<Vec<CsdlAnnotationExpression>> {
+    fn read_expression_content(
+        &mut self,
+        parent: &str,
+    ) -> Result<(Vec<CsdlAnnotationExpression>, Vec<Annotation>)> {
         let mut out = Vec::new();
+        let mut annotations = Vec::new();
         loop {
             self.buf.clear();
             match self.inner.read_event_into(&mut self.buf)? {
                 Event::Start(e) => {
-                    let (n, a) = parse_start(&e)?;
-                    out.push(self.build_expr_from_start(&n, a)?);
+                    let (n, mut a) = parse_start(&e)?;
+                    if n == "Annotation" {
+                        annotations.push(self.read_annotation_start(&mut a)?);
+                    } else {
+                        out.push(self.build_expr_from_start(&n, a)?);
+                    }
                 }
                 Event::Empty(e) => {
-                    let (n, a) = parse_start(&e)?;
-                    out.push(build_expr_from_empty(&n, a));
+                    let (n, mut a) = parse_start(&e)?;
+                    if n == "Annotation" {
+                        annotations.push(self.read_annotation_empty(&mut a)?);
+                    } else {
+                        out.push(build_expr_from_empty(&n, a)?);
+                    }
                 }
                 Event::End(e) => {
                     let n = local_name_string(e.name().as_ref())?;
                     if n == parent {
-                        return Ok(out);
+                        return Ok((out, annotations));
                     }
                     return Err(self.csdl_err(format!("unexpected </{n}> in <{parent}>")));
                 }
@@ -456,7 +447,7 @@ impl<R: BufRead> CsdlReader<R> {
                     match n.as_str() {
                         "PropertyValue" => {
                             let property = attr_value(&a, "Property").unwrap_or_default();
-                            let value = find_inline_constant_idx(&a)
+                            let value = find_inline_constant_idx(&a)?
                                 .map(|idx| {
                                     let (k, v) = a.swap_remove(idx);
                                     constant_attr_to_expr(&k, v)
@@ -501,7 +492,7 @@ impl<R: BufRead> CsdlReader<R> {
         attrs: &mut Vec<(String, String)>,
     ) -> Result<PropertyValue> {
         let property = attr_value(attrs, "Property").unwrap_or_default();
-        let inline = find_inline_constant_idx(attrs)
+        let inline = find_inline_constant_idx(attrs)?
             .map(|idx| {
                 let (k, v) = attrs.swap_remove(idx);
                 constant_attr_to_expr(&k, v)
@@ -525,13 +516,13 @@ impl<R: BufRead> CsdlReader<R> {
                     if n == "Annotation" {
                         annotations.push(self.read_annotation_empty(&mut a)?);
                     } else {
-                        body_values.push(build_expr_from_empty(&n, a));
+                        body_values.push(build_expr_from_empty(&n, a)?);
                     }
                 }
                 Event::End(e) => {
                     let n = local_name_string(e.name().as_ref())?;
                     if n == "PropertyValue" {
-                        let value = pick_first_value(inline, body_values);
+                        let value = pick_first_value(inline, body_values)?;
                         return Ok(PropertyValue {
                             property,
                             value,
@@ -555,19 +546,16 @@ impl<R: BufRead> CsdlReader<R> {
         let qualifier = attr_value(attrs, "Qualifier");
         let target = attr_value(attrs, "Target");
         // Inline-constant attribute (e.g. String="x"), if present.
-        let inline = find_inline_constant_idx(attrs)
+        let inline = find_inline_constant_idx(attrs)?
             .map(|idx| {
                 let (k, v) = attrs.swap_remove(idx);
                 constant_attr_to_expr(&k, v)
             })
             .transpose()?;
-        let body = self.read_expression_list("Annotation")?;
-        let expression = match inline {
-            Some(e) => Some(e),
-            None if body.is_empty() => None,
-            None => Some(body.into_iter().next().unwrap()),
-        };
+        let (body, annotations) = self.read_expression_content("Annotation")?;
+        let expression = pick_first_value(inline, body)?;
         Ok(Annotation {
+            annotations,
             term,
             qualifier,
             target,
@@ -581,7 +569,7 @@ impl<R: BufRead> CsdlReader<R> {
         let term = attr_value(attrs, "Term").unwrap_or_default();
         let qualifier = attr_value(attrs, "Qualifier");
         let target = attr_value(attrs, "Target");
-        let expression = match find_inline_constant_idx(attrs) {
+        let expression = match find_inline_constant_idx(attrs)? {
             Some(idx) => {
                 let (k, v) = attrs.swap_remove(idx);
                 Some(constant_attr_to_expr(&k, v)?)
@@ -589,6 +577,7 @@ impl<R: BufRead> CsdlReader<R> {
             None => None,
         };
         Ok(Annotation {
+            annotations: Vec::new(),
             term,
             qualifier,
             target,
@@ -596,28 +585,27 @@ impl<R: BufRead> CsdlReader<R> {
         })
     }
 
-    fn expect_end(&mut self, name: &str) -> Result<()> {
-        loop {
-            self.buf.clear();
-            match self.inner.read_event_into(&mut self.buf)? {
-                Event::End(e) => {
-                    let n = local_name_string(e.name().as_ref())?;
-                    if n == name {
-                        return Ok(());
-                    }
-                    return Err(self.csdl_err(format!("expected </{name}>, got </{n}>")));
-                }
-                Event::Text(_) | Event::CData(_) | Event::Comment(_) => continue,
-                Event::Eof => {
-                    return Err(self.csdl_err(format!("EOF while expecting </{name}>")));
-                }
-                _ => {
-                    return Err(
-                        self.csdl_err(format!("unexpected event while expecting </{name}>"))
-                    );
-                }
-            }
+    fn queue_annotation(&mut self, annotation: Annotation) {
+        let mut attributes = vec![("Term".into(), annotation.term)];
+        if let Some(q) = annotation.qualifier {
+            attributes.push(("Qualifier".into(), q));
         }
+        if let Some(t) = annotation.target {
+            attributes.push(("Target".into(), t));
+        }
+        self.deferred.push_back(SyntaxUnit::StartElement {
+            name: "Annotation".into(),
+            attributes,
+        });
+        if let Some(e) = annotation.expression {
+            self.deferred.push_back(SyntaxUnit::AnnotationExpression(e));
+        }
+        for annotation in annotation.annotations {
+            self.queue_annotation(annotation);
+        }
+        self.deferred.push_back(SyntaxUnit::EndElement {
+            name: "Annotation".into(),
+        });
     }
 }
 
@@ -629,12 +617,17 @@ impl<R: BufRead> CsdlReader<R> {
 fn pick_first_value(
     inline: Option<CsdlAnnotationExpression>,
     mut body: Vec<CsdlAnnotationExpression>,
-) -> Option<CsdlAnnotationExpression> {
-    match inline {
+) -> Result<Option<CsdlAnnotationExpression>> {
+    if body.len() + usize::from(inline.is_some()) > 1 {
+        return Err(Error::Csdl(
+            "Only one annotation value expression is allowed".into(),
+        ));
+    }
+    Ok(match inline {
         Some(v) => Some(v),
         None if body.is_empty() => None,
         None => Some(body.swap_remove(0)),
-    }
+    })
 }
 
 fn exact<const N: usize>(
@@ -646,63 +639,41 @@ fn exact<const N: usize>(
         .map_err(|_| Error::Csdl(format!("<{name}> expects {N} children, got {got}")))
 }
 
-fn build_expr_from_empty(name: &str, attrs: Vec<(String, String)>) -> CsdlAnnotationExpression {
-    match name {
-        "Null" => CsdlAnnotationExpression::Null,
-        "Binary" => CsdlAnnotationExpression::Binary(Vec::new()),
-        "Bool" => CsdlAnnotationExpression::Bool(false),
-        "Date" => CsdlAnnotationExpression::Date(String::new()),
-        "DateTimeOffset" => CsdlAnnotationExpression::DateTimeOffset(String::new()),
-        "Decimal" => CsdlAnnotationExpression::Decimal(String::new()),
-        "Duration" => CsdlAnnotationExpression::Duration(String::new()),
-        "EnumMember" => CsdlAnnotationExpression::EnumMember(String::new()),
-        "Float" => CsdlAnnotationExpression::Float(0.0),
-        "Guid" => CsdlAnnotationExpression::Guid(String::new()),
-        "Int" => CsdlAnnotationExpression::Int(0),
-        "String" => CsdlAnnotationExpression::String(String::new()),
-        "TimeOfDay" => CsdlAnnotationExpression::TimeOfDay(String::new()),
-        "Path" => CsdlAnnotationExpression::Path(String::new()),
-        "PropertyPath" => CsdlAnnotationExpression::PropertyPath(String::new()),
-        "NavigationPropertyPath" => CsdlAnnotationExpression::NavigationPropertyPath(String::new()),
-        "AnnotationPath" => CsdlAnnotationExpression::AnnotationPath(String::new()),
-        "LabeledElementReference" => {
-            CsdlAnnotationExpression::LabeledElementReference(String::new())
-        }
-        "Collection" => CsdlAnnotationExpression::Collection(Vec::new()),
-        "Record" => CsdlAnnotationExpression::Record {
-            type_: attr_value(&attrs, "Type"),
-            properties: Vec::new(),
-            annotations: Vec::new(),
-        },
-        "Apply" => CsdlAnnotationExpression::Apply {
-            function: attr_value(&attrs, "Function").unwrap_or_default(),
-            args: Vec::new(),
-        },
-        _ => CsdlAnnotationExpression::Null,
-    }
+fn required_attr(attrs: &[(String, String)], key: &str) -> Result<String> {
+    attr_value(attrs, key)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| Error::Csdl(format!("Expression requires {key}")))
 }
 
-fn make_binop(
+fn build_expr_from_empty(
     name: &str,
-    lhs: CsdlAnnotationExpression,
-    rhs: CsdlAnnotationExpression,
-) -> CsdlAnnotationExpression {
-    let op = match name {
-        "And" => BinaryOperator::And,
-        "Or" => BinaryOperator::Or,
-        "Eq" => BinaryOperator::Eq,
-        "Ne" => BinaryOperator::Ne,
-        "Gt" => BinaryOperator::Gt,
-        "Ge" => BinaryOperator::Ge,
-        "Lt" => BinaryOperator::Lt,
-        "Le" => BinaryOperator::Le,
-        _ => unreachable!(),
-    };
-    CsdlAnnotationExpression::BinaryExpression {
-        op,
-        lhs: Box::new(lhs),
-        rhs: Box::new(rhs),
-    }
+    attrs: Vec<(String, String)>,
+) -> Result<CsdlAnnotationExpression> {
+    use CsdlAnnotationExpression as E;
+    Ok(match name {
+        "Null" => E::Null,
+        "String" => E::String(String::new()),
+        "Binary" => E::Binary(Vec::new()),
+        "Collection" => E::Collection(Vec::new()),
+        "Record" => E::Record {
+            type_: attr_value(&attrs, "Type"),
+            properties: vec![],
+            annotations: vec![],
+        },
+        "Apply" => E::Apply {
+            function: required_attr(&attrs, "Function")?,
+            args: vec![],
+        },
+        "LabeledElement" => {
+            let idx = find_inline_constant_idx(&attrs)?
+                .ok_or_else(|| Error::Csdl("LabeledElement requires a value".into()))?;
+            E::LabeledElement {
+                name: required_attr(&attrs, "Name")?,
+                expr: Box::new(constant_attr_to_expr(&attrs[idx].0, attrs[idx].1.clone())?),
+            }
+        }
+        _ => return Err(Error::Csdl(format!("Empty {name} expression is invalid"))),
+    })
 }
 
 fn attr_value(attrs: &[(String, String)], key: &str) -> Option<String> {
@@ -743,16 +714,24 @@ const INLINE_CONSTANT_ATTRS: &[&str] = &[
     "String",
     "TimeOfDay",
     "AnnotationPath",
+    "ModelElementPath",
     "NavigationPropertyPath",
     "Path",
     "PropertyPath",
     "UrlRef",
 ];
 
-fn find_inline_constant_idx(attrs: &[(String, String)]) -> Option<usize> {
-    attrs
+fn find_inline_constant_idx(attrs: &[(String, String)]) -> Result<Option<usize>> {
+    let indices = attrs
         .iter()
-        .position(|(k, _)| INLINE_CONSTANT_ATTRS.contains(&k.as_str()))
+        .enumerate()
+        .filter(|(_, (k, _))| INLINE_CONSTANT_ATTRS.contains(&k.as_str()))
+        .map(|(i, _)| i)
+        .collect::<Vec<_>>();
+    if indices.len() > 1 {
+        return Err(Error::Csdl("Only one inline expression is allowed".into()));
+    }
+    Ok(indices.first().copied())
 }
 
 fn constant_attr_to_expr(key: &str, value: String) -> Result<CsdlAnnotationExpression> {
@@ -782,6 +761,11 @@ fn constant_attr_to_expr(key: &str, value: String) -> Result<CsdlAnnotationExpre
         "String" => CsdlAnnotationExpression::String(value),
         "TimeOfDay" => CsdlAnnotationExpression::TimeOfDay(value),
         "AnnotationPath" => CsdlAnnotationExpression::AnnotationPath(value),
+        "ModelElementPath" => CsdlAnnotationExpression::ModelElementPath(value),
+        "LabeledElementReference" => CsdlAnnotationExpression::LabeledElementReference(value),
+        "UrlRef" => {
+            CsdlAnnotationExpression::UrlRef(Box::new(CsdlAnnotationExpression::String(value)))
+        }
         "NavigationPropertyPath" => CsdlAnnotationExpression::NavigationPropertyPath(value),
         "Path" => CsdlAnnotationExpression::Path(value),
         "PropertyPath" => CsdlAnnotationExpression::PropertyPath(value),

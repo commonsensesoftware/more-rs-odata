@@ -229,6 +229,7 @@ pub(super) fn materialize_annotations(edmx: &mut Edmx) {
 fn visit_annotations(annotations: &mut [Annotation], apply: &impl Fn(&mut Annotation)) {
     for annotation in annotations {
         apply(annotation);
+        visit_annotations(&mut annotation.annotations, apply);
         if let Some(expression) = &mut annotation.expression {
             visit_expression(expression, apply);
         }
@@ -238,6 +239,14 @@ fn visit_annotations(annotations: &mut [Annotation], apply: &impl Fn(&mut Annota
 fn visit_expression(expression: &mut CsdlAnnotationExpression, apply: &impl Fn(&mut Annotation)) {
     use CsdlAnnotationExpression as E;
     match expression {
+        E::Annotated {
+            expression,
+            annotations,
+        } => {
+            visit_annotations(annotations, apply);
+            visit_expression(expression, apply);
+        }
+        E::Faceted { expression, .. } | E::Neg(expression) => visit_expression(expression, apply),
         E::Record {
             annotations,
             properties,

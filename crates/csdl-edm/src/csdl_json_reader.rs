@@ -55,14 +55,21 @@ fn emit_edmx(out: &mut Vec<SyntaxUnit>, mut root: Map<String, Value>) -> Result<
         })
         .unwrap_or_else(|| "4.01".to_string());
 
-    let entity_container = root.shift_remove("$EntityContainer")
-        .map(|v| v.as_str().map(str::to_owned).ok_or_else(|| csdl_err("$EntityContainer must be a string")))
+    let entity_container = root
+        .shift_remove("$EntityContainer")
+        .map(|v| {
+            v.as_str()
+                .map(str::to_owned)
+                .ok_or_else(|| csdl_err("$EntityContainer must be a string"))
+        })
         .transpose()?;
 
     let references = root.shift_remove("$Reference");
 
     let mut attrs = vec![("Version".into(), version)];
-    if let Some(container) = entity_container { attrs.push(("EntityContainer".into(), container)); }
+    if let Some(container) = entity_container {
+        attrs.push(("EntityContainer".into(), container));
+    }
     start(out, "Edmx", attrs);
 
     if let Some(refs) = references {
@@ -1042,11 +1049,11 @@ fn emit_annotation(out: &mut Vec<SyntaxUnit>, key: &str, value: Value) -> Result
 }
 
 /// Decode a JSON CSDL annotation key into `(target?, term, qualifier?)`.
-/// Splits at the first `@`: anything before is the sibling target (empty →
+/// Splits at the last `@`: anything before is the target (empty →
 /// own-annotation), anything after is `Term[#Qualifier]`. Returns `None` for
 /// keys that don't contain `@` at all.
 fn parse_annotation_key(key: &str) -> Option<(Option<String>, String, Option<String>)> {
-    let at = key.find('@')?;
+    let at = key.rfind('@')?;
     let target = if at == 0 {
         None
     } else {
@@ -1085,6 +1092,92 @@ fn json_to_expr(value: Value) -> Result<CsdlAnnotationExpression> {
 }
 
 fn object_to_expr(mut map: Map<String, Value>) -> Result<CsdlAnnotationExpression> {
+    let discriminators = map
+        .keys()
+        .filter(|key| {
+            key.starts_with('$')
+                && !matches!(
+                    key.as_str(),
+                    "$Type"
+                        | "$Function"
+                        | "$Name"
+                        | "$Collection"
+                        | "$Nullable"
+                        | "$MaxLength"
+                        | "$Precision"
+                        | "$Scale"
+                        | "$SRID"
+                        | "$Unicode"
+                        | "$Annotations"
+                )
+        })
+        .count();
+    if discriminators > 1 {
+        return Err(csdl_err("Expression has multiple discriminators"));
+    }
+    if discriminators == 0 {
+        return object_to_expr_inner(map);
+    }
+    let mut annotations = Vec::new();
+    for key in map
+        .keys()
+        .filter(|k| k.starts_with('@'))
+        .cloned()
+        .collect::<Vec<_>>()
+    {
+        let (target, term, qualifier) =
+            parse_annotation_key(&key).ok_or_else(|| csdl_err("Invalid expression annotation"))?;
+        annotations.push(Annotation {
+            annotations: Vec::new(),
+            term,
+            qualifier,
+            target,
+            expression: Some(json_to_expr(map.shift_remove(&key).unwrap())?),
+        });
+    }
+    crate::csdl::nest_annotations(&mut annotations);
+    let mut attrs = Vec::new();
+    for key in [
+        "Nullable",
+        "MaxLength",
+        "Precision",
+        "Scale",
+        "SRID",
+        "Unicode",
+    ] {
+        if let Some(v) = map.shift_remove(&format!("${key}")) {
+            attrs.push((
+                key.into(),
+                match v {
+                    Value::String(s) => s,
+                    Value::Number(n) => n.to_string(),
+                    Value::Bool(b) => b.to_string(),
+                    _ => return Err(csdl_err("Invalid expression facet")),
+                },
+            ));
+        }
+    }
+    let facets = crate::expr::ExpressionFacets::from_attributes(&attrs)?;
+    if !attrs.is_empty() && !map.contains_key("$Cast") && !map.contains_key("$IsOf") {
+        return Err(csdl_err("Facets require Cast or IsOf"));
+    }
+    let mut expression = object_to_expr_inner(map)?;
+    if facets != Default::default() {
+        expression = CsdlAnnotationExpression::Faceted {
+            expression: Box::new(expression),
+            facets,
+        };
+    }
+    if !annotations.is_empty() {
+        expression = CsdlAnnotationExpression::Annotated {
+            expression: Box::new(expression),
+            annotations,
+        };
+    }
+    Ok(expression)
+}
+
+fn object_to_expr_inner(mut map: Map<String, Value>) -> Result<CsdlAnnotationExpression> {
     // Look for the single-`$Foo` dynamic-expression discriminator first.
     let dynamic_key = map
         .keys()
@@ -1092,7 +1185,7 @@ fn object_to_expr(mut map: Map<String, Value>) -> Result<CsdlAnnotationExpressio
             k.starts_with('$')
                 && !matches!(
                     k.as_str(),
-                    "$Type" | "$Function" | "$Name" | "$Null" | "$Annotations"
+                    "$Type" | "$Function" | "$Name" | "$Collection" | "$Annotations"
                 )
         })
         .cloned();
@@ -1100,18 +1193,20 @@ fn object_to_expr(mut map: Map<String, Value>) -> Result<CsdlAnnotationExpressio
     if let Some(key) = dynamic_key.as_deref() {
         let v = map.shift_remove(key).unwrap();
         return match key {
-            "$Path" => Ok(CsdlAnnotationExpression::Path(string_or_default(v))),
-            "$PropertyPath" => Ok(CsdlAnnotationExpression::PropertyPath(string_or_default(v))),
+            "$Path" => Ok(CsdlAnnotationExpression::Path(string_or_default(v)?)),
+            "$PropertyPath" => Ok(CsdlAnnotationExpression::PropertyPath(string_or_default(
+                v,
+            )?)),
             "$NavigationPropertyPath" => Ok(CsdlAnnotationExpression::NavigationPropertyPath(
-                string_or_default(v),
+                string_or_default(v)?,
             )),
             "$AnnotationPath" => Ok(CsdlAnnotationExpression::AnnotationPath(string_or_default(
                 v,
-            ))),
+            )?)),
             "$LabeledElementReference" => Ok(CsdlAnnotationExpression::LabeledElementReference(
-                string_or_default(v),
+                string_or_default(v)?,
             )),
-            "$And" | "$Or" | "$Eq" | "$Ne" | "$Gt" | "$Ge" | "$Lt" | "$Le" => {
+            key if BinaryOperator::parse(&key[1..]).is_some() => {
                 let pair = match v {
                     Value::Array(a) if a.len() == 2 => a,
                     _ => return Err(csdl_err(format!("{key} expects [lhs, rhs]"))),
@@ -1119,23 +1214,18 @@ fn object_to_expr(mut map: Map<String, Value>) -> Result<CsdlAnnotationExpressio
                 let mut it = pair.into_iter();
                 let lhs = json_to_expr(it.next().unwrap())?;
                 let rhs = json_to_expr(it.next().unwrap())?;
-                let op = match key {
-                    "$And" => BinaryOperator::And,
-                    "$Or" => BinaryOperator::Or,
-                    "$Eq" => BinaryOperator::Eq,
-                    "$Ne" => BinaryOperator::Ne,
-                    "$Gt" => BinaryOperator::Gt,
-                    "$Ge" => BinaryOperator::Ge,
-                    "$Lt" => BinaryOperator::Lt,
-                    "$Le" => BinaryOperator::Le,
-                    _ => unreachable!(),
-                };
+                let op = BinaryOperator::parse(&key[1..]).unwrap();
                 Ok(CsdlAnnotationExpression::BinaryExpression {
                     op,
                     lhs: Box::new(lhs),
                     rhs: Box::new(rhs),
                 })
             }
+            "$Neg" => Ok(CsdlAnnotationExpression::Neg(Box::new(json_to_expr(v)?))),
+            "$ModelElementPath" => Ok(CsdlAnnotationExpression::ModelElementPath(
+                string_or_default(v)?,
+            )),
+            "$Null" if v.is_null() => Ok(CsdlAnnotationExpression::Null),
             "$Not" => Ok(CsdlAnnotationExpression::Not(Box::new(json_to_expr(v)?))),
             "$If" => {
                 let arr = match v {
@@ -1158,7 +1248,8 @@ fn object_to_expr(mut map: Map<String, Value>) -> Result<CsdlAnnotationExpressio
                         Value::String(s) => Some(s),
                         _ => None,
                     })
-                    .unwrap_or_default();
+                    .filter(|s| !s.is_empty())
+                    .ok_or_else(|| csdl_err("$Apply requires $Function"))?;
                 let args = match v {
                     Value::Array(a) => a
                         .into_iter()
@@ -1169,21 +1260,31 @@ fn object_to_expr(mut map: Map<String, Value>) -> Result<CsdlAnnotationExpressio
                 Ok(CsdlAnnotationExpression::Apply { function, args })
             }
             "$Cast" => {
-                let type_ = take_string(&mut map, "$Type").unwrap_or_default();
+                let mut type_ =
+                    take_string(&mut map, "$Type").unwrap_or_else(|| "Edm.String".into());
+                if take_bool(&mut map, "$Collection")?.unwrap_or(false) {
+                    type_ = format!("Collection({type_})");
+                }
                 Ok(CsdlAnnotationExpression::Cast {
                     type_,
                     expr: Box::new(json_to_expr(v)?),
                 })
             }
             "$IsOf" => {
-                let type_ = take_string(&mut map, "$Type").unwrap_or_default();
+                let mut type_ =
+                    take_string(&mut map, "$Type").unwrap_or_else(|| "Edm.String".into());
+                if take_bool(&mut map, "$Collection")?.unwrap_or(false) {
+                    type_ = format!("Collection({type_})");
+                }
                 Ok(CsdlAnnotationExpression::IsOf {
                     type_,
                     expr: Box::new(json_to_expr(v)?),
                 })
             }
             "$LabeledElement" => {
-                let label = take_string(&mut map, "$Name").unwrap_or_default();
+                let label = take_string(&mut map, "$Name")
+                    .filter(|s| !s.is_empty())
+                    .ok_or_else(|| csdl_err("$LabeledElement requires $Name"))?;
                 Ok(CsdlAnnotationExpression::LabeledElement {
                     name: label,
                     expr: Box::new(json_to_expr(v)?),
@@ -1191,17 +1292,17 @@ fn object_to_expr(mut map: Map<String, Value>) -> Result<CsdlAnnotationExpressio
             }
             "$UrlRef" => Ok(CsdlAnnotationExpression::UrlRef(Box::new(json_to_expr(v)?))),
             "$Binary" => Ok(CsdlAnnotationExpression::Binary(
-                string_or_default(v).into_bytes(),
+                string_or_default(v)?.into_bytes(),
             )),
-            "$Date" => Ok(CsdlAnnotationExpression::Date(string_or_default(v))),
+            "$Date" => Ok(CsdlAnnotationExpression::Date(string_or_default(v)?)),
             "$DateTimeOffset" => Ok(CsdlAnnotationExpression::DateTimeOffset(string_or_default(
                 v,
-            ))),
-            "$Decimal" => Ok(CsdlAnnotationExpression::Decimal(string_or_default(v))),
-            "$Duration" => Ok(CsdlAnnotationExpression::Duration(string_or_default(v))),
-            "$EnumMember" => Ok(CsdlAnnotationExpression::EnumMember(string_or_default(v))),
-            "$Guid" => Ok(CsdlAnnotationExpression::Guid(string_or_default(v))),
-            "$TimeOfDay" => Ok(CsdlAnnotationExpression::TimeOfDay(string_or_default(v))),
+            )?)),
+            "$Decimal" => Ok(CsdlAnnotationExpression::Decimal(string_or_default(v)?)),
+            "$Duration" => Ok(CsdlAnnotationExpression::Duration(string_or_default(v)?)),
+            "$EnumMember" => Ok(CsdlAnnotationExpression::EnumMember(string_or_default(v)?)),
+            "$Guid" => Ok(CsdlAnnotationExpression::Guid(string_or_default(v)?)),
+            "$TimeOfDay" => Ok(CsdlAnnotationExpression::TimeOfDay(string_or_default(v)?)),
             other => Err(csdl_err(format!(
                 "unknown JSON annotation-expression discriminator {other}"
             ))),
@@ -1224,22 +1325,19 @@ fn object_to_expr(mut map: Map<String, Value>) -> Result<CsdlAnnotationExpressio
     let type_ = take_string(&mut map, "$Type");
     let mut properties: Vec<PropertyValue> = Vec::new();
     let mut record_annotations: Vec<Annotation> = Vec::new();
-    let mut pv_annotations: Vec<(String, Annotation)> = Vec::new();
     for (k, v) in map {
         if k.starts_with('$') {
             continue;
         }
         if let Some((maybe_pv, term, qualifier)) = parse_annotation_key(&k) {
             let ann = Annotation {
+                annotations: Vec::new(),
                 term,
                 qualifier,
-                target: None,
+                target: maybe_pv,
                 expression: Some(json_to_expr(v)?),
             };
-            match maybe_pv {
-                Some(pv_name) => pv_annotations.push((pv_name, ann)),
-                None => record_annotations.push(ann),
-            }
+            record_annotations.push(ann);
             continue;
         }
         properties.push(PropertyValue {
@@ -1248,18 +1346,19 @@ fn object_to_expr(mut map: Map<String, Value>) -> Result<CsdlAnnotationExpressio
             annotations: Vec::new(),
         });
     }
-    for (pv_name, ann) in pv_annotations {
-        if let Some(pv) = properties.iter_mut().find(|p| p.property == pv_name) {
-            pv.annotations.push(ann);
+    crate::csdl::nest_annotations(&mut record_annotations);
+    record_annotations.retain_mut(|ann| {
+        if let Some(pv) = properties
+            .iter_mut()
+            .find(|p| Some(&p.property) == ann.target.as_ref())
+        {
+            ann.target = None;
+            pv.annotations.push(ann.clone());
+            false
         } else {
-            // No matching PropertyValue — keep as record-level annotation
-            // with target set so the source intent is preserved.
-            record_annotations.push(Annotation {
-                target: Some(pv_name),
-                ..ann
-            });
+            true
         }
-    }
+    });
     Ok(CsdlAnnotationExpression::Record {
         type_,
         properties,
@@ -1328,12 +1427,10 @@ fn take_bool(map: &mut Map<String, Value>, key: &str) -> Result<Option<bool>> {
         Some(_) => Err(Error::Csdl(format!("{key} must be boolean"))),
     }
 }
-fn string_or_default(v: Value) -> String {
+fn string_or_default(v: Value) -> Result<String> {
     match v {
-        Value::String(s) => s,
-        Value::Number(n) => n.to_string(),
-        Value::Bool(b) => b.to_string(),
-        _ => String::new(),
+        Value::String(s) => Ok(s),
+        _ => Err(csdl_err("Expression requires a string")),
     }
 }
 

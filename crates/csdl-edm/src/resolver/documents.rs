@@ -199,17 +199,36 @@ impl Resolver {
             }
         }
         let local: BTreeSet<_> = root.schemas.iter().map(|s| s.namespace.clone()).collect();
-        let schema_scopes = selected.iter().map(|(ns, (uri, _))| {
-            let mut names = scopes[uri].namespaces.keys().cloned().collect::<BTreeSet<_>>();
-            for reference in &docs[uri].references {
-                names.extend(reference.include_annotations.iter().map(|a| a.term_namespace.clone()));
-            }
-            (ns.clone(), names)
-        }).collect::<BTreeMap<_,_>>();
-        let aliases = selected.iter().map(|(ns, (uri, _))| {
-            let alias = docs[uri].schemas.iter().find(|s| &s.namespace == ns).and_then(|s| s.alias.clone());
-            (ns.clone(), alias)
-        }).collect::<BTreeMap<_,_>>();
+        let schema_scopes = selected
+            .iter()
+            .map(|(ns, (uri, _))| {
+                let mut names = scopes[uri]
+                    .namespaces
+                    .keys()
+                    .cloned()
+                    .collect::<BTreeSet<_>>();
+                for reference in &docs[uri].references {
+                    names.extend(
+                        reference
+                            .include_annotations
+                            .iter()
+                            .map(|a| a.term_namespace.clone()),
+                    );
+                }
+                (ns.clone(), names)
+            })
+            .collect::<BTreeMap<_, _>>();
+        let aliases = selected
+            .iter()
+            .map(|(ns, (uri, _))| {
+                let alias = docs[uri]
+                    .schemas
+                    .iter()
+                    .find(|s| &s.namespace == ns)
+                    .and_then(|s| s.alias.clone());
+                (ns.clone(), alias)
+            })
+            .collect::<BTreeMap<_, _>>();
         let mut schemas = selected
             .into_values()
             .map(|(uri, mut s)| {
@@ -220,18 +239,26 @@ impl Resolver {
             })
             .collect::<Vec<_>>();
         if !external.is_empty() {
-            let index = schemas.iter().position(|s| local.contains(&s.namespace)).unwrap_or(0);
-            let host = schemas.get_mut(index).ok_or(ResolveError::NoSchemaInDocument)?;
+            let index = schemas
+                .iter()
+                .position(|s| local.contains(&s.namespace))
+                .unwrap_or(0);
+            let host = schemas
+                .get_mut(index)
+                .ok_or(ResolveError::NoSchemaInDocument)?;
             host.external_annotations.extend(external);
         }
         let original_references = root.references.clone();
-        let mut result = Self::resolve_document_scoped(Edmx {
-            base_uri: None,
-            entity_container: root.entity_container,
-            version: root.version,
-            references: vec![],
-            schemas,
-        }, Some(&schema_scopes))?;
+        let mut result = Self::resolve_document_scoped(
+            Edmx {
+                base_uri: None,
+                entity_container: root.entity_container,
+                version: root.version,
+                references: vec![],
+                schemas,
+            },
+            Some(&schema_scopes),
+        )?;
         for schema in &mut result.schemas {
             if let Some(model) = std::sync::Arc::get_mut(schema) {
                 model.alias = aliases[&model.namespace].clone();
@@ -241,7 +268,11 @@ impl Resolver {
             .schemas
             .into_iter()
             .partition(|s| local.contains(&s.namespace));
-        local_schemas.sort_by_key(|s| root.schemas.iter().position(|original| original.namespace == s.namespace));
+        local_schemas.sort_by_key(|s| {
+            root.schemas
+                .iter()
+                .position(|original| original.namespace == s.namespace)
+        });
         result.schemas = local_schemas;
         result.referenced_schemas = imported;
         result.references = original_references
@@ -487,6 +518,7 @@ impl Scope {
         Ok(())
     }
     fn annotation(&self, a: &mut Annotation) {
+        self.annotations(&mut a.annotations);
         a.term = self.path(&a.term);
         if let Some(target) = &mut a.target {
             *target = self.path(target);
@@ -502,6 +534,15 @@ impl Scope {
     }
     fn expr(&self, e: &mut E) {
         match e {
+            E::Annotated {
+                expression,
+                annotations,
+            } => {
+                self.expr(expression);
+                self.annotations(annotations);
+            }
+            E::Faceted { expression, .. } | E::Neg(expression) => self.expr(expression),
+            E::ModelElementPath(s) => *s = self.path(s),
             E::Path(s)
             | E::PropertyPath(s)
             | E::NavigationPropertyPath(s)

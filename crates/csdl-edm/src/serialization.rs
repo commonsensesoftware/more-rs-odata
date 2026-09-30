@@ -7,7 +7,7 @@ use quick_xml::events::{BytesDecl, BytesEnd, BytesStart, BytesText, Event};
 use serde_json::{Map, Number, Value};
 
 use crate::csdl::*;
-use crate::expr::{BinaryOperator, CsdlAnnotationExpression, PropertyValue};
+use crate::expr::{CsdlAnnotationExpression, PropertyValue};
 mod defaults;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,7 +71,9 @@ fn write_xml_document<W: io::Write>(writer: &mut W, doc: &CsdlDocument) -> io::R
             if let Some(v) = &edmx.version {
                 edmx_attrs.push(("Version".to_string(), v.clone()));
             }
-            if let Some(base) = &edmx.base_uri { edmx_attrs.push(("xml:base".into(), base.clone())); }
+            if let Some(base) = &edmx.base_uri {
+                edmx_attrs.push(("xml:base".into(), base.clone()));
+            }
             write_start(&mut xml, "edmx:Edmx", &edmx_attrs)?;
 
             for reference in &edmx.references {
@@ -109,7 +111,9 @@ fn write_reference<W: io::Write>(
     reference: &Reference,
 ) -> io::Result<()> {
     let mut attrs = Vec::new();
-    if let Some(base) = &reference.base_uri { attrs.push(("xml:base".into(), base.clone())); }
+    if let Some(base) = &reference.base_uri {
+        attrs.push(("xml:base".into(), base.clone()));
+    }
     if !reference.uri.is_empty() {
         attrs.push(("Uri".to_string(), reference.uri.clone()));
     }
@@ -847,26 +851,30 @@ fn write_annotation<W: io::Write>(
     xml: &mut quick_xml::Writer<W>,
     annotation: &Annotation,
 ) -> io::Result<()> {
-    let mut attrs = vec![("Term".to_string(), annotation.term.clone())];
-    if let Some(qualifier) = &annotation.qualifier {
-        attrs.push(("Qualifier".to_string(), qualifier.clone()));
+    let mut attrs = vec![("Term".into(), annotation.term.clone())];
+    if let Some(q) = &annotation.qualifier {
+        attrs.push(("Qualifier".into(), q.clone()));
     }
-    if let Some(target) = &annotation.target {
-        attrs.push(("Target".to_string(), target.clone()));
+    if let Some(t) = &annotation.target {
+        attrs.push(("Target".into(), t.clone()));
     }
-
-    if let Some(expr) = &annotation.expression {
-        if let Some((key, value)) = inline_attr_expr(expr) {
-            attrs.push((key.to_string(), value));
-            return write_empty(xml, "Annotation", &attrs);
+    let inline = annotation.expression.as_ref().and_then(inline_attr_expr);
+    if let Some((key, value)) = &inline {
+        attrs.push(((*key).into(), value.clone()));
+    }
+    if annotation.annotations.is_empty() && (inline.is_some() || annotation.expression.is_none()) {
+        return write_empty(xml, "Annotation", &attrs);
+    }
+    write_start(xml, "Annotation", &attrs)?;
+    if inline.is_none() {
+        if let Some(e) = &annotation.expression {
+            write_expr(xml, e)?;
         }
-
-        write_start(xml, "Annotation", &attrs)?;
-        write_expr(xml, expr)?;
-        return write_end(xml, "Annotation");
     }
-
-    write_empty(xml, "Annotation", &attrs)
+    for child in &annotation.annotations {
+        write_annotation(xml, child)?;
+    }
+    write_end(xml, "Annotation")
 }
 
 fn inline_attr_expr(expr: &CsdlAnnotationExpression) -> Option<(&'static str, String)> {
@@ -893,6 +901,7 @@ fn inline_attr_expr(expr: &CsdlAnnotationExpression) -> Option<(&'static str, St
             Some(("NavigationPropertyPath", v.clone()))
         }
         CsdlAnnotationExpression::AnnotationPath(v) => Some(("AnnotationPath", v.clone())),
+        CsdlAnnotationExpression::ModelElementPath(v) => Some(("ModelElementPath", v.clone())),
         _ => None,
     }
 }
@@ -925,22 +934,26 @@ fn write_expr<W: io::Write>(
             write_text(xml, "NavigationPropertyPath", v)
         }
         CsdlAnnotationExpression::AnnotationPath(v) => write_text(xml, "AnnotationPath", v),
+        CsdlAnnotationExpression::ModelElementPath(v) => write_text(xml, "ModelElementPath", v),
+        CsdlAnnotationExpression::Annotated {
+            expression,
+            annotations,
+        } => write_decorated_expr(xml, expression, &[], annotations),
+        CsdlAnnotationExpression::Faceted { expression, facets } => {
+            write_decorated_expr(xml, expression, &facets.attributes(), &[])
+        }
+        CsdlAnnotationExpression::Neg(inner) => {
+            write_start(xml, "Neg", &[])?;
+            write_expr(xml, inner)?;
+            write_end(xml, "Neg")
+        }
         CsdlAnnotationExpression::Not(inner) => {
             write_start(xml, "Not", &[])?;
             write_expr(xml, inner)?;
             write_end(xml, "Not")
         }
         CsdlAnnotationExpression::BinaryExpression { op, lhs, rhs } => {
-            let op_name = match op {
-                BinaryOperator::And => "And",
-                BinaryOperator::Or => "Or",
-                BinaryOperator::Eq => "Eq",
-                BinaryOperator::Ne => "Ne",
-                BinaryOperator::Gt => "Gt",
-                BinaryOperator::Ge => "Ge",
-                BinaryOperator::Lt => "Lt",
-                BinaryOperator::Le => "Le",
-            };
+            let op_name = op.name();
             write_start(xml, op_name, &[])?;
             write_expr(xml, lhs)?;
             write_expr(xml, rhs)?;
@@ -1063,6 +1076,60 @@ fn write_property_value<W: io::Write>(
     write_end(xml, "PropertyValue")
 }
 
+fn write_decorated_expr<W: io::Write>(
+    xml: &mut quick_xml::Writer<W>,
+    expression: &CsdlAnnotationExpression,
+    facets: &[(String, String)],
+    annotations: &[Annotation],
+) -> io::Result<()> {
+    let mut temporary = quick_xml::Writer::new(Vec::new());
+    write_expr(&mut temporary, expression)?;
+    let bytes = temporary.into_inner();
+    let mut reader = quick_xml::Reader::from_reader(bytes.as_slice());
+    let mut depth = 0;
+    loop {
+        match reader.read_event().map_err(io::Error::other)? {
+            Event::Start(e) => {
+                let mut e = e.into_owned();
+                if depth == 0 {
+                    for (k, v) in facets {
+                        e.push_attribute((k.as_str(), v.as_str()));
+                    }
+                }
+                depth += 1;
+                xml.write_event(Event::Start(e))?;
+            }
+            Event::Empty(e) if depth == 0 => {
+                let mut e = e.into_owned();
+                for (k, v) in facets {
+                    e.push_attribute((k.as_str(), v.as_str()));
+                }
+                let name =
+                    String::from_utf8(e.name().as_ref().to_vec()).map_err(io::Error::other)?;
+                xml.write_event(Event::Start(e))?;
+                for annotation in annotations {
+                    write_annotation(xml, annotation)?;
+                }
+                write_end(xml, &name)?;
+            }
+            Event::End(e) => {
+                depth -= 1;
+                if depth == 0 {
+                    for annotation in annotations {
+                        write_annotation(xml, annotation)?;
+                    }
+                }
+                xml.write_event(Event::End(e))?;
+            }
+            Event::Eof => break,
+            event => {
+                xml.write_event(event)?;
+            }
+        }
+    }
+    Ok(())
+}
+
 fn write_start<W: io::Write>(
     xml: &mut quick_xml::Writer<W>,
     name: &str,
@@ -1169,7 +1236,7 @@ fn include_to_json(include: &Include) -> Value {
     }
 
     for ann in &include.annotations {
-        if let Some((k, v)) = annotation_member(ann) {
+        for (k, v) in annotation_members(ann) {
             obj.insert(k, v);
         }
     }
@@ -1186,7 +1253,7 @@ fn schema_to_json(schema: &Schema) -> Value {
             .or_insert_with(|| Value::Object(Map::new()));
         let target = target.as_object_mut().expect("annotation target object");
         for annotation in &group.annotations {
-            if let Some((key, value)) = annotation_member(annotation) {
+            for (key, value) in annotation_members(annotation) {
                 target.insert(key, value);
             }
         }
@@ -1261,7 +1328,7 @@ fn schema_to_json(schema: &Schema) -> Value {
     }
 
     for ann in &schema.annotations {
-        if let Some((k, v)) = annotation_member(ann) {
+        for (k, v) in annotation_members(ann) {
             obj.insert(k, v);
         }
     }
@@ -1309,7 +1376,7 @@ fn entity_type_to_json(entity: &EntityType, namespace: &str) -> Value {
     }
 
     for ann in &entity.annotations {
-        if let Some((k, v)) = annotation_member(ann) {
+        for (k, v) in annotation_members(ann) {
             obj.insert(k, v);
         }
     }
@@ -1339,7 +1406,7 @@ fn enum_type_to_json(enum_: &EnumType) -> Value {
         // keys so they round-trip with `EnumType.annotations[target=Some(...)]`
         // on the JSON read path.
         for ann in &member.annotations {
-            if let Some((k, v)) = annotation_member(ann) {
+            for (k, v) in annotation_members(ann) {
                 let ann_key = format!("{}{k}", member.name);
                 if !obj.contains_key(&ann_key) {
                     obj.insert(ann_key, v);
@@ -1349,7 +1416,7 @@ fn enum_type_to_json(enum_: &EnumType) -> Value {
     }
     // Type-level own- and sibling-target annotations land as top-level keys.
     for ann in &enum_.annotations {
-        if let Some((k, v)) = annotation_member(ann) {
+        for (k, v) in annotation_members(ann) {
             obj.insert(k, v);
         }
     }
@@ -1382,7 +1449,7 @@ fn complex_type_to_json(complex: &ComplexType, namespace: &str) -> Value {
         );
     }
     for ann in &complex.annotations {
-        if let Some((k, v)) = annotation_member(ann) {
+        for (k, v) in annotation_members(ann) {
             obj.insert(k, v);
         }
     }
@@ -1421,7 +1488,7 @@ fn property_to_json(property: &Property, namespace: &str) -> Value {
     }
 
     for ann in &property.annotations {
-        if let Some((k, v)) = annotation_member(ann) {
+        for (k, v) in annotation_members(ann) {
             obj.insert(k, v);
         }
     }
@@ -1491,7 +1558,7 @@ fn navigation_property_to_json(nav: &NavigationProperty, namespace: &str) -> Val
                 Value::String(c.referenced_property.clone()),
             );
             for ann in &c.annotations {
-                if let Some((k, v)) = annotation_member(ann) {
+                for (k, v) in annotation_members(ann) {
                     // annotation_member returns the own-annotation form
                     // (`@Term` / `@Term#Q`); splice the property name to make
                     // it sibling-target relative to this constraint entry.
@@ -1501,7 +1568,7 @@ fn navigation_property_to_json(nav: &NavigationProperty, namespace: &str) -> Val
             }
         }
         for ann in rc_targeted {
-            if let Some((k, v)) = annotation_member(ann) {
+            for (k, v) in annotation_members(ann) {
                 constraints.insert(k, v);
             }
         }
@@ -1512,7 +1579,7 @@ fn navigation_property_to_json(nav: &NavigationProperty, namespace: &str) -> Val
     }
 
     for ann in top_level {
-        if let Some((k, v)) = annotation_member(ann) {
+        for (k, v) in annotation_members(ann) {
             obj.insert(k, v);
         }
     }
@@ -1575,7 +1642,7 @@ fn callable_to_json(
             rt_obj.insert("$Unicode".to_string(), Value::Bool(b));
         }
         for ann in &rt.annotations {
-            if let Some((k, v)) = annotation_member(ann) {
+            for (k, v) in annotation_members(ann) {
                 rt_obj.insert(k, v);
             }
         }
@@ -1583,7 +1650,7 @@ fn callable_to_json(
     }
 
     for ann in annotations {
-        if let Some((k, v)) = annotation_member(ann) {
+        for (k, v) in annotation_members(ann) {
             obj.insert(k, v);
         }
     }
@@ -1617,7 +1684,7 @@ fn type_definition_to_json(td: &TypeDefinition) -> Value {
         obj.insert("$Unicode".to_string(), Value::Bool(b));
     }
     for ann in &td.annotations {
-        if let Some((k, v)) = annotation_member(ann) {
+        for (k, v) in annotation_members(ann) {
             obj.insert(k, v);
         }
     }
@@ -1668,7 +1735,7 @@ fn term_to_json(term: &Term, namespace: &str) -> Value {
         );
     }
     for ann in &term.annotations {
-        if let Some((k, v)) = annotation_member(ann) {
+        for (k, v) in annotation_members(ann) {
             obj.insert(k, v);
         }
     }
@@ -1732,7 +1799,7 @@ fn parameter_to_json(parameter: &Parameter, namespace: &str) -> Value {
         obj.insert("$DefaultValue".to_string(), Value::String(dv.clone()));
     }
     for ann in &parameter.annotations {
-        if let Some((k, v)) = annotation_member(ann) {
+        for (k, v) in annotation_members(ann) {
             obj.insert(k, v);
         }
     }
@@ -1775,7 +1842,7 @@ fn entity_container_to_json(container: &EntityContainer, namespace: &str) -> Val
     }
 
     for ann in &container.annotations {
-        if let Some((k, v)) = annotation_member(ann) {
+        for (k, v) in annotation_members(ann) {
             obj.insert(k, v);
         }
     }
@@ -1798,7 +1865,7 @@ fn action_import_to_json(import: &ActionImport, namespace: &str) -> Value {
         obj.insert("$IncludeInServiceDocument".to_string(), Value::Bool(b));
     }
     for ann in &import.annotations {
-        if let Some((k, v)) = annotation_member(ann) {
+        for (k, v) in annotation_members(ann) {
             obj.insert(k, v);
         }
     }
@@ -1819,7 +1886,7 @@ fn entity_set_to_json(set: &EntitySet, namespace: &str) -> Value {
     }
     write_nav_bindings(&mut obj, &set.navigation_property_bindings);
     for ann in &set.annotations {
-        if let Some((k, v)) = annotation_member(ann) {
+        for (k, v) in annotation_members(ann) {
             obj.insert(k, v);
         }
     }
@@ -1840,7 +1907,7 @@ fn singleton_to_json(singleton: &Singleton, namespace: &str) -> Value {
     }
     write_nav_bindings(&mut obj, &singleton.navigation_property_bindings);
     for ann in &singleton.annotations {
-        if let Some((k, v)) = annotation_member(ann) {
+        for (k, v) in annotation_members(ann) {
             obj.insert(k, v);
         }
     }
@@ -1862,7 +1929,7 @@ fn function_import_to_json(import: &FunctionImport, namespace: &str) -> Value {
         obj.insert("$IncludeInServiceDocument".to_string(), Value::Bool(b));
     }
     for ann in &import.annotations {
-        if let Some((k, v)) = annotation_member(ann) {
+        for (k, v) in annotation_members(ann) {
             obj.insert(k, v);
         }
     }
@@ -1915,6 +1982,19 @@ fn write_type_facets(
     }
 }
 
+fn annotation_members(annotation: &Annotation) -> Vec<(String, Value)> {
+    let Some((key, value)) = annotation_member(annotation) else {
+        return vec![];
+    };
+    let mut pairs = vec![(key.clone(), value)];
+    for child in &annotation.annotations {
+        for (nested, value) in annotation_members(child) {
+            pairs.push((format!("{key}{nested}"), value));
+        }
+    }
+    pairs
+}
+
 fn annotation_member(annotation: &Annotation) -> Option<(String, Value)> {
     if annotation.term.is_empty() {
         return None;
@@ -1946,6 +2026,43 @@ fn rewrite_type(value: &str, namespace: &str) -> String {
 
 fn expr_to_json(expr: &CsdlAnnotationExpression) -> Value {
     match expr {
+        CsdlAnnotationExpression::ModelElementPath(v) => {
+            serde_json::json!({"$ModelElementPath": v})
+        }
+        CsdlAnnotationExpression::Neg(v) => serde_json::json!({"$Neg": expr_to_json(v)}),
+        CsdlAnnotationExpression::Annotated {
+            expression,
+            annotations,
+        } => {
+            let mut value = expr_to_json(expression);
+            if value.is_null() {
+                value = serde_json::json!({"$Null": null});
+            }
+            if let Some(map) = value.as_object_mut() {
+                for annotation in annotations {
+                    for (key, value) in annotation_members(annotation) {
+                        map.insert(key, value);
+                    }
+                }
+            }
+            value
+        }
+        CsdlAnnotationExpression::Faceted { expression, facets } => {
+            let mut value = expr_to_json(expression);
+            if let Some(map) = value.as_object_mut() {
+                for (key, value) in facets.attributes() {
+                    let value = match key.as_str() {
+                        "Nullable" | "Unicode" => Value::Bool(value == "true"),
+                        _ => value
+                            .parse::<u64>()
+                            .map(|n| Value::Number(n.into()))
+                            .unwrap_or(Value::String(value)),
+                    };
+                    map.insert(format!("${key}"), value);
+                }
+            }
+            value
+        }
         CsdlAnnotationExpression::Bool(v) => Value::Bool(*v),
         CsdlAnnotationExpression::Int(v) => Value::Number(Number::from(*v)),
         CsdlAnnotationExpression::Float(v) => Number::from_f64(*v)
@@ -1997,14 +2114,14 @@ fn expr_to_json(expr: &CsdlAnnotationExpression) -> Value {
                 // `@Term[#Q]` form; splice the property name to make it a
                 // sibling-target on `pv.property`.
                 for ann in &pv.annotations {
-                    if let Some((k, v)) = annotation_member(ann) {
+                    for (k, v) in annotation_members(ann) {
                         m.insert(format!("{}{k}", pv.property), v);
                     }
                 }
             }
             // Record-level annotations land at top level of the Record object.
             for ann in annotations {
-                if let Some((k, v)) = annotation_member(ann) {
+                for (k, v) in annotation_members(ann) {
                     m.insert(k, v);
                 }
             }
@@ -2019,24 +2136,17 @@ fn expr_to_json(expr: &CsdlAnnotationExpression) -> Value {
         | CsdlAnnotationExpression::Duration(v)
         | CsdlAnnotationExpression::EnumMember(v)
         | CsdlAnnotationExpression::Guid(v)
-        | CsdlAnnotationExpression::TimeOfDay(v)
-        | CsdlAnnotationExpression::LabeledElementReference(v) => Value::String(v.clone()),
+        | CsdlAnnotationExpression::TimeOfDay(v) => Value::String(v.clone()),
+        CsdlAnnotationExpression::LabeledElementReference(v) => {
+            serde_json::json!({"$LabeledElementReference": v})
+        }
         CsdlAnnotationExpression::Not(inner) => {
             let mut m = Map::new();
             m.insert("$Not".to_string(), expr_to_json(inner));
             Value::Object(m)
         }
         CsdlAnnotationExpression::BinaryExpression { op, lhs, rhs } => {
-            let key = match op {
-                BinaryOperator::And => "$And",
-                BinaryOperator::Or => "$Or",
-                BinaryOperator::Eq => "$Eq",
-                BinaryOperator::Ne => "$Ne",
-                BinaryOperator::Gt => "$Gt",
-                BinaryOperator::Ge => "$Ge",
-                BinaryOperator::Lt => "$Lt",
-                BinaryOperator::Le => "$Le",
-            };
+            let key = format!("${}", op.name());
             let mut m = Map::new();
             m.insert(
                 key.to_string(),
@@ -2065,13 +2175,29 @@ fn expr_to_json(expr: &CsdlAnnotationExpression) -> Value {
         CsdlAnnotationExpression::Cast { type_, expr } => {
             let mut m = Map::new();
             m.insert("$Cast".to_string(), expr_to_json(expr));
-            m.insert("$Type".to_string(), Value::String(type_.clone()));
+            if let Some(inner) = type_
+                .strip_prefix("Collection(")
+                .and_then(|s| s.strip_suffix(')'))
+            {
+                m.insert("$Type".into(), Value::String(inner.into()));
+                m.insert("$Collection".into(), Value::Bool(true));
+            } else {
+                m.insert("$Type".to_string(), Value::String(type_.clone()));
+            }
             Value::Object(m)
         }
         CsdlAnnotationExpression::IsOf { type_, expr } => {
             let mut m = Map::new();
             m.insert("$IsOf".to_string(), expr_to_json(expr));
-            m.insert("$Type".to_string(), Value::String(type_.clone()));
+            if let Some(inner) = type_
+                .strip_prefix("Collection(")
+                .and_then(|s| s.strip_suffix(')'))
+            {
+                m.insert("$Type".into(), Value::String(inner.into()));
+                m.insert("$Collection".into(), Value::Bool(true));
+            } else {
+                m.insert("$Type".to_string(), Value::String(type_.clone()));
+            }
             Value::Object(m)
         }
         CsdlAnnotationExpression::LabeledElement { name, expr } => {

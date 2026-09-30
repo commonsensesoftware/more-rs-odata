@@ -391,6 +391,7 @@ pub struct NavigationPropertyBinding {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Annotation {
+    pub annotations: Vec<Annotation>,
     pub term: String,
     pub qualifier: Option<String>,
     pub target: Option<String>,
@@ -419,5 +420,49 @@ impl CsdlDocument {
                 format!("unsupported CSDL file extension for {}", path_ref.display()),
             )),
         }
+    }
+}
+
+/// Normalize JSON annotations-on-annotations into the same tree as XML.
+pub(crate) fn nest_annotations(values: &mut Vec<Annotation>) {
+    loop {
+        let pair = values
+            .iter()
+            .enumerate()
+            .filter_map(|(child, a)| {
+                let target = a.target.as_ref()?;
+                values.iter().enumerate().find_map(|(parent, p)| {
+                    if child == parent {
+                        return None;
+                    }
+                    let key = format!(
+                        "{}@{}{}",
+                        p.target.as_deref().unwrap_or(""),
+                        p.term,
+                        p.qualifier
+                            .as_ref()
+                            .map(|q| format!("#{q}"))
+                            .unwrap_or_default()
+                    );
+                    (key == *target).then_some((child, parent))
+                })
+            })
+            .max_by_key(|(child, _)| {
+                values[*child]
+                    .target
+                    .as_ref()
+                    .map_or(0, |s| s.matches('@').count())
+            });
+        let Some((child, parent)) = pair else {
+            break;
+        };
+        let mut annotation = values.remove(child);
+        annotation.target = None;
+        values[if parent > child { parent - 1 } else { parent }]
+            .annotations
+            .push(annotation);
+    }
+    for a in values {
+        nest_annotations(&mut a.annotations);
     }
 }
