@@ -10,6 +10,9 @@ pub struct CsdlDocument {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Edmx {
+    /// Namespace-qualified service container, explicit in JSON and inferred
+    /// only when XML declares exactly one container.
+    pub entity_container: Option<String>,
     pub version: Option<String>,
     pub references: Vec<Reference>,
     pub schemas: Vec<Schema>,

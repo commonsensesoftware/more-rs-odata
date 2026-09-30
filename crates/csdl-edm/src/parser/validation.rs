@@ -325,6 +325,7 @@ fn walk(node: &RawElement, parent: Option<&str>, json: bool) -> io::Result<()> {
             return Err(invalid(format!("{name} does not allow {key}")));
         }
         let valid = match key.as_str() {
+            "EntityContainer" => is_qualified_name(value),
             "Name" if name != "PropertyRef" => is_simple_identifier(value),
             "Alias" | "Qualifier" => is_simple_identifier(value),
             "Namespace" | "TermNamespace" | "TargetNamespace" => is_namespace(value),
@@ -442,6 +443,7 @@ fn walk(node: &RawElement, parent: Option<&str>, json: bool) -> io::Result<()> {
 
 fn attribute_allowed(name: &str, key: &str, json: bool) -> bool {
     match key {
+        "EntityContainer" => json && name == "Edmx",
         "Name" => matches!(
             name,
             "EntityType"

@@ -26,6 +26,7 @@ enum KeyPathClassification {
 
 #[derive(Debug, Clone)]
 pub enum ValidationError {
+    InvalidServiceDocument { reason: &'static str },
     InvalidDefaultValue {
         element: String,
         value: String,
@@ -164,6 +165,22 @@ pub fn validate_document_with_profile(
         annotations: validate_annotations(document),
         profile,
     }
+}
+
+/// Service metadata requires a declared service identity and exactly one
+/// locally declared container. Vocabulary/model documents have no such rule.
+pub fn validate_document_as(document: &DocumentModel, kind: crate::conformance::DocumentKind,
+    profile: crate::conformance::ValidationProfile) -> ValidationReport {
+    let mut report = validate_document_with_profile(document, profile);
+    if kind == crate::conformance::DocumentKind::ServiceMetadata {
+        if document.service_container.is_none() {
+            report.errors.push(ValidationError::InvalidServiceDocument { reason: "Service metadata requires a service container" });
+        }
+        if document.schemas.iter().map(|s| s.containers().len()).sum::<usize>() != 1 {
+            report.errors.push(ValidationError::InvalidServiceDocument { reason: "Service metadata must declare exactly one entity container" });
+        }
+    }
+    report
 }
 
 pub fn validate_document(document: &DocumentModel) -> Result<(), Vec<ValidationError>> {

@@ -8,6 +8,14 @@ pub enum ValidationProfile {
     Strict,
 }
 
+/// The document's intended use, independent of strictness.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum DocumentKind {
+    #[default]
+    Model,
+    ServiceMetadata,
+}
+
 /// CSDL 4.01 section 15.2, measured in Unicode code points.
 pub fn is_simple_identifier(value: &str) -> bool {
     fn first(c: char) -> bool {

@@ -178,7 +178,7 @@ required. Commit each completed task separately, including its tests and status.
       Implemented additive profile-aware parsers and semantic reports; see
       [conformance profiles](../docs/conformance.md). Legacy entrypoints remain
       compatible. Strict checks happen before normalization loses source details.
-- [ ] **2. Service-document identity.** Preserve, resolve, validate, and serialize
+- [x] **2. Service-document identity.** Preserve, resolve, validate, and serialize
       JSON `$EntityContainer`. Distinguish service metadata from vocabulary/model
       documents, applying service-specific container requirements only where
       appropriate. Do not choose a service container merely by declaration order.

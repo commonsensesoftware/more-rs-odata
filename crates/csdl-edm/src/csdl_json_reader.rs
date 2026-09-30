@@ -55,13 +55,15 @@ fn emit_edmx(out: &mut Vec<SyntaxUnit>, mut root: Map<String, Value>) -> Result<
         })
         .unwrap_or_else(|| "4.01".to_string());
 
-    // $EntityContainer at the top is just a back-pointer; the container itself
-    // lives inside the schema and we'll find it there.
-    root.shift_remove("$EntityContainer");
+    let entity_container = root.shift_remove("$EntityContainer")
+        .map(|v| v.as_str().map(str::to_owned).ok_or_else(|| csdl_err("$EntityContainer must be a string")))
+        .transpose()?;
 
     let references = root.shift_remove("$Reference");
 
-    start(out, "Edmx", vec![("Version".into(), version)]);
+    let mut attrs = vec![("Version".into(), version)];
+    if let Some(container) = entity_container { attrs.push(("EntityContainer".into(), container)); }
+    start(out, "Edmx", attrs);
 
     if let Some(refs) = references {
         emit_references(out, refs)?;

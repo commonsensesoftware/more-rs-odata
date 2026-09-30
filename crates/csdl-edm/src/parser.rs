@@ -57,7 +57,7 @@ pub fn from_json_reader<R: io::Read>(mut reader: R) -> io::Result<CsdlDocument> 
         .into_units()
         .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err.to_string()))?
         .into_iter();
-    from_units(|| Ok(units.next()))
+    from_units_profile(|| Ok(units.next()), ValidationProfile::Tolerant, true)
 }
 
 /// Drives the shared SyntaxUnit→RawElement→CsdlDocument loop. `next_unit`
@@ -143,13 +143,13 @@ where
     let edmx = roots
         .iter()
         .find(|n| n.name == "Edmx")
-        .map(parse_edmx)
+        .map(|root| parse_edmx(root, json))
         .transpose()?;
 
     Ok(CsdlDocument { edmx })
 }
 
-fn parse_edmx(raw: &RawElement) -> io::Result<Edmx> {
+fn parse_edmx(raw: &RawElement, json: bool) -> io::Result<Edmx> {
     let version = raw_attr(raw, "Version").map(str::to_string);
     let mut references = Vec::new();
     let mut schemas = Vec::new();
@@ -167,7 +167,17 @@ fn parse_edmx(raw: &RawElement) -> io::Result<Edmx> {
         }
     }
 
+    let entity_container = if json {
+        raw_attr(raw, "EntityContainer").map(str::to_owned)
+    } else {
+        let containers = schemas.iter().flat_map(|schema| schema.elements.iter().filter_map(|e| {
+            if let SchemaElement::EntityContainer(c) = e { Some(format!("{}.{}", schema.namespace, c.name)) }
+            else { None }
+        })).collect::<Vec<_>>();
+        (containers.len() == 1).then(|| containers[0].clone())
+    };
     Ok(Edmx {
+        entity_container,
         version,
         references,
         schemas,

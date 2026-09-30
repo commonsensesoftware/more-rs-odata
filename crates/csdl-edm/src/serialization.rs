@@ -1147,16 +1147,9 @@ fn edmx_to_json(edmx: &Edmx) -> Value {
 
     for schema in &edmx.schemas {
         out.insert(schema.namespace.clone(), schema_to_json(schema));
-
-        if let Some(container) = schema.elements.iter().find_map(|e| match e {
-            SchemaElement::EntityContainer(c) => Some(c),
-            _ => None,
-        }) {
-            out.insert(
-                "$EntityContainer".to_string(),
-                Value::String(format!("{}.{}", schema.namespace, container.name)),
-            );
-        }
+    }
+    if let Some(container) = &edmx.entity_container {
+        out.insert("$EntityContainer".into(), Value::String(container.clone()));
     }
 
     defaults::normalize(&mut out, edmx);

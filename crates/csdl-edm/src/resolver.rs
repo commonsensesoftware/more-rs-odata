@@ -17,6 +17,7 @@ pub enum ResolveError {
     UnknownEntity(String),
     DuplicateName(String),
     NoSchemaInDocument,
+    InvalidEntityContainer(String),
     MissingTypeName {
         element_kind: &'static str,
         element_name: String,
@@ -91,7 +92,16 @@ impl Resolver {
             }
         }
 
+        let service_container = document.entity_container.as_ref().map(|name| {
+            if !crate::conformance::is_qualified_name(name) {
+                return Err(ResolveError::InvalidEntityContainer(name.clone()));
+            }
+            schemas.iter().find_map(|schema| {
+                schema.containers().iter().find(|c| format!("{}.{}", schema.namespace, c.name) == *name).cloned()
+            }).ok_or_else(|| ResolveError::InvalidEntityContainer(name.clone()))
+        }).transpose()?;
         Ok(DocumentModel {
+            service_container,
             version: document.version.unwrap_or_else(|| "4.01".to_owned()),
             references,
             schemas,

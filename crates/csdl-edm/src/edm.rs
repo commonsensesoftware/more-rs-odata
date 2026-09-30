@@ -212,6 +212,8 @@ pub fn abstract_complex_type() -> &'static Arc<ComplexType> {
 
 #[derive(Debug)]
 pub struct DocumentModel {
+    /// Explicit service identity; never selected by schema declaration order.
+    pub service_container: Option<Arc<EntityContainer>>,
     pub version: String,
     pub references: Vec<Reference>,
     pub schemas: Vec<Arc<Model>>,

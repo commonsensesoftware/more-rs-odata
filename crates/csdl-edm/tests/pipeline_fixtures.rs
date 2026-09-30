@@ -187,6 +187,7 @@ fn validates_navigation_property_binding_path_and_target_semantics() {
     };
 
     let edmx = csdl::Edmx {
+        entity_container: None,
         version: Some("4.01".to_owned()),
         references: Vec::new(),
         schemas: vec![schema],
@@ -400,6 +401,7 @@ fn resolves_entity_container_extends_and_inherits_elements() {
     };
 
     let edmx = csdl::Edmx {
+        entity_container: None,
         version: Some("4.01".to_owned()),
         references: Vec::new(),
         schemas: vec![schema],
@@ -538,6 +540,7 @@ fn resolves_container_imports_and_navigation_bindings() {
     };
 
     let edmx = csdl::Edmx {
+        entity_container: None,
         version: Some("4.01".to_owned()),
         references: Vec::new(),
         schemas: vec![schema],
@@ -669,6 +672,7 @@ fn resolves_navigation_semantics_fields() {
     };
 
     let edmx = csdl::Edmx {
+        entity_container: None,
         version: Some("4.01".to_owned()),
         references: Vec::new(),
         schemas: vec![schema],
@@ -783,6 +787,7 @@ fn validates_navigation_partner_existence() {
     };
 
     let edmx = csdl::Edmx {
+        entity_container: None,
         version: Some("4.01".to_owned()),
         references: Vec::new(),
         schemas: vec![schema],
@@ -889,6 +894,7 @@ fn validates_navigation_referential_constraints() {
     };
 
     let edmx = csdl::Edmx {
+        entity_container: None,
         version: Some("4.01".to_owned()),
         references: Vec::new(),
         schemas: vec![schema],
@@ -947,6 +953,7 @@ fn resolves_collection_valued_term() {
     };
 
     let edmx = csdl::Edmx {
+        entity_container: None,
         version: Some("4.01".to_owned()),
         references: Vec::new(),
         schemas: vec![schema],
@@ -1009,6 +1016,7 @@ fn validates_term_base_term_cycles() {
     };
 
     let edmx = csdl::Edmx {
+        entity_container: None,
         version: Some("4.01".to_owned()),
         references: Vec::new(),
         schemas: vec![schema],
@@ -1122,6 +1130,7 @@ fn validates_container_targets() {
     };
 
     let edmx = csdl::Edmx {
+        entity_container: None,
         version: Some("4.01".to_owned()),
         references: Vec::new(),
         schemas: vec![schema],
@@ -1232,6 +1241,7 @@ fn rejects_unresolved_function_and_action_import_targets() {
     };
 
     let edmx = csdl::Edmx {
+        entity_container: None,
         version: Some("4.01".to_owned()),
         references: Vec::new(),
         schemas: vec![schema],
@@ -1316,6 +1326,7 @@ fn rejects_unresolved_action_import_targets() {
     };
 
     let edmx = csdl::Edmx {
+        entity_container: None,
         version: Some("4.01".to_owned()),
         references: Vec::new(),
         schemas: vec![schema],
@@ -1430,6 +1441,7 @@ fn validates_operation_binding_semantics() {
     };
 
     let edmx = csdl::Edmx {
+        entity_container: None,
         version: Some("4.01".to_owned()),
         references: Vec::new(),
         schemas: vec![schema],
@@ -1519,6 +1531,7 @@ fn resolves_inherited_entity_keys() {
     };
 
     let edmx = csdl::Edmx {
+        entity_container: None,
         version: Some("4.01".to_owned()),
         references: Vec::new(),
         schemas: vec![schema],
@@ -1614,6 +1627,7 @@ fn rejects_derived_entity_redeclaring_base_keys() {
     };
 
     let edmx = csdl::Edmx {
+        entity_container: None,
         version: Some("4.01".to_owned()),
         references: Vec::new(),
         schemas: vec![schema],
@@ -1689,6 +1703,7 @@ fn rejects_derived_entity_member_redeclaration() {
     };
 
     let edmx = csdl::Edmx {
+        entity_container: None,
         version: Some("4.01".to_owned()),
         references: Vec::new(),
         schemas: vec![schema],
@@ -1760,6 +1775,7 @@ fn rejects_derived_complex_member_redeclaration() {
     };
 
     let edmx = csdl::Edmx {
+        entity_container: None,
         version: Some("4.01".to_owned()),
         references: Vec::new(),
         schemas: vec![schema],
@@ -1830,6 +1846,7 @@ fn resolves_collection_valued_structural_properties() {
     };
 
     let edmx = csdl::Edmx {
+        entity_container: None,
         version: Some("4.01".to_owned()),
         references: Vec::new(),
         schemas: vec![schema],
@@ -1876,6 +1893,7 @@ fn rejects_function_without_return_type() {
     };
 
     let edmx = csdl::Edmx {
+        entity_container: None,
         version: Some("4.01".to_owned()),
         references: Vec::new(),
         schemas: vec![schema],

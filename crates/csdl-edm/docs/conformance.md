@@ -26,7 +26,19 @@ validating only the normalized EDM cannot recover omitted or discarded source
 constructs. The profile APIs are additive, and parsing remains available without
 the optional resolver/validator features.
 
-These profiles do not yet constitute a full conformance claim. Service identity,
-external document resolution, complete expressions, recursive expression type
+Service identity is retained in `csdl::Edmx::entity_container` and resolves to
+`edm::DocumentModel::service_container`. JSON preserves an absent selector;
+XML infers identity only when exactly one container is declared. JSON selectors
+must use a namespace-qualified name, not an alias. Serialization does not choose
+a container based on declaration order.
+
+Use `validator::validate_document_as` with `DocumentKind::ServiceMetadata` to
+require service identity and exactly one declared container. `DocumentKind::Model`
+permits vocabulary and reusable model documents without a service container.
+XML has no explicit selector, so selecting among multiple containers cannot be
+represented as conforming XML service metadata.
+
+These profiles do not yet constitute a full conformance claim. External
+document resolution, complete expressions, recursive expression type
 checking, and versioned serialization are tracked in
 [the ordered conformance tasks](../TODO/csdl-coverage-gaps.md#7-full-conformance-follow-up--dependency-order).
