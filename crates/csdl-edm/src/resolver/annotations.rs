@@ -13,6 +13,7 @@ pub(super) fn resolve(
     schemas: &[csdl::Schema],
     models: &[Model],
     aliases: &HashMap<String, String>,
+    scopes: Option<&std::collections::BTreeMap<String, std::collections::BTreeSet<String>>>,
 ) {
     let mut scope = Scope {
         roots: HashMap::new(),
@@ -76,6 +77,15 @@ pub(super) fn resolve(
         }
     }
     for (schema, model) in schemas.iter().zip(models) {
+        let visible = |key: &str| scopes.and_then(|s| s.get(&schema.namespace)).is_none_or(|namespaces| {
+            let root = key.split('(').next().unwrap_or(key);
+            namespaces.contains(root) || root.rsplit_once('.').is_some_and(|(ns, _)| namespaces.contains(ns))
+        });
+        let scope = Scope {
+            roots: scope.roots.iter().filter(|(k, _)| visible(k)).map(|(k,v)| (k.clone(),v.clone())).collect(),
+            terms: scope.terms.iter().filter(|(k, _)| visible(k)).map(|(k,v)| (k.clone(),v.clone())).collect(),
+            aliases,
+        };
         let mut annotations = Vec::new();
         scope.attach(
             &schema.namespace,

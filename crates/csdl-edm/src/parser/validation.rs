@@ -165,6 +165,11 @@ pub(super) fn xml_source<R: io::BufRead>(
                 for attr in e.attributes() {
                     let attr = attr.map_err(io::Error::other)?;
                     let (ns, local) = reader.resolver().resolve_attribute(attr.key);
+                    if matches!(&ns, ResolveResult::Bound(n) if n.as_ref() == b"http://www.w3.org/XML/1998/namespace")
+                        && local.as_ref() == b"base" {
+                        let value = attr.decoded_and_normalized_value(quick_xml::XmlVersion::Implicit1_0, reader.decoder()).map_err(io::Error::other)?;
+                        start.push_attribute(("base", value.as_ref()));
+                    }
                     if matches!(ns, ResolveResult::Unbound)
                         && !attr.key.as_ref().starts_with(b"xmlns")
                     {

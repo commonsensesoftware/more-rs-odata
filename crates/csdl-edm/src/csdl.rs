@@ -10,6 +10,8 @@ pub struct CsdlDocument {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Edmx {
+    /// XML Base on the document wrapper.
+    pub base_uri: Option<String>,
     /// Namespace-qualified service container, explicit in JSON and inferred
     /// only when XML declares exactly one container.
     pub entity_container: Option<String>,
@@ -20,6 +22,8 @@ pub struct Edmx {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Reference {
+    /// XML Base on this reference, resolved after the document's base.
+    pub base_uri: Option<String>,
     pub uri: String,
     pub includes: Vec<Include>,
     pub include_annotations: Vec<IncludeAnnotations>,

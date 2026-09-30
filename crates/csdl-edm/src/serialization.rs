@@ -71,6 +71,7 @@ fn write_xml_document<W: io::Write>(writer: &mut W, doc: &CsdlDocument) -> io::R
             if let Some(v) = &edmx.version {
                 edmx_attrs.push(("Version".to_string(), v.clone()));
             }
+            if let Some(base) = &edmx.base_uri { edmx_attrs.push(("xml:base".into(), base.clone())); }
             write_start(&mut xml, "edmx:Edmx", &edmx_attrs)?;
 
             for reference in &edmx.references {
@@ -108,6 +109,7 @@ fn write_reference<W: io::Write>(
     reference: &Reference,
 ) -> io::Result<()> {
     let mut attrs = Vec::new();
+    if let Some(base) = &reference.base_uri { attrs.push(("xml:base".into(), base.clone())); }
     if !reference.uri.is_empty() {
         attrs.push(("Uri".to_string(), reference.uri.clone()));
     }

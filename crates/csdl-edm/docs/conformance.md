@@ -38,7 +38,23 @@ permits vocabulary and reusable model documents without a service container.
 XML has no explicit selector, so selecting among multiple containers cannot be
 represented as conforming XML service metadata.
 
-These profiles do not yet constitute a full conformance claim. External
-document resolution, complete expressions, recursive expression type
+Referenced documents can be resolved with `Resolver::resolve_with_loader`.
+Pass the root document's absolute URI and a `DocumentLoader` implementation
+(or a closure). `DocumentRegistry` supplies an in-memory implementation. The
+library performs no network requests. References are cached by resolved URI;
+relative references honor document/reference XML Base. Cyclic references reuse
+loaded documents, while semantic inheritance cycles remain invalid.
+
+Each document's aliases and included namespaces form a separate scope.
+Selected schemas and their dependencies share the same resolved EDM node
+identity. `DocumentModel::schemas` contains the root's declarations;
+`referenced_schemas` retains imported nodes and `all_schemas()` visits both.
+Annotation inclusion filters apply term namespace, qualifier, and target
+namespace before attachments are resolved. Unincluded namespaces cannot be
+used as structural type references or bind annotation terms merely because a
+different document caused their definitions to be loaded.
+
+These profiles do not yet constitute a full conformance claim. Complete
+expressions, recursive expression type
 checking, and versioned serialization are tracked in
 [the ordered conformance tasks](../TODO/csdl-coverage-gaps.md#7-full-conformance-follow-up--dependency-order).

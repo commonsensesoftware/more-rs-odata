@@ -187,7 +187,7 @@ pub fn validate_document(document: &DocumentModel) -> Result<(), Vec<ValidationE
     let engine = ValidatorEngine::default();
     let mut errors = Vec::new();
 
-    for schema in &document.schemas {
+    for schema in document.all_schemas() {
         errors.extend(engine.validate_model_collect(schema.as_ref(), &document.version));
         if document.version == "4.0" {
             for element in &schema.elements {

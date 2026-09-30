@@ -177,6 +177,7 @@ fn parse_edmx(raw: &RawElement, json: bool) -> io::Result<Edmx> {
         (containers.len() == 1).then(|| containers[0].clone())
     };
     Ok(Edmx {
+        base_uri: (!json).then(|| raw_attr(raw, "base").map(str::to_owned)).flatten(),
         entity_container,
         version,
         references,
@@ -200,6 +201,7 @@ fn parse_reference(raw: &RawElement) -> io::Result<Reference> {
         .collect::<io::Result<Vec<_>>>()?;
 
     Ok(Reference {
+        base_uri: raw_attr(raw, "base").map(str::to_owned),
         uri,
         includes,
         include_annotations,

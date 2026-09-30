@@ -212,11 +212,19 @@ pub fn abstract_complex_type() -> &'static Arc<ComplexType> {
 
 #[derive(Debug)]
 pub struct DocumentModel {
+    /// Referenced graph nodes retained for shared identity and weak-link liveness.
+    pub referenced_schemas: Vec<Arc<Model>>,
     /// Explicit service identity; never selected by schema declaration order.
     pub service_container: Option<Arc<EntityContainer>>,
     pub version: String,
     pub references: Vec<Reference>,
     pub schemas: Vec<Arc<Model>>,
+}
+
+impl DocumentModel {
+    pub fn all_schemas(&self) -> impl Iterator<Item = &Arc<Model>> {
+        self.schemas.iter().chain(&self.referenced_schemas)
+    }
 }
 
 #[derive(Debug)]

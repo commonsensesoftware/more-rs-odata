@@ -182,7 +182,7 @@ required. Commit each completed task separately, including its tests and status.
       JSON `$EntityContainer`. Distinguish service metadata from vocabulary/model
       documents, applying service-specific container requirements only where
       appropriate. Do not choose a service container merely by declaration order.
-- [ ] **3. Referenced-document resolution.** Add a caller-supplied document loader
+- [x] **3. Referenced-document resolution.** Add a caller-supplied document loader
       or registry, relative-URI resolution, document-local alias scopes, schema
       inclusion and `IncludeAnnotations` filtering. Resolve external types and
       terms without requiring manual schema merging. Handle repeated/cyclic

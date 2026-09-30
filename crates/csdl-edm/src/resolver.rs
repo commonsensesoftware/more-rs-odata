@@ -10,6 +10,8 @@ use crate::{csdl, edm::*};
 
 mod annotations;
 mod containers;
+mod documents;
+pub use documents::{DocumentLoader, DocumentRegistry};
 
 #[derive(Debug)]
 pub enum ResolveError {
@@ -18,6 +20,7 @@ pub enum ResolveError {
     DuplicateName(String),
     NoSchemaInDocument,
     InvalidEntityContainer(String),
+    ReferenceDocument { uri: String, reason: String },
     MissingTypeName {
         element_kind: &'static str,
         element_name: String,
@@ -38,6 +41,11 @@ type ResolvedMembers = (Vec<Arc<Property>>, Vec<Arc<NavigationProperty>>);
 
 impl Resolver {
     pub fn resolve_document(document: csdl::Edmx) -> Result<DocumentModel, ResolveError> {
+        Self::resolve_document_scoped(document, None)
+    }
+
+    fn resolve_document_scoped(document: csdl::Edmx,
+        scopes: Option<&std::collections::BTreeMap<String, std::collections::BTreeSet<String>>>) -> Result<DocumentModel, ResolveError> {
         let legacy_schemas =
             (document.version.as_deref() == Some("4.0")).then(|| document.schemas.clone());
         let mut document_aliases = collect_document_aliases(&document.references);
@@ -77,7 +85,7 @@ impl Resolver {
             })
             .collect();
 
-        let schemas = Self::resolve_scope(document.schemas, &document_aliases)?
+        let schemas = Self::resolve_scope(document.schemas, &document_aliases, scopes)?
             .into_iter()
             .map(Arc::new)
             .collect::<Vec<_>>();
@@ -101,6 +109,7 @@ impl Resolver {
             }).ok_or_else(|| ResolveError::InvalidEntityContainer(name.clone()))
         }).transpose()?;
         Ok(DocumentModel {
+            referenced_schemas: Vec::new(),
             service_container,
             version: document.version.unwrap_or_else(|| "4.01".to_owned()),
             references,
@@ -117,12 +126,13 @@ impl Resolver {
         if let Some(alias) = &schema.alias {
             aliases.insert(alias.clone(), schema.namespace.clone());
         }
-        Ok(Self::resolve_scope(vec![schema], &aliases)?.remove(0))
+        Ok(Self::resolve_scope(vec![schema], &aliases, None)?.remove(0))
     }
 
     fn resolve_scope(
         schemas: Vec<csdl::Schema>,
         aliases: &HashMap<String, String>,
+        scopes: Option<&std::collections::BTreeMap<String, std::collections::BTreeSet<String>>>,
     ) -> Result<Vec<Model>, ResolveError> {
         let entity_defs = scoped_elements(&schemas)
             .filter_map(|(ns, el)| match el {
@@ -597,7 +607,7 @@ impl Resolver {
                 entity_containers,
             });
         }
-        annotations::resolve(&schemas, &models, aliases);
+        annotations::resolve(&schemas, &models, aliases, scopes);
         Ok(models)
     }
 }

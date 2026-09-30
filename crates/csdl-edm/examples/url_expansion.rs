@@ -6,6 +6,7 @@ use csdl_edm::validator::validate_document;
 fn main() {
     let schema = build_demo_schema();
     let document = Edmx {
+        base_uri: None,
         entity_container: None,
         version: Some("4.01".to_owned()),
         references: vec![],
@@ -28,6 +29,7 @@ fn main() {
 fn demo_paths_survive_xml_and_json_serialization() {
     let document = CsdlDocument {
         edmx: Some(Edmx {
+            base_uri: None,
             entity_container: None,
             version: Some("4.01".into()),
             references: vec![],

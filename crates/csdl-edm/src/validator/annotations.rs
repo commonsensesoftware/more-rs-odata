@@ -26,7 +26,7 @@ pub struct AnnotationDiagnostic {
 /// validate_document fail: CSDL requires consumers to tolerate unknown/invalid
 /// annotations, including unavailable referenced vocabularies.
 pub fn validate_annotations(document: &DocumentModel) -> Vec<AnnotationDiagnostic> {
-    collect(document.schemas.iter().map(Arc::as_ref))
+    collect(document.all_schemas().map(Arc::as_ref))
 }
 
 pub fn validate_model_annotations(model: &Model) -> Vec<AnnotationDiagnostic> {
