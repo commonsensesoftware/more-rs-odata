@@ -37,6 +37,18 @@ Key paragraphs: XML/JSON 14-1 and 17 client conformance; all partial matrix rows
 
 ## Remaining work, in order
 
+The focused evidence suites now independently author XML and JSON for reference/
+include shapes, schema declarations, structured inheritance, scalar/complex/related
+keys, facet bounds, navigation nullability/partners, enums and type definitions.
+These cases exposed and fixed reserved schema namespaces and symbolic-scale casing
+at the strict source boundary. The matrix now records 95 covered and 331 partial
+paragraphs; advisory and outside-static-scope dispositions remain unchanged.
+
+The next evidence pass covers structural member redeclaration, partner/constraint
+paths, operation/container clauses, annotation expressions and remaining grammar
+branches. Existing broad suites remain supporting evidence, not a substitute for
+the independent clause fixtures required below.
+
 1. Complete the reviewed clause decomposition for the remaining mixed paragraphs.
 2. Add independent positive/negative XML and JSON fixtures per static obligation,
    including XSD/JSON-schema branches and context-sensitive ABNF path adaptations.

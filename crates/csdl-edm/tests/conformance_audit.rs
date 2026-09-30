@@ -103,14 +103,19 @@ fn every_inventoried_obligation_has_a_matrix_disposition_and_real_evidence_links
             row["id"]
         );
     }
-    for group in matrix["groups"].as_array().unwrap() {
+    for group in matrix["groups"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .chain(matrix["overrides"].as_array().unwrap())
+    {
         assert!(
             matrix["status_meaning"]
                 .get(group["status"].as_str().unwrap())
                 .is_some()
         );
         for key in ["code", "tests"] {
-            for link in group[key].as_array().unwrap() {
+            for link in group[key].as_array().into_iter().flatten() {
                 let link = link.as_str().unwrap();
                 let (file, function) = link
                     .split_once("::")

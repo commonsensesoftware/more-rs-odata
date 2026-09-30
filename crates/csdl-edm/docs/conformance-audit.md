@@ -30,8 +30,8 @@ inventory completeness, unique IDs, override integrity, and real code/test links
 
 | Disposition | Paragraphs | Meaning |
 |---|---:|---|
-| covered | 81 | Direct evidence for the complete paragraph identified here |
-| partial | 345 | Implementation exists, but behavior or independent clause-level evidence is incomplete |
+| covered | 95 | Direct evidence for the complete paragraph identified here |
+| partial | 331 | Implementation exists, but behavior or independent clause-level evidence is incomplete |
 | unsupported | 0 | No remaining paragraph assigned this disposition; partial does not imply complete implementation |
 | advisory | 26 | SHOULD guidance that does not reject documents |
 | outside-static-scope | 33 | HTTP, runtime values/execution, metarules, or example text |
@@ -145,6 +145,13 @@ these exposed missing omitted-seconds and leap-second handling, now fixed.
 `conformance_clauses.rs` independently authors XML and JSON cases for duplicate
 reference URIs and enum member names. Existing suites supply referenced-document
 cycles/scopes/filtering and semantic/format round trips.
+
+The `*_clause_evidence.rs` suites add independently authored positive and negative
+XML/JSON cases for references/includes, schema declarations, structured inheritance,
+keys, facets, navigation and named types. Exact matrix overrides identify the
+paragraphs each group proves. These tests exposed reserved schema namespaces being
+accepted and inconsistent symbolic scale casing; both source checks are corrected.
+The audit checks code/test links on exact overrides as well as section groups.
 
 ## OASIS notice
 
