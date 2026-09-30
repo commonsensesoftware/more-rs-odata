@@ -33,6 +33,11 @@ enum KeyPathClassification {
 
 #[derive(Debug, Clone)]
 pub enum ValidationError {
+    MemberNameMatchesDeclaringType {
+        type_kind: &'static str,
+        type_name: String,
+        member_kind: &'static str,
+    },
     InvalidServiceDocument {
         reason: &'static str,
     },
@@ -597,12 +602,63 @@ impl ValidationRule for UniqueSchemaChildNamesRule {
 
 struct UniqueEntityChildNamesRule;
 
+fn check_declaring_type_member_names(
+    type_kind: &'static str,
+    type_name: &str,
+    properties: &[std::sync::Arc<crate::edm::Property>],
+    navigation: &[std::sync::Arc<crate::edm::NavigationProperty>],
+    base_properties: &[std::sync::Arc<crate::edm::Property>],
+    base_navigation: &[std::sync::Arc<crate::edm::NavigationProperty>],
+    ctx: &mut ValidationContext,
+) {
+    // Effective member lists contain inherited nodes. Identity, not the member
+    // name, distinguishes those nodes from declarations that narrow a base type.
+    for (member_kind, invalid) in [
+        (
+            "Property",
+            properties.iter().any(|p| {
+                p.name == type_name && !base_properties.iter().any(|b| std::sync::Arc::ptr_eq(p, b))
+            }),
+        ),
+        (
+            "NavigationProperty",
+            navigation.iter().any(|p| {
+                p.name == type_name && !base_navigation.iter().any(|b| std::sync::Arc::ptr_eq(p, b))
+            }),
+        ),
+    ] {
+        if invalid {
+            ctx.push(ValidationError::MemberNameMatchesDeclaringType {
+                type_kind,
+                type_name: type_name.into(),
+                member_kind,
+            });
+        }
+    }
+}
+
 impl ValidationRule for UniqueEntityChildNamesRule {
     fn name(&self) -> &'static str {
         "unique_entity_child_names"
     }
 
     fn visit_entity_type(&self, entity: &EntityType, ctx: &mut ValidationContext) {
+        let base = entity
+            .base_type
+            .get()
+            .and_then(Option::as_ref)
+            .and_then(|b| b.upgrade());
+        check_declaring_type_member_names(
+            "EntityType",
+            &entity.name,
+            entity.properties(),
+            entity.navigation_properties(),
+            base.as_ref().map(|b| b.properties()).unwrap_or(&[]),
+            base.as_ref()
+                .map(|b| b.navigation_properties())
+                .unwrap_or(&[]),
+            ctx,
+        );
         let property_names = entity.properties().iter().map(|p| p.name.clone());
         let navigation_names = entity
             .navigation_properties()
@@ -627,6 +683,22 @@ impl ValidationRule for UniqueComplexChildNamesRule {
     }
 
     fn visit_complex_type(&self, complex: &ComplexType, ctx: &mut ValidationContext) {
+        let base = complex
+            .base_type
+            .get()
+            .and_then(Option::as_ref)
+            .and_then(|b| b.upgrade());
+        check_declaring_type_member_names(
+            "ComplexType",
+            &complex.name,
+            complex.properties(),
+            complex.navigation_properties(),
+            base.as_ref().map(|b| b.properties()).unwrap_or(&[]),
+            base.as_ref()
+                .map(|b| b.navigation_properties())
+                .unwrap_or(&[]),
+            ctx,
+        );
         let property_names = complex.properties().iter().map(|p| p.name.clone());
         let navigation_names = complex
             .navigation_properties()

@@ -124,3 +124,94 @@ fn legacy_concrete_entities_need_declared_or_inherited_keys() {
         );
     }
 }
+
+#[test]
+fn members_cannot_match_declaring_type_but_can_match_base_or_derived_names() {
+    for kind in ["EntityType", "ComplexType"] {
+        for (name, expected) in [("Value", true), ("Owner", false)] {
+            valid(
+                &format!(
+                    r#"<{kind} Name="Owner"><Property Name="{name}" Type="Edm.String"/></{kind}>"#
+                ),
+                &format!(r#""Owner":{{"$Kind":"{kind}","{name}":{{}}}}"#),
+                "4.01",
+                expected,
+            );
+            valid(
+                &format!(
+                    r#"<EntityType Name="Target"/><{kind} Name="Owner"><NavigationProperty Name="{name}" Type="N.Target"/></{kind}>"#
+                ),
+                &format!(
+                    r#""Target":{{"$Kind":"EntityType"}},"Owner":{{"$Kind":"{kind}","{name}":{{"$Kind":"NavigationProperty","$Type":"N.Target"}}}}"#
+                ),
+                "4.01",
+                expected,
+            );
+        }
+        valid(
+            &format!(
+                r#"<{kind} Name="Base"><Property Name="Derived" Type="Edm.String"/></{kind}><{kind} Name="Derived" BaseType="N.Base"><Property Name="Base" Type="Edm.String"/></{kind}>"#
+            ),
+            &format!(
+                r#""Base":{{"$Kind":"{kind}","Derived":{{}}}},"Derived":{{"$Kind":"{kind}","$BaseType":"N.Base","Base":{{}}}}"#
+            ),
+            "4.01",
+            true,
+        );
+        valid(
+            &format!(
+                r#"<EntityType Name="Target"/><{kind} Name="Base"><NavigationProperty Name="Derived" Type="N.Target"/></{kind}><{kind} Name="Derived" BaseType="N.Base"><NavigationProperty Name="Base" Type="N.Target"/></{kind}>"#
+            ),
+            &format!(
+                r#""Target":{{"$Kind":"EntityType"}},"Base":{{"$Kind":"{kind}","Derived":{{"$Kind":"NavigationProperty","$Type":"N.Target"}}}},"Derived":{{"$Kind":"{kind}","$BaseType":"N.Base","Base":{{"$Kind":"NavigationProperty","$Type":"N.Target"}}}}"#
+            ),
+            "4.01",
+            true,
+        );
+        valid(
+            &format!(
+                r#"<ComplexType Name="C"/><ComplexType Name="Specific" BaseType="N.C"/><{kind} Name="Base"><Property Name="Derived" Type="N.C"/></{kind}><{kind} Name="Derived" BaseType="N.Base"><Property Name="Derived" Type="N.Specific"/></{kind}>"#
+            ),
+            &format!(
+                r#""C":{{"$Kind":"ComplexType"}},"Specific":{{"$Kind":"ComplexType","$BaseType":"N.C"}},"Base":{{"$Kind":"{kind}","Derived":{{"$Type":"N.C"}}}},"Derived":{{"$Kind":"{kind}","$BaseType":"N.Base","Derived":{{"$Type":"N.Specific"}}}}"#
+            ),
+            "4.01",
+            false,
+        );
+    }
+}
+
+#[test]
+fn structural_and_navigation_members_share_a_unique_scope() {
+    for kind in ["EntityType", "ComplexType"] {
+        valid(
+            &format!(
+                r#"<EntityType Name="Target"/><{kind} Name="Owner"><Property Name="Value" Type="Edm.String"/><NavigationProperty Name="Related" Type="N.Target"/></{kind}>"#
+            ),
+            &format!(
+                r#""Target":{{"$Kind":"EntityType"}},"Owner":{{"$Kind":"{kind}","Value":{{}},"Related":{{"$Kind":"NavigationProperty","$Type":"N.Target"}}}}"#
+            ),
+            "4.01",
+            true,
+        );
+        for (xml_members, json_members) in [
+            (
+                r#"<Property Name="Value" Type="Edm.String"/><Property Name="Value" Type="Edm.Int32"/>"#,
+                r#""Value":{},"Value":{"$Type":"Edm.Int32"}"#,
+            ),
+            (
+                r#"<Property Name="Value" Type="Edm.String"/><NavigationProperty Name="Value" Type="N.Target"/>"#,
+                r#""Value":{},"Value":{"$Kind":"NavigationProperty","$Type":"N.Target"}"#,
+            ),
+        ] {
+            let xml = format!(
+                r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><EntityType Name="Target"/><{kind} Name="Owner">{xml_members}</{kind}></Schema></edmx:DataServices></edmx:Edmx>"#
+            );
+            let json = format!(
+                r#"{{"$Version":"4.01","N":{{"Target":{{"$Kind":"EntityType"}},"Owner":{{"$Kind":"{kind}",{json_members}}}}}}}"#
+            );
+            assert!(parser::from_xml_reader_with_profile(xml.as_bytes(), P::Strict).is_err());
+            assert!(parser::from_json_reader_with_profile(json.as_bytes(), P::Strict).is_err());
+        }
+    }
+}
