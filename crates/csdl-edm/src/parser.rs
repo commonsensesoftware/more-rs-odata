@@ -881,6 +881,11 @@ fn parse_annotation(raw: &RawElement) -> io::Result<Annotation> {
     };
 
     Ok(Annotation {
+        source_format: Some(if raw.source_json {
+            crate::CsdlFormat::Json
+        } else {
+            crate::CsdlFormat::Xml
+        }),
         annotations: parse_annotations(raw)?,
         term,
         qualifier,

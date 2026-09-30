@@ -62,6 +62,7 @@ impl Scope<'_> {
                 source: source.into(),
                 kind,
                 is_collection: false,
+                is_ordered: false,
                 segments: vec![AnnotationTarget::Unresolved(source.into())].into(),
             }]
         };
@@ -84,6 +85,7 @@ impl Scope<'_> {
             parts.clear();
         }
         starts.into_iter().flat_map(|mut segments| {
+            let mut ordered = segments.last().is_some_and(|t| matches!(t, AnnotationTarget::Property(p) if self.ordered.contains(&(Arc::as_ptr(p) as usize))));
             let mut unselected = usize::from(segments.last().is_some_and(collection));
             for (index, part) in parts.iter().enumerate() {
                 let Some(parent) = segments.last().cloned() else { segments.push(AnnotationTarget::Unresolved((*part).into())); break; };
@@ -124,13 +126,13 @@ impl Scope<'_> {
                     } else { AnnotationTarget::Unresolved((*part).into()) }
                 } else if part.is_empty() { AnnotationTarget::Unresolved(String::new()) }
                 else { self.child(&parent, part, ns) };
-                if collection(&next) { unselected += 1; }
+                if collection(&next) { unselected += 1; ordered = matches!(&next, AnnotationTarget::Property(p) if self.ordered.contains(&(Arc::as_ptr(p) as usize))); }
                 segments.push(next);
             }
             if kind == AnnotationPathKind::Value && unselected > 1 {
                 segments.push(AnnotationTarget::Unresolved("Multiple unselected collection segments".into()));
             }
-            vec![AnnotationExpressionPath { source: source.into(), kind, is_collection: kind == AnnotationPathKind::Value && unselected > 0, segments: segments.into() }]
+            vec![AnnotationExpressionPath { is_ordered: ordered && unselected > 0, source: source.into(), kind, is_collection: kind == AnnotationPathKind::Value && unselected > 0, segments: segments.into() }]
         }).collect()
     }
 

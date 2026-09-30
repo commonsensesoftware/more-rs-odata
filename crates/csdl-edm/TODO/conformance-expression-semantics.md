@@ -2,6 +2,14 @@
 
 Audit follow-up 4; depends on typed expression-path result information.
 
+Implemented expression-type options, unknown URL-result diagnostics, collection
+and spatial canonical signatures, numeric promotion, member-wise base-term
+completion, numeric enum ranges, path subtype assignment, and literal source
+provenance. Evidence: `tests/expression_semantics_complete.rs` and the recursive
+annotation suites. Source encoding is retained through resolution; syntactic
+annotation equality deliberately excludes that provenance. Serialization of
+typed nested values and exhaustive clause evidence are the next two tasks.
+
 - Complete canonical function signatures/overloads, numeric promotion and all
   temporal/spatial operand combinations; add caller-supplied client-function types.
 - Check base-term record inheritance per member rather than exempting a whole record.

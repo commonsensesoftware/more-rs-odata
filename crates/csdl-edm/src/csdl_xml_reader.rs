@@ -555,6 +555,7 @@ impl<R: BufRead> CsdlReader<R> {
         let (body, annotations) = self.read_expression_content("Annotation")?;
         let expression = pick_first_value(inline, body)?;
         Ok(Annotation {
+            source_format: Some(crate::CsdlFormat::Xml),
             annotations,
             term,
             qualifier,
@@ -577,6 +578,7 @@ impl<R: BufRead> CsdlReader<R> {
             None => None,
         };
         Ok(Annotation {
+            source_format: Some(crate::CsdlFormat::Xml),
             annotations: Vec::new(),
             term,
             qualifier,

@@ -377,6 +377,17 @@ impl Scope<'_> {
         let type_name = match expression {
             Expr::Record { type_, .. } => type_.as_ref(),
             Expr::Cast { type_, .. } | Expr::IsOf { type_, .. } => Some(type_),
+            Expr::Apply { function, args }
+                if matches!(function.as_str(), "odata.cast" | "odata.isof") =>
+            {
+                args.last().and_then(|a| {
+                    if let Expr::String(name) = a {
+                        Some(name)
+                    } else {
+                        None
+                    }
+                })
+            }
             _ => None,
         };
         if let Some(name) = type_name {
@@ -812,6 +823,7 @@ impl Scope<'_> {
             }
             let applied_target = target_path.clone();
             output.push(ResolvedAnnotation {
+                source_format: annotation.source_format,
                 term: self.terms.get(&term_name).cloned(),
                 term_name: term_name.clone(),
                 qualifier: annotation.qualifier.clone(),
@@ -1028,6 +1040,7 @@ impl Scope<'_> {
                 })
                 .collect::<Vec<Path>>();
             out.push(ResolvedAnnotation {
+                source_format: annotation.source_format,
                 term: self.terms.get(&term_name).cloned(),
                 term_name: term_name.clone(),
                 qualifier: annotation.qualifier.clone(),

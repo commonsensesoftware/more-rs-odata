@@ -394,13 +394,26 @@ pub struct NavigationPropertyBinding {
     pub target: String,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Annotation {
+    /// Literal spelling rules of the source; None for programmatic expressions.
+    /// Equality compares expression data, excluding representation provenance.
+    pub source_format: Option<crate::CsdlFormat>,
     pub annotations: Vec<Annotation>,
     pub term: String,
     pub qualifier: Option<String>,
     pub target: Option<String>,
     pub expression: Option<CsdlAnnotationExpression>,
+}
+
+impl PartialEq for Annotation {
+    fn eq(&self, other: &Self) -> bool {
+        self.annotations == other.annotations
+            && self.term == other.term
+            && self.qualifier == other.qualifier
+            && self.target == other.target
+            && self.expression == other.expression
+    }
 }
 
 impl CsdlDocument {

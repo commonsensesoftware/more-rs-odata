@@ -64,10 +64,11 @@ by a capitalized MUST paragraph.
    Key values retain resolved properties and typed literals/paths for validation.
    Literal-domain and exhaustive clause evidence remain in follow-ups 4 and 6.
 4. [Complete recursive expression semantics](../TODO/conformance-expression-semantics.md):
-   the full canonical function signature catalog and numeric promotion,
-   base-term record member completion, numeric enum values, URL result typing,
-   and literal/label edge cases. Unknown bindings are currently diagnostics,
-   which is useful but does not establish support for every valid expression.
+   implemented canonical collection/spatial signatures and numeric promotion,
+   per-member base-term record completion, numeric enum values, literal encoding
+   provenance, and caller-provided client-function and URL-result types.
+   Unavailable URL-result types remain explicit diagnostics; validation does not
+   retrieve or execute resources. Exhaustive clause evidence remains below.
 5. [Lossless and configurable format output](../TODO/conformance-output-options.md):
    IEEE754Compatible, arbitrary precision decimals, metadata modes, nested typed
    literal conversion, reference URI rebasing, and full semantic round-trip

@@ -4,13 +4,15 @@ One file per open item. Keep each item focused so planning and implementation ca
 
 ## Active items
 
-- [conformance-expression-semantics](conformance-expression-semantics.md) - audit follow-up 4.
 - [conformance-output-options](conformance-output-options.md) - audit follow-up 5.
 - [conformance-consumer-evidence](conformance-consumer-evidence.md) - audit follow-up 6.
 
 - [path-attribute-resolution-architecture](path-attribute-resolution-architecture.md) - implemented typed-path architecture and remaining diagnostic consistency work.
 
 ## Delivery record
+
+- [conformance-expression-semantics](conformance-expression-semantics.md) - numeric,
+  record, enum, function and URL-result typing, with literal encoding provenance.
 
 - [conformance-expression-paths](conformance-expression-paths.md) - typed key/index
   selectors, counts, path contexts, media terms, and collection multiplicity.

@@ -317,6 +317,7 @@ pub enum AnnotationTarget {
 
 #[derive(Debug)]
 pub struct ResolvedAnnotation {
+    pub source_format: Option<crate::CsdlFormat>,
     pub term_name: String,
     /// Unavailable external terms remain unresolved; resolution does not fetch documents.
     pub term: Option<Arc<Term>>,
@@ -341,6 +342,7 @@ pub struct AnnotationExpressionBindings {
 
 #[derive(Debug)]
 pub struct AnnotationExpressionPath {
+    pub is_ordered: bool,
     /// Effective instance multiplicity after selectors and terminal $count.
     pub is_collection: bool,
     pub source: String,

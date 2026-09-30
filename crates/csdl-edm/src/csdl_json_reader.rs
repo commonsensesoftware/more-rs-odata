@@ -1126,6 +1126,7 @@ fn object_to_expr(mut map: Map<String, Value>) -> Result<CsdlAnnotationExpressio
         let (target, term, qualifier) =
             parse_annotation_key(&key).ok_or_else(|| csdl_err("Invalid expression annotation"))?;
         annotations.push(Annotation {
+            source_format: Some(crate::CsdlFormat::Json),
             annotations: Vec::new(),
             term,
             qualifier,
@@ -1329,6 +1330,7 @@ fn object_to_expr_inner(mut map: Map<String, Value>) -> Result<CsdlAnnotationExp
         }
         if let Some((maybe_pv, term, qualifier)) = parse_annotation_key(&k) {
             let ann = Annotation {
+                source_format: Some(crate::CsdlFormat::Json),
                 annotations: Vec::new(),
                 term,
                 qualifier,

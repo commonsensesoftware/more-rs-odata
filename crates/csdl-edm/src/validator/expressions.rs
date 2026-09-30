@@ -1,8 +1,28 @@
 //! Recursive checks consume resolver bindings; authored paths are never reparsed here.
+use super::{AnnotationValidationOptions, ExpressionType};
 use crate::edm::*;
 use crate::expr::{BinaryOperator as B, CsdlAnnotationExpression as E};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+
+pub(super) fn has_unknown_url_type(
+    annotation: &ResolvedAnnotation,
+    options: &AnnotationValidationOptions,
+) -> bool {
+    fn walk(e: &E, options: &AnnotationValidationOptions) -> bool {
+        if let E::UrlRef(arg) = e {
+            if !matches!(arg.as_ref(), E::String(uri) if options.url_result_types.contains_key(uri))
+            {
+                return true;
+            }
+        }
+        children(e).iter().any(|e| walk(e, options))
+    }
+    annotation
+        .expression
+        .as_ref()
+        .is_some_and(|e| walk(e, options))
+}
 
 #[derive(Clone)]
 struct Expected {
@@ -12,6 +32,14 @@ struct Expected {
     facets: TypeFacets,
 }
 impl Expected {
+    fn supplied(t: &ExpressionType) -> Self {
+        Self {
+            ty: t.ty.clone(),
+            collection: t.is_collection,
+            nullable: t.nullable,
+            facets: t.facets.clone(),
+        }
+    }
     fn scalar(ty: TermType) -> Self {
         Self {
             ty,
@@ -28,6 +56,8 @@ impl Expected {
 pub(super) fn valid(
     annotation: &ResolvedAnnotation,
     labels: &HashMap<String, Vec<(&E, &ResolvedAnnotation)>>,
+    annotations: &[&ResolvedAnnotation],
+    options: &AnnotationValidationOptions,
 ) -> bool {
     let (Some(term), Some(expression)) = (&annotation.term, &annotation.expression) else {
         return true;
@@ -36,6 +66,8 @@ pub(super) fn valid(
         return false;
     };
     let mut checker = Checker {
+        annotations,
+        options,
         annotation,
         labels,
         active: HashSet::new(),
@@ -136,11 +168,86 @@ fn children(e: &E) -> Vec<&E> {
 }
 
 struct Checker<'a> {
+    annotations: &'a [&'a ResolvedAnnotation],
+    options: &'a AnnotationValidationOptions,
     annotation: &'a ResolvedAnnotation,
     labels: &'a HashMap<String, Vec<(&'a E, &'a ResolvedAnnotation)>>,
     active: HashSet<String>,
 }
 impl Checker<'_> {
+    fn ordered(&self, e: &E) -> bool {
+        match e {
+            E::Collection(_) => true,
+            E::Annotated { expression, .. } | E::Faceted { expression, .. } => {
+                self.ordered(expression)
+            }
+            E::Path(source) => self
+                .annotation
+                .expression_paths
+                .iter()
+                .filter(|p| p.source == *source)
+                .all(|p| p.is_ordered),
+            E::Apply { function, args } if function == "odata.substring" => {
+                args.first().is_some_and(|e| self.ordered(e))
+            }
+            E::Apply { function, .. } => self
+                .options
+                .client_functions
+                .get(function)
+                .is_some_and(|s| !s.is_empty() && s.iter().all(|s| s.return_type.is_ordered)),
+            E::UrlRef(arg) => {
+                matches!(arg.as_ref(), E::String(uri) if self.options.url_result_types.get(uri).is_some_and(|t| t.is_ordered))
+            }
+            _ => false,
+        }
+    }
+    fn inherited_members(&self) -> HashSet<String> {
+        fn members(e: &E, out: &mut HashSet<String>) {
+            match e {
+                E::Record { properties, .. } => {
+                    out.extend(properties.iter().map(|p| p.property.clone()))
+                }
+                E::Annotated { expression, .. } | E::Faceted { expression, .. } => {
+                    members(expression, out)
+                }
+                _ => {}
+            }
+        }
+        let mut out = HashSet::new();
+        let mut base = self
+            .annotation
+            .term
+            .as_ref()
+            .and_then(|t| t.base_term.get())
+            .and_then(Option::as_ref)
+            .and_then(|t| t.upgrade());
+        let mut visited = HashSet::new();
+        while let Some(term) = base {
+            if !visited.insert(Arc::as_ptr(&term)) {
+                break;
+            }
+            for a in self.annotations {
+                if a.term.as_ref().is_some_and(|t| Arc::ptr_eq(t, &term))
+                    && a.qualifier == self.annotation.qualifier
+                    && a.targets.iter().any(|p| {
+                        self.annotation.targets.iter().any(|q| {
+                            super::annotations::identity(p) == super::annotations::identity(q)
+                        })
+                    })
+                {
+                    if let Some(e) = &a.expression {
+                        members(e, &mut out);
+                    }
+                }
+            }
+            base = term
+                .base_term
+                .get()
+                .and_then(Option::as_ref)
+                .and_then(|t| t.upgrade());
+        }
+        out
+    }
     fn check_item(&mut self, e: &E, expected: &Expected) -> bool {
         match e {
             E::Annotated { expression, .. } => self.check_item(expression, expected),
@@ -158,6 +265,17 @@ impl Checker<'_> {
     fn check(&mut self, e: &E, expected: &Expected) -> bool {
         use PrimitiveType as P;
         match e {
+            E::UrlRef(arg) => {
+                if !self.check(arg, &Expected::primitive(P::String)) {
+                    return false;
+                }
+                return match arg.as_ref() {
+                    E::String(uri) => self.options.url_result_types.get(uri).is_none_or(|t| {
+                        t.is_collection == expected.collection && assignable(&t.ty, &expected.ty)
+                    }),
+                    _ => true,
+                };
+            }
             E::Annotated { expression, .. } => return self.check(expression, expected),
             E::Faceted { expression, facets } => {
                 let (E::Cast { type_, expr } | E::IsOf { type_, expr }) = expression.as_ref()
@@ -185,7 +303,11 @@ impl Checker<'_> {
                 }
                 if matches!(expression.as_ref(), E::Cast { .. })
                     && literal(expr).is_some()
-                    && !self.check(expr, &target)
+                    && !literal(expr).is_some_and(|value| {
+                        primitive(&target.ty).is_some_and(|p| {
+                            super::values::primitive(&value, p, &effective_facets(&target))
+                        })
+                    })
                 {
                     return false;
                 }
@@ -303,22 +425,38 @@ impl Checker<'_> {
                     }
                 }
                 // A derived term may complete the record inherited from its base term.
-                let inherited = self.annotation.term.as_ref().is_some_and(|t| {
-                    t.base_term
-                        .get()
-                        .and_then(Option::as_ref)
-                        .and_then(|w| w.upgrade())
-                        .is_some()
+                fn root(e: &E) -> &E {
+                    match e {
+                        E::Annotated { expression, .. }
+                        | E::Faceted { expression, .. }
+                        | E::LabeledElement {
+                            expr: expression, ..
+                        } => root(expression),
+                        _ => e,
+                    }
+                }
+                let inherited = if self
+                    .annotation
+                    .expression
+                    .as_ref()
+                    .is_some_and(|value| std::ptr::eq(root(value), e))
+                {
+                    self.inherited_members()
+                } else {
+                    HashSet::new()
+                };
+                return members.iter().all(|p| {
+                    p.is_collection
+                        || p.nullable != Some(false)
+                        || p.default_value.is_some()
+                        || seen.contains(&p.name)
+                        || inherited.contains(&p.name)
+                }) && navigations.iter().all(|p| {
+                    p.is_collection
+                        || p.nullable != Some(false)
+                        || seen.contains(&p.name)
+                        || inherited.contains(&p.name)
                 });
-                return inherited
-                    || (members.iter().all(|p| {
-                        p.is_collection
-                            || p.nullable != Some(false)
-                            || p.default_value.is_some()
-                            || seen.contains(&p.name)
-                    }) && navigations.iter().all(|p| {
-                        p.is_collection || p.nullable != Some(false) || seen.contains(&p.name)
-                    }));
             }
             E::EnumMember(value) => {
                 let TermType::Enum(t) = &expected.ty else {
@@ -343,9 +481,17 @@ impl Checker<'_> {
                 let names = value.split(',').map(str::trim).collect::<Vec<_>>();
                 return !expected.collection
                     && (names.len() == 1 || t.is_flags)
-                    && names
-                        .iter()
-                        .all(|name| t.members.iter().any(|m| m.name == *name));
+                    && names.iter().all(|name| {
+                        t.members.iter().any(|m| m.name == *name)
+                            || name.parse::<i64>().is_ok_and(|n| {
+                                (!t.is_flags || n >= 0)
+                                    && super::values::primitive(
+                                        name,
+                                        &t.underlying_type,
+                                        &TypeFacets::default(),
+                                    )
+                            })
+                    });
             }
             _ => {}
         }
@@ -357,6 +503,16 @@ impl Checker<'_> {
                 return true;
             }
             if let Some(p) = primitive(&expected.ty) {
+                if self.annotation.source_format == Some(crate::CsdlFormat::Xml)
+                    && *p != P::PrimitiveType
+                {
+                    match e {
+                        E::String(_) if *p != P::String => return false,
+                        E::Float(_) if !matches!(p, P::Single | P::Double) => return false,
+                        E::Decimal(_) if *p != P::Decimal => return false,
+                        _ => {}
+                    }
+                }
                 if !super::annotations::compatible(e, &expected.ty, false, expected.nullable) {
                     return false;
                 }
@@ -435,7 +591,17 @@ impl Checker<'_> {
                 if !self.check(expr, &Expected::primitive(P::String)) {
                     return None;
                 }
-                Expected::primitive(P::String)
+                match expr.as_ref() {
+                    E::String(uri) => self
+                        .options
+                        .url_result_types
+                        .get(uri)
+                        .map(Expected::supplied)
+                        .unwrap_or_else(|| {
+                            Expected::scalar(TermType::Builtin(BuiltinType::Untyped))
+                        }),
+                    _ => Expected::scalar(TermType::Builtin(BuiltinType::Untyped)),
+                }
             }
             E::BinaryExpression { op, lhs, rhs } => return self.binary(*op, lhs, rhs),
             E::If { test, then_, else_ } => {
@@ -458,10 +624,20 @@ impl Checker<'_> {
                 };
                 if !matches!(expr.as_ref(), E::Null) {
                     let source = self.infer(expr)?;
-                    if source.collection != target.collection
-                        || !(assignable(&source.ty, ty)
-                            || assignable(ty, &source.ty)
-                            || numeric(&source.ty) && numeric(ty))
+                    if !matches!(e, E::IsOf { .. })
+                        && (source.collection != target.collection
+                            || !(assignable(&source.ty, ty)
+                                || assignable(ty, &source.ty)
+                                || numeric(&source.ty) && numeric(ty)
+                                || matches!(primitive(&source.ty), Some(P::String))
+                                    && primitive(ty).is_some()
+                                || primitive(ty) == Some(&P::String)
+                                    && matches!(
+                                        source.ty,
+                                        TermType::Primitive(_)
+                                            | TermType::TypeDefinition(_)
+                                            | TermType::Enum(_)
+                                    )))
                     {
                         return None;
                     }
@@ -486,7 +662,11 @@ impl Checker<'_> {
                 expected
             }
             E::Collection(values) => {
-                let first = values.first()?;
+                let Some(first) = values.first() else {
+                    let mut t = Expected::scalar(TermType::Builtin(BuiltinType::Untyped));
+                    t.collection = true;
+                    return Some(t);
+                };
                 let first = if let E::If {
                     then_, else_: None, ..
                 } = first
@@ -566,6 +746,12 @@ impl Checker<'_> {
         }
         let left = self.infer(lhs)?;
         if left.collection {
+            if matches!(op, B::Eq | B::Ne) {
+                let right = self.infer(rhs)?;
+                return (right.collection
+                    && (assignable(&left.ty, &right.ty) || assignable(&right.ty, &left.ty)))
+                .then(|| Expected::primitive(P::Boolean));
+            }
             return None;
         }
         if op == B::In {
@@ -586,28 +772,53 @@ impl Checker<'_> {
             return (a.is_flags && Arc::ptr_eq(a, b)).then(|| Expected::primitive(P::Boolean));
         }
         if matches!(op, B::Eq | B::Ne | B::Gt | B::Ge | B::Lt | B::Le) {
+            if [&left.ty, &right.ty].iter().any(|t| {
+                primitive(t).is_some_and(|p| {
+                    matches!(p, P::Binary | P::Stream) || format!("{p:?}").starts_with("Geo")
+                })
+            }) {
+                return None;
+            }
+            if !matches!(op, B::Eq | B::Ne)
+                && (!matches!(
+                    left.ty,
+                    TermType::Primitive(_) | TermType::Enum(_) | TermType::TypeDefinition(_)
+                ) || !matches!(
+                    right.ty,
+                    TermType::Primitive(_) | TermType::Enum(_) | TermType::TypeDefinition(_)
+                ))
+            {
+                return None;
+            }
             return (assignable(&left.ty, &right.ty)
                 || assignable(&right.ty, &left.ty)
                 || numeric(&left.ty) && numeric(&right.ty))
             .then(|| Expected::primitive(P::Boolean));
         }
         if numeric(&left.ty) && numeric(&right.ty) {
-            let p = if op == B::DivBy {
-                P::Decimal
-            } else if matches!(primitive(&left.ty), Some(P::Double | P::Single))
-                || matches!(primitive(&right.ty), Some(P::Double | P::Single))
-            {
-                P::Double
-            } else if matches!(primitive(&left.ty), Some(P::Decimal))
-                || matches!(primitive(&right.ty), Some(P::Decimal))
+            let p = if op == B::DivBy
+                && !matches!(primitive(&left.ty), Some(P::Single | P::Double))
+                && !matches!(primitive(&right.ty), Some(P::Single | P::Double))
             {
                 P::Decimal
             } else {
-                P::Int64
+                [
+                    P::Double,
+                    P::Single,
+                    P::Decimal,
+                    P::Int64,
+                    P::Int32,
+                    P::Int16,
+                ]
+                .into_iter()
+                .find(|p| primitive(&left.ty) == Some(p) || primitive(&right.ty) == Some(p))
+                .unwrap_or(P::Int16)
             };
             return Some(Expected::primitive(p));
         }
         match (primitive(&left.ty)?, primitive(&right.ty)?, op) {
+            (P::Duration, _, B::Mul | B::Div | B::DivBy) if numeric(&right.ty) => Some(left),
+            (_, P::Duration, B::Mul) if numeric(&left.ty) => Some(right),
             (P::Date | P::DateTimeOffset, P::Duration, B::Add | B::Sub) => Some(left),
             (P::Duration, P::Duration, B::Add | B::Sub) => Some(left),
             (a, b, B::Sub) if a == b && matches!(a, P::Date | P::DateTimeOffset) => {
@@ -619,6 +830,134 @@ impl Checker<'_> {
 
     fn apply(&mut self, function: &str, args: &[E]) -> Option<Expected> {
         use PrimitiveType as P;
+        if let Some(signatures) = self
+            .options
+            .client_functions
+            .get(function)
+            .filter(|_| !function.starts_with("odata."))
+        {
+            let mut result = None;
+            for signature in signatures {
+                if signature.parameters.len() == args.len()
+                    && args
+                        .iter()
+                        .zip(&signature.parameters)
+                        .all(|(e, t)| self.check(e, &Expected::supplied(t)))
+                {
+                    if result.is_some() {
+                        return None;
+                    }
+                    result = Some(Expected::supplied(&signature.return_type));
+                }
+            }
+            return result;
+        }
+        if matches!(function, "odata.cast" | "odata.isof") {
+            if args.len() != 2 {
+                return None;
+            }
+            let E::String(type_) = &args[1] else {
+                return None;
+            };
+            let e = if function == "odata.cast" {
+                E::Cast {
+                    type_: type_.clone(),
+                    expr: Box::new(args[0].clone()),
+                }
+            } else {
+                E::IsOf {
+                    type_: type_.clone(),
+                    expr: Box::new(args[0].clone()),
+                }
+            };
+            return self.infer(&e);
+        }
+        if function == "odata.case" {
+            if args.is_empty() || args.len() % 2 != 0 {
+                return None;
+            }
+            let result = self.infer(&args[1])?;
+            return args
+                .chunks_exact(2)
+                .all(|pair| {
+                    self.check(&pair[0], &Expected::primitive(P::Boolean))
+                        && self.check(&pair[1], &result)
+                })
+                .then_some(result);
+        }
+        if matches!(
+            function,
+            "odata.geo.distance" | "odata.geo.intersects" | "odata.geo.length"
+        ) {
+            let first = self.infer(args.first()?)?;
+            if first.collection {
+                return None;
+            }
+            let p = primitive(&first.ty)?;
+            if function == "odata.geo.length" {
+                return (args.len() == 1
+                    && matches!(p, P::GeographyLineString | P::GeometryLineString))
+                .then(|| Expected::primitive(P::Double));
+            }
+            if args.len() != 2 {
+                return None;
+            }
+            let other = self.infer(&args[1])?;
+            if other.collection {
+                return None;
+            }
+            let q = primitive(&other.ty)?;
+            if function == "odata.geo.distance" {
+                return (p == q && matches!(p, P::GeographyPoint | P::GeometryPoint))
+                    .then(|| Expected::primitive(P::Double));
+            }
+            return matches!(
+                (p, q),
+                (P::GeographyPoint, P::GeographyPolygon) | (P::GeometryPoint, P::GeometryPolygon)
+            )
+            .then(|| Expected::primitive(P::Boolean));
+        }
+        if matches!(
+            function,
+            "odata.length"
+                | "odata.contains"
+                | "odata.startswith"
+                | "odata.endswith"
+                | "odata.indexof"
+                | "odata.substring"
+                | "odata.hassubset"
+                | "odata.hassubsequence"
+        ) {
+            let first = self.infer(args.first()?)?;
+            if first.collection {
+                if function == "odata.length" {
+                    return (args.len() == 1).then(|| Expected::primitive(P::Int32));
+                }
+                if function != "odata.hassubset" && !self.ordered(&args[0]) {
+                    return None;
+                }
+                if function == "odata.substring" {
+                    return ((2..=3).contains(&args.len())
+                        && args[1..]
+                            .iter()
+                            .all(|e| self.check(e, &Expected::primitive(P::Int32))))
+                    .then_some(first);
+                }
+                return (args.len() == 2
+                    && (function == "odata.hassubset" || self.ordered(&args[1]))
+                    && self.check(&args[1], &first))
+                .then(|| {
+                    Expected::primitive(if function == "odata.indexof" {
+                        P::Int32
+                    } else {
+                        P::Boolean
+                    })
+                });
+            }
+            if matches!(function, "odata.hassubset" | "odata.hassubsequence") {
+                return None;
+            }
+        }
         if function == "odata.concat" {
             if args.len() < 2 {
                 return None;
@@ -794,11 +1133,29 @@ fn assignable(source: &TermType, target: &TermType) -> bool {
         return true;
     }
     if let (Some(a), Some(b)) = (primitive(source), primitive(target)) {
-        return a == b || *b == PrimitiveType::PrimitiveType;
+        let rank = |p: &PrimitiveType| match p {
+            PrimitiveType::Byte | PrimitiveType::SByte => 0,
+            PrimitiveType::Int16 => 1,
+            PrimitiveType::Int32 => 2,
+            PrimitiveType::Int64 => 3,
+            PrimitiveType::Decimal => 4,
+            PrimitiveType::Single => 5,
+            PrimitiveType::Double => 6,
+            _ => -1,
+        };
+        return a == b || *b == PrimitiveType::PrimitiveType || rank(a) >= 0 && rank(b) > rank(a);
     }
     match (source, target) {
         (TermType::Builtin(a), TermType::Builtin(b)) => {
             a == b
+                || *b == BuiltinType::ModelElementPath
+                    && matches!(
+                        a,
+                        BuiltinType::PropertyPath
+                            | BuiltinType::NavigationPropertyPath
+                            | BuiltinType::AnyPropertyPath
+                            | BuiltinType::AnnotationPath
+                    )
                 || matches!(
                     (a, b),
                     (

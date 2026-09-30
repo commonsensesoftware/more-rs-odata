@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AnnotationIssue {
+    UnknownExpressionType,
     UnknownTerm,
     UnresolvedTarget,
     InvalidQualifier,
@@ -27,6 +28,13 @@ pub struct AnnotationDiagnostic {
 /// validate_document fail: CSDL requires consumers to tolerate unknown/invalid
 /// annotations, including unavailable referenced vocabularies.
 pub fn validate_annotations(document: &DocumentModel) -> Vec<AnnotationDiagnostic> {
+    validate_annotations_with_options(document, &super::AnnotationValidationOptions::default())
+}
+
+pub fn validate_annotations_with_options(
+    document: &DocumentModel,
+    options: &super::AnnotationValidationOptions,
+) -> Vec<AnnotationDiagnostic> {
     let mut diagnostics = collect_annotations(
         document
             .all_schemas()
@@ -37,6 +45,7 @@ pub fn validate_annotations(document: &DocumentModel) -> Vec<AnnotationDiagnosti
                     .chain(r.includes.iter().flat_map(|i| &i.annotations))
             }))
             .collect(),
+        options,
     );
     for model in document.all_schemas() {
         let version = document.schema_version(&model.namespace);
@@ -65,10 +74,13 @@ fn collect<'a>(models: impl Iterator<Item = &'a Model>) -> Vec<AnnotationDiagnos
     let annotations = models
         .flat_map(|m| m.annotations.get().into_iter().flatten())
         .collect::<Vec<_>>();
-    collect_annotations(annotations)
+    collect_annotations(annotations, &super::AnnotationValidationOptions::default())
 }
 
-fn collect_annotations(annotations: Vec<&ResolvedAnnotation>) -> Vec<AnnotationDiagnostic> {
+fn collect_annotations(
+    annotations: Vec<&ResolvedAnnotation>,
+    options: &super::AnnotationValidationOptions,
+) -> Vec<AnnotationDiagnostic> {
     let mut errors = Vec::new();
     let labels = super::expressions::labels(&annotations);
     let mut applications = HashSet::new();
@@ -86,7 +98,7 @@ fn collect_annotations(annotations: Vec<&ResolvedAnnotation>) -> Vec<AnnotationD
             }
         }
     }
-    for annotation in annotations {
+    for annotation in &annotations {
         if annotation
             .qualifier
             .as_ref()
@@ -194,7 +206,14 @@ fn collect_annotations(annotations: Vec<&ResolvedAnnotation>) -> Vec<AnnotationD
             }
         }
         if annotation.expression.is_some() {
-            if !super::expressions::valid(annotation, &labels) {
+            if super::expressions::has_unknown_url_type(annotation, options) {
+                push(
+                    &mut errors,
+                    annotation,
+                    AnnotationIssue::UnknownExpressionType,
+                );
+            }
+            if !super::expressions::valid(annotation, &labels, &annotations, options) {
                 push(&mut errors, annotation, AnnotationIssue::IncompatibleValue);
             }
         }
@@ -214,7 +233,7 @@ fn push(
     });
 }
 
-fn identity(path: &[AnnotationTarget]) -> Vec<String> {
+pub(super) fn identity(path: &[AnnotationTarget]) -> Vec<String> {
     use AnnotationTarget as T;
     path.iter()
         .map(|target| match target {

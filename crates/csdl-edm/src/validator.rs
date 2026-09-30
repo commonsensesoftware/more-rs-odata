@@ -1,12 +1,17 @@
 //! Semantic validation that is intentionally separate from reference resolution.
 
 mod annotations;
+mod expression_options;
 mod expressions;
+pub use expression_options::{
+    AnnotationValidationOptions, ClientFunctionSignature, ExpressionType,
+};
 mod types;
 mod values;
 use crate::edm::ConstraintPathSegment;
 pub use annotations::{
-    AnnotationDiagnostic, AnnotationIssue, validate_annotations, validate_model_annotations,
+    AnnotationDiagnostic, AnnotationIssue, validate_annotations, validate_annotations_with_options,
+    validate_model_annotations,
 };
 
 use std::collections::HashSet;
