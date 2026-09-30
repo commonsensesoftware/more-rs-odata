@@ -169,16 +169,20 @@ fn collect_annotations(annotations: Vec<&ResolvedAnnotation>) -> Vec<AnnotationD
                 .any(|s| matches!(s, AnnotationTarget::Unresolved(_)))
                 || match path.kind {
                     AnnotationPathKind::Value | AnnotationPathKind::ModelElement => false,
-                    AnnotationPathKind::Property => {
-                        !matches!(path.segments.last(), Some(AnnotationTarget::Property(_)))
-                    }
-                    AnnotationPathKind::NavigationProperty => !matches!(
-                        path.segments.last(),
-                        Some(AnnotationTarget::NavigationProperty(_))
-                    ),
+                    AnnotationPathKind::Property => !path
+                        .segments
+                        .last()
+                        .is_some_and(|t| super::expressions::model_path_endpoint(t, false)),
+                    AnnotationPathKind::NavigationProperty => !path
+                        .segments
+                        .last()
+                        .is_some_and(|t| super::expressions::model_path_endpoint(t, true)),
                     AnnotationPathKind::Annotation => !matches!(
                         path.segments.last(),
-                        Some(AnnotationTarget::AppliedTerm { .. })
+                        Some(
+                            AnnotationTarget::AppliedTerm { .. }
+                                | AnnotationTarget::ImplicitMediaTerm(_)
+                        )
                     ),
                 };
             if invalid {
@@ -214,6 +218,15 @@ fn identity(path: &[AnnotationTarget]) -> Vec<String> {
     use AnnotationTarget as T;
     path.iter()
         .map(|target| match target {
+            T::SelectedItem {
+                collection,
+                selector,
+            } => format!(
+                "item:{:?}:{selector:?}",
+                identity(std::slice::from_ref(collection.as_ref()))
+            ),
+            T::Count => "count".into(),
+            T::ImplicitMediaTerm(name) => format!("media:{name}"),
             T::Reference(uri) => format!("reference:{uri}"),
             T::Include {
                 reference_uri,
@@ -248,6 +261,9 @@ fn kind(target: &AnnotationTarget) -> AnnotationTargetKind {
     use AnnotationTarget as T;
     use AnnotationTargetKind as K;
     match target {
+        T::SelectedItem { collection, .. } => kind(collection),
+        T::Count => K::Other("Count".into()),
+        T::ImplicitMediaTerm(_) => K::Annotation,
         T::Reference(_) => K::Reference,
         T::Include { .. } => K::Include,
         T::Expression { kind, .. } => kind.clone(),

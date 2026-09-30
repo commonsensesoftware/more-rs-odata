@@ -2,6 +2,13 @@
 
 Audit follow-up 3; depends on complete document scope isolation.
 
+Implemented typed selectors, terminal counts, effective multiplicity, empty
+paths, implicit media terms, navigation-property term suffixes, and operation/
+external/nested contexts. Tests: `tests/expression_paths.rs`,
+`tests/conformance_audit.rs::count_path_resolves_and_validates`, plus the existing
+annotation suites. Literal-domain completeness remains in follow-up 4; the
+matrix stays partial until clause-level evidence is exhaustive.
+
 - Add resolver-owned typed nodes for key predicates, ordered indexes and `$count`.
 - Handle empty paths, implicit media annotation terms, and model-property/term
   cast syntax without reparsing authored paths in the validator.

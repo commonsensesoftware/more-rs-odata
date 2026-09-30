@@ -275,6 +275,12 @@ pub struct Model {
 
 #[derive(Debug, Clone)]
 pub enum AnnotationTarget {
+    SelectedItem {
+        collection: Box<AnnotationTarget>,
+        selector: PathSelector,
+    },
+    Count,
+    ImplicitMediaTerm(String),
     Reference(String),
     Include {
         reference_uri: String,
@@ -335,9 +341,29 @@ pub struct AnnotationExpressionBindings {
 
 #[derive(Debug)]
 pub struct AnnotationExpressionPath {
+    /// Effective instance multiplicity after selectors and terminal $count.
+    pub is_collection: bool,
     pub source: String,
     pub kind: AnnotationPathKind,
     pub segments: Arc<[AnnotationTarget]>,
+}
+
+#[derive(Debug, Clone)]
+pub enum PathSelector {
+    Index(i64),
+    Key(Vec<PathKeyArgument>),
+}
+
+#[derive(Debug, Clone)]
+pub struct PathKeyArgument {
+    pub property: Arc<Property>,
+    pub value: PathKeyValue,
+}
+
+#[derive(Debug, Clone)]
+pub enum PathKeyValue {
+    Literal(crate::expr::CsdlAnnotationExpression),
+    Path(Arc<[AnnotationTarget]>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

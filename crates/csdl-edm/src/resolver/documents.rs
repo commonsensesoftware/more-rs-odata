@@ -344,7 +344,7 @@ impl Resolver {
     }
 }
 
-fn annotation_groups(schema: &Schema) -> Vec<Annotations> {
+pub(super) fn annotation_groups(schema: &Schema) -> Vec<Annotations> {
     fn add(out: &mut Vec<Annotations>, path: &str, annotations: &[Annotation]) {
         for annotation in annotations {
             let mut annotation = annotation.clone();
@@ -525,17 +525,38 @@ impl Scope {
         Ok(())
     }
     fn path(&self, value: &str) -> String {
-        value
-            .split_inclusive(|c: char| matches!(c, '/' | '@' | '(' | ')' | ',' | ' ' | '#'))
-            .map(|piece| {
-                if let Some((prefix, rest)) = piece.split_once('.') {
-                    if let Some(ns) = self.aliases.get(prefix) {
-                        return format!("{ns}.{rest}");
-                    }
+        let mut result = String::new();
+        let mut token = String::new();
+        let mut quoted = false;
+        let flush = |token: &mut String, result: &mut String| {
+            if let Some((prefix, rest)) = token.split_once('.') {
+                if let Some(ns) = self.aliases.get(prefix) {
+                    result.push_str(ns);
+                    result.push('.');
+                    result.push_str(rest);
+                    token.clear();
+                    return;
                 }
-                piece.into()
-            })
-            .collect()
+            }
+            result.push_str(token);
+            token.clear();
+        };
+        for ch in value.chars() {
+            if ch == '\'' {
+                flush(&mut token, &mut result);
+                quoted = !quoted;
+                result.push(ch);
+            } else if quoted {
+                result.push(ch);
+            } else if matches!(ch, '/' | '@' | '(' | ')' | ',' | ' ' | '#' | '=') {
+                flush(&mut token, &mut result);
+                result.push(ch);
+            } else {
+                token.push(ch);
+            }
+        }
+        flush(&mut token, &mut result);
+        result
     }
     fn ty(
         &self,

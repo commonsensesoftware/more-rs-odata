@@ -57,18 +57,11 @@ fn two_operand_if_is_only_valid_as_a_collection_item() {
 
 #[cfg(all(feature = "resolver", feature = "validator"))]
 #[test]
-fn known_path_grammar_gap_is_explicit() {
-    use csdl_edm::{
-        resolver::Resolver,
-        validator::{self, AnnotationIssue},
-    };
+fn count_path_resolves_and_validates() {
+    use csdl_edm::{resolver::Resolver, validator};
     let doc = parser::from_xml_reader(xml(r#"<Term Name="Value" Type="Edm.Int64"/><ComplexType Name="C"><Property Name="Names" Type="Collection(Edm.String)" Nullable="false"/><Annotation Term="N.Value"><Path>Names/$count</Path></Annotation></ComplexType>"#).as_bytes()).unwrap();
     let model = Resolver::resolve_document(doc.edmx.unwrap()).unwrap();
-    assert!(
-        validator::validate_annotations(&model)
-            .iter()
-            .any(|d| d.issue == AnnotationIssue::InvalidExpressionPath)
-    );
+    assert!(validator::validate_annotations(&model).is_empty());
 }
 
 #[test]

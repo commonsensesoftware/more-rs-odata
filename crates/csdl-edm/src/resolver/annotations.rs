@@ -1,7 +1,28 @@
 use super::*;
 use crate::expr::CsdlAnnotationExpression as Expr;
+mod paths;
 
 type Path = Arc<[AnnotationTarget]>;
+
+fn annotation_context(target: &[AnnotationTarget], external: bool) -> &[AnnotationTarget] {
+    if matches!(
+        target.last(),
+        Some(AnnotationTarget::Property(_) | AnnotationTarget::NavigationProperty(_))
+    ) {
+        if external {
+            &target[..1]
+        } else {
+            &target[..target.len() - 1]
+        }
+    } else if matches!(
+        target.last(),
+        Some(AnnotationTarget::Parameter { .. } | AnnotationTarget::ReturnType(_))
+    ) {
+        &target[..target.len() - 1]
+    } else {
+        target
+    }
+}
 
 pub(super) fn references<'a>(
     sources: &[csdl::Reference],
@@ -9,6 +30,7 @@ pub(super) fn references<'a>(
     aliases: &HashMap<String, String>,
 ) -> Vec<Reference> {
     let mut scope = Scope {
+        ordered: Default::default(),
         roots: HashMap::new(),
         terms: HashMap::new(),
         aliases,
@@ -99,6 +121,7 @@ pub(super) fn references<'a>(
 }
 
 struct Scope<'a> {
+    ordered: std::collections::HashSet<usize>,
     roots: HashMap<String, Vec<AnnotationTarget>>,
     terms: HashMap<String, Arc<Term>>,
     aliases: &'a HashMap<String, String>,
@@ -111,6 +134,7 @@ pub(super) fn resolve(
     scopes: Option<&std::collections::BTreeMap<String, std::collections::BTreeSet<String>>>,
 ) {
     let mut scope = Scope {
+        ordered: Default::default(),
         roots: HashMap::new(),
         terms: HashMap::new(),
         aliases,
@@ -171,6 +195,20 @@ pub(super) fn resolve(
             }
         }
     }
+    for schema in schemas {
+        for group in super::documents::annotation_groups(schema) {
+            if group.annotations.iter().any(|a| {
+                scope.canonical(&a.term, &schema.namespace) == "Org.OData.Core.V1.Ordered"
+                    && matches!(a.expression, Some(Expr::Bool(true)))
+            }) {
+                for path in scope.paths(&group.target, &schema.namespace) {
+                    if let Some(AnnotationTarget::Property(p)) = path.last() {
+                        scope.ordered.insert(Arc::as_ptr(p) as usize);
+                    }
+                }
+            }
+        }
+    }
     for (schema, model) in schemas.iter().zip(models) {
         let visible = |key: &str| {
             scopes
@@ -184,6 +222,7 @@ pub(super) fn resolve(
                 })
         };
         let scope = Scope {
+            ordered: scope.ordered.clone(),
             roots: scope
                 .roots
                 .iter()
@@ -206,7 +245,7 @@ pub(super) fn resolve(
             &mut annotations,
         );
         for group in &schema.external_annotations {
-            scope.attach(
+            scope.attach_external(
                 &schema.namespace,
                 &group.target,
                 &group.annotations,
@@ -530,11 +569,49 @@ impl Scope<'_> {
 
     fn child(&self, parent: &AnnotationTarget, name: &str, ns: &str) -> AnnotationTarget {
         use AnnotationTarget as T;
+        if let T::SelectedItem { collection, .. } = parent {
+            return self.child(collection, name, ns);
+        }
         if let Some(term) = name.strip_prefix('@') {
             let (term, qualifier) = term
                 .split_once('#')
                 .map(|(t, q)| (t, Some(q.to_owned())))
                 .unwrap_or((term, None));
+            if !crate::conformance::is_qualified_name(term)
+                || qualifier
+                    .as_ref()
+                    .is_some_and(|q| !crate::conformance::is_simple_identifier(q))
+            {
+                return T::Unresolved(name.into());
+            }
+            if qualifier.is_none()
+                && matches!(
+                    term,
+                    "odata.mediaEditLink"
+                        | "odata.mediaReadLink"
+                        | "odata.mediaContentType"
+                        | "odata.mediaEtag"
+                )
+            {
+                let media = match parent {
+                    T::Property(p) => {
+                        matches!(p.ty, ResolvedType::Primitive(PrimitiveType::Stream))
+                    }
+                    T::Element(e) => {
+                        matches!(e.as_ref(), SchemaElement::EntityType(t) if t.has_stream)
+                    }
+                    T::NavigationProperty(n) => n.target.upgrade().is_some_and(|t| t.has_stream),
+                    T::Resource(r) => match r.as_ref() {
+                        EntityContainerElement::EntitySet(s) => s.target.has_stream,
+                        EntityContainerElement::Singleton(s) => s.target.has_stream,
+                        _ => false,
+                    },
+                    _ => false,
+                };
+                if media {
+                    return T::ImplicitMediaTerm(term.into());
+                }
+            }
             if let Some(term) = self.terms.get(&self.canonical(term, ns)) {
                 return T::AppliedTerm {
                     term: term.clone(),
@@ -545,6 +622,25 @@ impl Scope<'_> {
         }
         let mut entity = None;
         let mut complex = None;
+        let ty = match parent {
+            T::AppliedTerm { term, .. } => term.ty(),
+            T::Parameter { operation, index } => match operation.as_ref() {
+                SchemaElement::Function(f) => f.parameters.get(*index).map(|p| &p.ty),
+                SchemaElement::Action(a) => a.parameters.get(*index).map(|p| &p.ty),
+                _ => None,
+            },
+            T::ReturnType(operation) => match operation.as_ref() {
+                SchemaElement::Function(f) => f.return_type.as_ref().map(|r| &r.ty),
+                SchemaElement::Action(a) => a.return_type.as_ref().map(|r| &r.ty),
+                _ => None,
+            },
+            _ => None,
+        };
+        match ty {
+            Some(TermType::Entity(t)) => entity = Some(t.clone()),
+            Some(TermType::Complex(t)) => complex = Some(t.clone()),
+            _ => {}
+        }
         match parent {
             T::Element(element) => match element.as_ref() {
                 SchemaElement::EntityType(t) => entity = Some(t.clone()),
@@ -595,7 +691,24 @@ impl Scope<'_> {
             T::Resource(r) => match r.as_ref() {
                 EntityContainerElement::EntitySet(s) => entity = Some(s.target.clone()),
                 EntityContainerElement::Singleton(s) => entity = Some(s.target.clone()),
-                _ => {}
+                EntityContainerElement::FunctionImport(i) => {
+                    if let Some(f) = i.overloads.first() {
+                        return operation_child(
+                            &Arc::new(SchemaElement::Function(f.clone())),
+                            &f.parameters,
+                            f.return_type.is_some(),
+                            name,
+                        );
+                    }
+                }
+                EntityContainerElement::ActionImport(i) => {
+                    return operation_child(
+                        &Arc::new(SchemaElement::Action(i.operation.clone())),
+                        &i.operation.parameters,
+                        i.operation.return_type.is_some(),
+                        name,
+                    );
+                }
             },
             _ => {}
         }
@@ -609,10 +722,9 @@ impl Scope<'_> {
             if let Some(casts) = self.roots.get(&self.canonical(name, ns)) {
                 for cast in casts {
                     if let T::Element(e) = cast {
-                        if let SchemaElement::EntityType(derived) = e.as_ref() {
-                            if Arc::ptr_eq(derived, &t) || entity_is_strict_subtype(derived, &t) {
-                                return cast.clone();
-                            }
+                        if let SchemaElement::EntityType(_) = e.as_ref() {
+                            // An incompatible instance casts to null at runtime.
+                            return cast.clone();
                         }
                     }
                 }
@@ -631,10 +743,8 @@ impl Scope<'_> {
             if let Some(casts) = self.roots.get(&self.canonical(name, ns)) {
                 for cast in casts {
                     if let T::Element(e) = cast {
-                        if let SchemaElement::ComplexType(derived) = e.as_ref() {
-                            if Arc::ptr_eq(derived, &t) || complex_is_strict_subtype(derived, &t) {
-                                return cast.clone();
-                            }
+                        if let SchemaElement::ComplexType(_) = e.as_ref() {
+                            return cast.clone();
                         }
                     }
                 }
@@ -653,6 +763,27 @@ impl Scope<'_> {
         source: &[csdl::Annotation],
         output: &mut Vec<ResolvedAnnotation>,
     ) {
+        self.attach_impl(ns, owner, source, output, false);
+    }
+
+    fn attach_external(
+        &self,
+        ns: &str,
+        owner: &str,
+        source: &[csdl::Annotation],
+        output: &mut Vec<ResolvedAnnotation>,
+    ) {
+        self.attach_impl(ns, owner, source, output, true);
+    }
+
+    fn attach_impl(
+        &self,
+        ns: &str,
+        owner: &str,
+        source: &[csdl::Annotation],
+        output: &mut Vec<ResolvedAnnotation>,
+        external: bool,
+    ) {
         for annotation in source {
             let target_path = annotation
                 .target
@@ -666,20 +797,16 @@ impl Scope<'_> {
                 })
                 .unwrap_or_else(|| owner.to_owned());
             let targets = self.paths(&target_path, ns);
+            let contexts = targets
+                .iter()
+                .map(|t| annotation_context(t, external).to_vec())
+                .collect::<Vec<_>>();
+            let output_start = output.len();
             let term_name = self.canonical(&annotation.term, ns);
             let mut expression_paths = Vec::new();
             if let Some(expression) = &annotation.expression {
                 for target in &targets {
-                    let context = if matches!(
-                        target.last(),
-                        Some(
-                            AnnotationTarget::Property(_) | AnnotationTarget::NavigationProperty(_)
-                        )
-                    ) {
-                        &target[..target.len() - 1]
-                    } else {
-                        target.as_ref()
-                    };
+                    let context = annotation_context(target, external);
                     self.expression_paths(expression, ns, context, &mut expression_paths);
                 }
             }
@@ -731,6 +858,19 @@ impl Scope<'_> {
                     applied.push_str(q);
                 }
                 self.attach(ns, &applied, &annotation.annotations, output);
+            }
+            for nested in &mut output[output_start + 1..] {
+                nested.expression_paths.clear();
+                if let Some(expression) = &nested.expression {
+                    for context in &contexts {
+                        self.expression_paths(
+                            expression,
+                            ns,
+                            context,
+                            &mut nested.expression_paths,
+                        );
+                    }
+                }
             }
         }
     }
@@ -974,29 +1114,7 @@ impl Scope<'_> {
             _ => None,
         };
         if let Some((path, kind)) = path {
-            if path.starts_with('/') {
-                for segments in self.paths(path.trim_start_matches('/'), ns) {
-                    output.push(AnnotationExpressionPath {
-                        source: path.clone(),
-                        kind,
-                        segments,
-                    });
-                }
-                return;
-            }
-            let mut segments = context.to_vec();
-            for part in path.split('/') {
-                let next = segments
-                    .last()
-                    .map(|last| self.child(last, part, ns))
-                    .unwrap_or_else(|| AnnotationTarget::Unresolved(part.into()));
-                segments.push(next);
-            }
-            output.push(AnnotationExpressionPath {
-                source: path.clone(),
-                kind,
-                segments: segments.into(),
-            });
+            output.extend(self.resolve_expression_path(path, kind, ns, context, 0));
         }
         match expression {
             Expr::Annotated {

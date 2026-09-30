@@ -35,12 +35,40 @@ pub(super) fn valid(
     let Some(ty) = term.ty() else {
         return false;
     };
-    Checker {
+    let mut checker = Checker {
         annotation,
         labels,
         active: HashSet::new(),
+    };
+    for path in &annotation.expression_paths {
+        for segment in path.segments.iter() {
+            if let AnnotationTarget::SelectedItem {
+                selector: PathSelector::Key(args),
+                ..
+            } = segment
+            {
+                for arg in args {
+                    let expected = Expected {
+                        ty: property_type(&arg.property.ty),
+                        collection: false,
+                        nullable: false,
+                        facets: arg.property.facets.clone(),
+                    };
+                    let valid = match &arg.value {
+                        PathKeyValue::Literal(value) => checker.check(value, &expected),
+                        PathKeyValue::Path(path) => path
+                            .last()
+                            .and_then(endpoint)
+                            .is_some_and(|ty| !ty.collection && assignable(&ty.ty, &expected.ty)),
+                    };
+                    if !valid {
+                        return false;
+                    }
+                }
+            }
+        }
     }
-    .check(
+    checker.check(
         expression,
         &Expected {
             ty: ty.clone(),
@@ -378,9 +406,7 @@ impl Checker<'_> {
                 let mut result = None;
                 for path in paths {
                     let mut ty = endpoint(path.segments.last()?)?;
-                    ty.collection |= path.segments.iter().any(
-                        |s| matches!(s, AnnotationTarget::NavigationProperty(p) if p.is_collection),
-                    );
+                    ty.collection = path.is_collection;
                     if result.as_ref().is_some_and(|r: &Expected| {
                         r.collection != ty.collection || !assignable(&ty.ty, &r.ty)
                     }) {
@@ -822,8 +848,51 @@ fn property_type(ty: &ResolvedType) -> TermType {
         ResolvedType::TypeDefinition(p) => TermType::TypeDefinition(p.clone()),
     }
 }
+pub(super) fn model_path_endpoint(target: &AnnotationTarget, entity: bool) -> bool {
+    endpoint(target).is_some_and(|e| {
+        let is_entity = matches!(e.ty, TermType::Entity(_));
+        is_entity == entity
+    })
+}
+
 fn endpoint(target: &AnnotationTarget) -> Option<Expected> {
     Some(match target {
+        AnnotationTarget::Count => Expected::primitive(PrimitiveType::Int64),
+        AnnotationTarget::ImplicitMediaTerm(_) => Expected::primitive(PrimitiveType::String),
+        AnnotationTarget::SelectedItem { collection, .. } => {
+            let mut t = endpoint(collection)?;
+            t.collection = false;
+            t
+        }
+        AnnotationTarget::Element(e) => match e.as_ref() {
+            SchemaElement::EntityType(t) => Expected::scalar(TermType::Entity(t.clone())),
+            SchemaElement::ComplexType(t) => Expected::scalar(TermType::Complex(t.clone())),
+            _ => return None,
+        },
+        AnnotationTarget::Resource(r) => match r.as_ref() {
+            EntityContainerElement::EntitySet(s) => {
+                let mut t = Expected::scalar(TermType::Entity(s.target.clone()));
+                t.collection = true;
+                t
+            }
+            EntityContainerElement::Singleton(s) => {
+                Expected::scalar(TermType::Entity(s.target.clone()))
+            }
+            _ => return None,
+        },
+        AnnotationTarget::ReturnType(operation) => {
+            let r = match operation.as_ref() {
+                SchemaElement::Function(f) => f.return_type.as_ref()?,
+                SchemaElement::Action(a) => a.return_type.as_ref()?,
+                _ => return None,
+            };
+            Expected {
+                ty: r.ty.clone(),
+                collection: r.is_collection,
+                nullable: r.nullable.unwrap_or(true),
+                facets: r.facets.clone(),
+            }
+        }
         AnnotationTarget::Property(p) => Expected {
             ty: property_type(&p.ty),
             collection: p.is_collection,

@@ -59,8 +59,10 @@ by a capitalized MUST paragraph.
    checks for structural paths and expression bindings, including dependencies
    loaded transitively. Additional path syntax is the next task.
 3. [Complete annotation path grammar](../TODO/conformance-expression-paths.md):
-   key predicates, ordered indexes, `$count`, empty paths, collection traversal
-   limits, implicit media terms, and all target-relative starting contexts.
+   implemented key predicates, ordered indexes, `$count`, empty paths, collection
+   traversal limits, implicit media terms, and target-relative starting contexts.
+   Key values retain resolved properties and typed literals/paths for validation.
+   Literal-domain and exhaustive clause evidence remain in follow-ups 4 and 6.
 4. [Complete recursive expression semantics](../TODO/conformance-expression-semantics.md):
    the full canonical function signature catalog and numeric promotion,
    base-term record member completion, numeric enum values, URL result typing,
