@@ -1,4 +1,5 @@
 pub mod csdl;
+pub mod conformance;
 pub mod csdl_json_reader;
 pub mod csdl_xml_reader;
 #[cfg(feature = "edm")]

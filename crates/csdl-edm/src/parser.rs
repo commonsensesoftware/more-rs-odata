@@ -1,8 +1,37 @@
 use std::io;
 
+use crate::conformance::ValidationProfile;
 use crate::csdl::*;
 use crate::csdl_xml_reader::{CsdlReader, SyntaxUnit};
 use crate::expr::CsdlAnnotationExpression;
+
+mod validation;
+
+/// Parse with namespace-aware extension handling and optional authoring checks.
+pub fn from_xml_reader_with_profile<R: io::BufRead>(
+    reader: R,
+    profile: ValidationProfile,
+) -> io::Result<CsdlDocument> {
+    let xml = validation::xml_source(reader, profile)?;
+    let mut reader = CsdlReader::from_reader(xml.as_slice());
+    from_units_profile(
+        || reader.next_unit().map_err(io::Error::other),
+        profile,
+        false,
+    )
+}
+
+pub fn from_json_reader_with_profile<R: io::Read>(
+    reader: R,
+    profile: ValidationProfile,
+) -> io::Result<CsdlDocument> {
+    let value = validation::json_source(reader, profile)?;
+    let mut units = crate::csdl_json_reader::JsonCsdlReader::new(value)
+        .into_units()
+        .map_err(io::Error::other)?
+        .into_iter();
+    from_units_profile(|| Ok(units.next()), profile, true)
+}
 
 #[derive(Debug, Clone)]
 struct RawElement {
@@ -34,6 +63,17 @@ pub fn from_json_reader<R: io::Read>(mut reader: R) -> io::Result<CsdlDocument> 
 /// Drives the shared SyntaxUnit→RawElement→CsdlDocument loop. `next_unit`
 /// returns `Ok(None)` at EOF.
 fn from_units<F>(mut next_unit: F) -> io::Result<CsdlDocument>
+where
+    F: FnMut() -> io::Result<Option<SyntaxUnit>>,
+{
+    from_units_profile(&mut next_unit, ValidationProfile::Tolerant, false)
+}
+
+fn from_units_profile<F>(
+    mut next_unit: F,
+    profile: ValidationProfile,
+    json: bool,
+) -> io::Result<CsdlDocument>
 where
     F: FnMut() -> io::Result<Option<SyntaxUnit>>,
 {
@@ -97,6 +137,9 @@ where
         ));
     }
 
+    if profile == ValidationProfile::Strict {
+        validation::document(&roots, json)?;
+    }
     let edmx = roots
         .iter()
         .find(|n| n.name == "Edmx")

@@ -138,6 +138,34 @@ pub enum ValidationError {
     },
 }
 
+/// Both profiles expose annotation diagnostics; only strict authoring treats
+/// them as invalidating the report.
+#[derive(Debug)]
+pub struct ValidationReport {
+    pub errors: Vec<ValidationError>,
+    pub annotations: Vec<AnnotationDiagnostic>,
+    pub profile: crate::conformance::ValidationProfile,
+}
+
+impl ValidationReport {
+    pub fn is_valid(&self) -> bool {
+        self.errors.is_empty()
+            && (self.profile == crate::conformance::ValidationProfile::Tolerant
+                || self.annotations.is_empty())
+    }
+}
+
+pub fn validate_document_with_profile(
+    document: &DocumentModel,
+    profile: crate::conformance::ValidationProfile,
+) -> ValidationReport {
+    ValidationReport {
+        errors: validate_document(document).err().unwrap_or_default(),
+        annotations: validate_annotations(document),
+        profile,
+    }
+}
+
 pub fn validate_document(document: &DocumentModel) -> Result<(), Vec<ValidationError>> {
     let engine = ValidatorEngine::default();
     let mut errors = Vec::new();
@@ -1717,10 +1745,7 @@ fn same_key_path(left: &[KeyPathSegment], right: &[KeyPathSegment]) -> bool {
 }
 
 fn is_simple_identifier(value: &str) -> bool {
-    let mut chars = value.chars();
-    matches!(chars.next(), Some(c) if c == '_' || c.is_alphabetic())
-        && chars.all(|c| c == '_' || c.is_alphanumeric())
-        && value.chars().count() <= 128
+    crate::conformance::is_simple_identifier(value)
 }
 
 struct NonScalarEntityKeyRule;

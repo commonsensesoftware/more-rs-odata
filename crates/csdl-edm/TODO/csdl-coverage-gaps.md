@@ -168,13 +168,16 @@ Checkpoint: completion of sections 1–6 is not a claim of full CSDL conformance
 Complete the following tasks in order, moving a dependency earlier only when
 required. Commit each completed task separately, including its tests and status.
 
-- [ ] **1. Document and declaration validation.** Validate XML namespaces,
+- [x] **1. Document and declaration validation.** Validate XML namespaces,
       document structure, required attributes, element cardinalities, supported
       versions, identifier/namespace Unicode syntax and lengths, reserved aliases,
       and document-wide alias collisions. Distinguish malformed known constructs
       from unknown extensions that tolerant consumers must ignore. Introduce
       explicit tolerant-consumption and strict-authoring validation profiles;
       retain annotation diagnostics without making tolerant consumption fail.
+      Implemented additive profile-aware parsers and semantic reports; see
+      [conformance profiles](../docs/conformance.md). Legacy entrypoints remain
+      compatible. Strict checks happen before normalization loses source details.
 - [ ] **2. Service-document identity.** Preserve, resolve, validate, and serialize
       JSON `$EntityContainer`. Distinguish service metadata from vocabulary/model
       documents, applying service-specific container requirements only where
