@@ -2,10 +2,14 @@
 use csdl_edm::{conformance::ValidationProfile as P, parser, resolver::Resolver, validator};
 
 fn check(xml: &str, json: &str, expected: bool) {
+    check_version(xml, json, "4.01", expected)
+}
+
+fn check_version(xml: &str, json: &str, version: &str, expected: bool) {
     let xml = format!(
-        r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N">{xml}</Schema></edmx:DataServices></edmx:Edmx>"#
+        r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="{version}"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N">{xml}</Schema></edmx:DataServices></edmx:Edmx>"#
     );
-    let json = format!(r#"{{"$Version":"4.01","N":{{{json}}}}}"#);
+    let json = format!(r#"{{"$Version":"{version}","N":{{{json}}}}}"#);
     for parsed in [
         parser::from_xml_reader_with_profile(xml.as_bytes(), P::Strict),
         parser::from_json_reader_with_profile(json.as_bytes(), P::Strict),
@@ -148,6 +152,150 @@ fn nested_complex_key_paths_check_nullability_at_every_level() {
                     !outer && !inner && !leaf,
                 );
             }
+        }
+    }
+}
+
+#[test]
+fn related_entity_keys_require_all_members_and_nonnullable_single_navigation() {
+    for (complete, nullable, collection, version, expected) in [
+        (true, false, false, "4.01", true),
+        (false, false, false, "4.01", false),
+        (true, true, false, "4.01", false),
+        (true, false, true, "4.01", false),
+        (true, false, false, "4.0", false),
+    ] {
+        let second_xml = if complete {
+            r#"<PropertyRef Name="Parent/B" Alias="ParentB"/>"#
+        } else {
+            ""
+        };
+        let second_json = if complete {
+            r#",{"ParentB":"Parent/B"}"#
+        } else {
+            ""
+        };
+        let ty = if collection {
+            "Collection(N.Parent)"
+        } else {
+            "N.Parent"
+        };
+        let xml_nullable = if collection {
+            String::new()
+        } else {
+            format!(r#" Nullable="{nullable}""#)
+        };
+        let json_nullable = if collection {
+            String::new()
+        } else {
+            format!(r#", "$Nullable":{nullable}"#)
+        };
+        check_version(
+            &format!(
+                r#"<EntityType Name="Parent"><Key><PropertyRef Name="A"/><PropertyRef Name="B"/></Key><Property Name="A" Type="Edm.Int32" Nullable="false"/><Property Name="B" Type="Edm.String" Nullable="false"/></EntityType><EntityType Name="Child"><Key><PropertyRef Name="Parent/A" Alias="ParentA"/>{second_xml}</Key><NavigationProperty Name="Parent" Type="{ty}"{xml_nullable}/></EntityType>"#
+            ),
+            &format!(
+                r#""Parent":{{"$Kind":"EntityType","$Key":["A","B"],"A":{{"$Type":"Edm.Int32"}},"B":{{}}}},"Child":{{"$Kind":"EntityType","$Key":[{{"ParentA":"Parent/A"}}{second_json}],"Parent":{{"$Kind":"NavigationProperty","$Type":"N.Parent","$Collection":{collection}{json_nullable}}}}}"#
+            ),
+            version,
+            expected,
+        );
+    }
+    for complete in [true, false] {
+        let second_xml = if complete {
+            r#"<PropertyRef Name="Value/Related/B" Alias="ParentB"/>"#
+        } else {
+            ""
+        };
+        let second_json = if complete {
+            r#",{"ParentB":"Value/Related/B"}"#
+        } else {
+            ""
+        };
+        check(
+            &format!(
+                r#"<EntityType Name="Parent"><Key><PropertyRef Name="A"/><PropertyRef Name="B"/></Key><Property Name="A" Type="Edm.Int32" Nullable="false"/><Property Name="B" Type="Edm.String" Nullable="false"/></EntityType><ComplexType Name="C"><NavigationProperty Name="Related" Type="N.Parent" Nullable="false"/></ComplexType><EntityType Name="Child"><Key><PropertyRef Name="Value/Related/A" Alias="ParentA"/>{second_xml}</Key><Property Name="Value" Type="N.C" Nullable="false"/></EntityType>"#
+            ),
+            &format!(
+                r#""Parent":{{"$Kind":"EntityType","$Key":["A","B"],"A":{{"$Type":"Edm.Int32"}},"B":{{}}}},"C":{{"$Kind":"ComplexType","Related":{{"$Kind":"NavigationProperty","$Type":"N.Parent"}}}},"Child":{{"$Kind":"EntityType","$Key":[{{"ParentA":"Value/Related/A"}}{second_json}],"Value":{{"$Type":"N.C"}}}}"#
+            ),
+            complete,
+        );
+    }
+}
+
+#[test]
+fn key_aliases_cannot_collide_with_inherited_properties_or_each_other() {
+    for (alias, expected) in [("Good", true), ("Taken", false), ("Navi", false)] {
+        check(
+            &format!(
+                r#"<ComplexType Name="C"><Property Name="Id" Type="Edm.Int32" Nullable="false"/></ComplexType><EntityType Name="Base"><Property Name="Taken" Type="Edm.String"/><NavigationProperty Name="Navi" Type="N.Base"/></EntityType><EntityType Name="E" BaseType="N.Base"><Key><PropertyRef Name="Value/Id" Alias="{alias}"/></Key><Property Name="Value" Type="N.C" Nullable="false"/></EntityType>"#
+            ),
+            &format!(
+                r#""C":{{"$Kind":"ComplexType","Id":{{"$Type":"Edm.Int32"}}}},"Base":{{"$Kind":"EntityType","Taken":{{}},"Navi":{{"$Kind":"NavigationProperty","$Type":"N.Base"}}}},"E":{{"$Kind":"EntityType","$BaseType":"N.Base","$Key":[{{"{alias}":"Value/Id"}}],"Value":{{"$Type":"N.C"}}}}"#
+            ),
+            expected,
+        );
+    }
+    for (second_alias, expected) in [("Second", true), ("First", false)] {
+        check(
+            &format!(
+                r#"<ComplexType Name="C"><Property Name="A" Type="Edm.Int32" Nullable="false"/><Property Name="B" Type="Edm.String" Nullable="false"/></ComplexType><EntityType Name="E"><Key><PropertyRef Name="Value/A" Alias="First"/><PropertyRef Name="Value/B" Alias="{second_alias}"/></Key><Property Name="Value" Type="N.C" Nullable="false"/></EntityType>"#
+            ),
+            &format!(
+                r#""C":{{"$Kind":"ComplexType","A":{{"$Type":"Edm.Int32"}},"B":{{}}}},"E":{{"$Kind":"EntityType","$Key":[{{"First":"Value/A"}},{{"{second_alias}":"Value/B"}}],"Value":{{"$Type":"N.C"}}}}"#
+            ),
+            expected,
+        );
+    }
+}
+
+#[test]
+fn entity_sets_and_containment_collections_require_keys() {
+    for has_key in [true, false] {
+        let key_xml = if has_key {
+            r#"<Key><PropertyRef Name="Id"/></Key>"#
+        } else {
+            ""
+        };
+        let key_json = if has_key { r#", "$Key":["Id"]"# } else { "" };
+        for (xml_use, json_use, required) in [
+            (
+                r#"<EntityContainer Name="C"><EntitySet Name="Items" EntityType="N.E"/></EntityContainer>"#,
+                r#""C":{"$Kind":"EntityContainer","Items":{"$Collection":true,"$Type":"N.E"}}"#,
+                true,
+            ),
+            (
+                r#"<EntityType Name="Source"><NavigationProperty Name="Items" Type="Collection(N.E)" ContainsTarget="true"/></EntityType>"#,
+                r#""Source":{"$Kind":"EntityType","Items":{"$Kind":"NavigationProperty","$Type":"N.E","$Collection":true,"$ContainsTarget":true}}"#,
+                true,
+            ),
+            (
+                r#"<EntityContainer Name="C"><Singleton Name="Item" Type="N.E"/></EntityContainer>"#,
+                r#""C":{"$Kind":"EntityContainer","Item":{"$Type":"N.E"}}"#,
+                false,
+            ),
+        ] {
+            check(
+                &format!(
+                    r#"<EntityType Name="E">{key_xml}<Property Name="Id" Type="Edm.Int32" Nullable="false"/></EntityType>{xml_use}"#
+                ),
+                &format!(
+                    r#""E":{{"$Kind":"EntityType"{key_json},"Id":{{"$Type":"Edm.Int32"}}}},{json_use}"#
+                ),
+                has_key || !required,
+            );
+            let inherited_xml = xml_use.replace("N.E", "N.Derived");
+            let inherited_json = json_use.replace("N.E", "N.Derived");
+            check(
+                &format!(
+                    r#"<EntityType Name="E">{key_xml}<Property Name="Id" Type="Edm.Int32" Nullable="false"/></EntityType><EntityType Name="Derived" BaseType="N.E"/>{inherited_xml}"#
+                ),
+                &format!(
+                    r#""E":{{"$Kind":"EntityType"{key_json},"Id":{{"$Type":"Edm.Int32"}}}},"Derived":{{"$Kind":"EntityType","$BaseType":"N.E"}},{inherited_json}"#
+                ),
+                has_key || !required,
+            );
         }
     }
 }
