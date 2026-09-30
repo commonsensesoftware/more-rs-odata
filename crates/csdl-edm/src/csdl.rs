@@ -238,6 +238,8 @@ pub struct Function {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Parameter {
+    /// Representation default when Nullable was omitted (JSON: false).
+    pub nullable_default: Option<bool>,
     pub name: String,
     pub type_name: Option<String>,
     pub is_collection: bool,
@@ -253,6 +255,8 @@ pub struct Parameter {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReturnType {
+    /// Representation default when Nullable was omitted (JSON: false).
+    pub nullable_default: Option<bool>,
     pub type_name: Option<String>,
     pub is_collection: bool,
     pub nullable: Option<bool>,

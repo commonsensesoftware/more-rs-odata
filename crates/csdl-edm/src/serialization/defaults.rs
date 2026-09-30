@@ -2,6 +2,19 @@ use super::*;
 
 pub(super) fn normalize_xml_spatial(edmx: &mut Edmx) {
     normalize_annotations(edmx, true);
+    let entities = edmx
+        .schemas
+        .iter()
+        .flat_map(|s| {
+            s.elements.iter().filter_map(move |e| {
+                if let SchemaElement::EntityType(t) = e {
+                    Some(format!("{}.{}", s.namespace, t.name))
+                } else {
+                    None
+                }
+            })
+        })
+        .collect::<std::collections::HashSet<_>>();
     let mut definitions = BTreeMap::new();
     let mut aliases = BTreeMap::new();
     for schema in &edmx.schemas {
@@ -18,6 +31,25 @@ pub(super) fn normalize_xml_spatial(edmx: &mut Edmx) {
         }
     }
     for schema in &mut edmx.schemas {
+        for element in &mut schema.elements {
+            let rt = match element {
+                SchemaElement::Function(f) => f.return_type.as_mut(),
+                SchemaElement::Action(a) => a.return_type.as_mut(),
+                _ => None,
+            };
+            if let Some(rt) = rt {
+                let name = rt.type_name.as_deref().unwrap_or("Edm.String");
+                let name = name
+                    .rsplit_once('.')
+                    .map(|(ns, n)| {
+                        format!("{}.{n}", aliases.get(ns).map(String::as_str).unwrap_or(ns))
+                    })
+                    .unwrap_or_else(|| format!("{}.{name}", schema.namespace));
+                if !(rt.is_collection && (entities.contains(&name) || name == "Edm.EntityType")) {
+                    rt.nullable = rt.nullable.or(rt.nullable_default);
+                }
+            }
+        }
         let normalize =
             |name: Option<&str>, srid: Option<SridFacet>, default: &mut Option<String>| {
                 let Some(value) = default.as_ref().filter(|v| v.starts_with('{')) else {

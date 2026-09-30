@@ -5,6 +5,7 @@ use crate::csdl::*;
 use crate::csdl_xml_reader::{CsdlReader, SyntaxUnit};
 use crate::expr::CsdlAnnotationExpression;
 
+mod json_rules;
 pub(crate) mod validation;
 
 /// Parse with namespace-aware extension handling and optional authoring checks.
@@ -35,6 +36,7 @@ pub fn from_json_reader_with_profile<R: io::Read>(
 
 #[derive(Debug, Clone)]
 struct RawElement {
+    source_json: bool,
     name: String,
     attributes: Vec<(String, String)>,
     annotation_expressions: Vec<CsdlAnnotationExpression>,
@@ -88,6 +90,7 @@ where
         match unit {
             SyntaxUnit::StartElement { name, attributes } => {
                 stack.push(RawElement {
+                    source_json: json,
                     name,
                     attributes,
                     annotation_expressions: Vec::new(),
@@ -715,6 +718,7 @@ fn parse_parameter(raw: &RawElement) -> io::Result<Parameter> {
     let annotations = parse_annotations(raw)?;
     let (type_name, is_collection) = raw_type_attr(raw, "Type");
     Ok(Parameter {
+        nullable_default: (raw.source_json && raw_attr(raw, "Nullable").is_none()).then_some(false),
         name: raw_attr(raw, "Name").unwrap_or("").to_string(),
         type_name,
         is_collection,
@@ -735,6 +739,7 @@ fn parse_return_type(raw: &RawElement) -> io::Result<ReturnType> {
     let annotations = parse_annotations(raw)?;
     let (type_name, is_collection) = raw_type_attr(raw, "Type");
     Ok(ReturnType {
+        nullable_default: (raw.source_json && raw_attr(raw, "Nullable").is_none()).then_some(false),
         type_name,
         is_collection,
         nullable: checked_bool(raw, "Nullable")?,

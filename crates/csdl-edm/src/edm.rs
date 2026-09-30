@@ -479,6 +479,8 @@ pub struct Action {
 
 #[derive(Debug)]
 pub struct OperationParameter {
+    /// Whether Nullable was explicitly present in the source declaration.
+    pub nullable_was_authored: bool,
     pub default_value: Option<String>,
     pub facets: TypeFacets,
     pub name: String,
@@ -489,6 +491,8 @@ pub struct OperationParameter {
 
 #[derive(Debug)]
 pub struct OperationReturnType {
+    /// Whether Nullable was explicitly present in the source declaration.
+    pub nullable_was_authored: bool,
     pub facets: TypeFacets,
     pub ty: TermType,
     pub is_collection: bool,

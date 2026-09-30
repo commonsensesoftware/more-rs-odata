@@ -640,8 +640,29 @@ fn walk(node: &RawElement, parent: Option<&str>, json: bool) -> io::Result<()> {
     Ok(())
 }
 
-fn attribute_allowed(name: &str, key: &str, json: bool) -> bool {
+pub(super) fn attribute_allowed(name: &str, key: &str, json: bool) -> bool {
     match key {
+        "Kind" if json => matches!(
+            name,
+            "EntityType"
+                | "ComplexType"
+                | "EnumType"
+                | "TypeDefinition"
+                | "Term"
+                | "Action"
+                | "Function"
+                | "EntityContainer"
+                | "Property"
+                | "NavigationProperty"
+        ),
+        "Reference" if json => name == "Edmx",
+        "Include" | "IncludeAnnotations" if json => name == "Reference",
+        "Annotations" if json => name == "Schema",
+        "Key" if json => name == "EntityType",
+        "Parameter" | "ReturnType" if json => matches!(name, "Action" | "Function"),
+        "NavigationPropertyBinding" if json => matches!(name, "EntitySet" | "Singleton"),
+        "ReferentialConstraint" | "OnDelete" if json => name == "NavigationProperty",
+        "Type" if json && name == "EntitySet" => true,
         "EntityContainer" => json && name == "Edmx",
         "Name" => matches!(
             name,
@@ -720,7 +741,19 @@ fn attribute_allowed(name: &str, key: &str, json: bool) -> bool {
         "Path" => matches!(name, "NavigationPropertyBinding" | "Annotation"),
         "TermNamespace" | "TargetNamespace" => name == "IncludeAnnotations",
         "Value" => name == "Member",
-        "Collection" => json,
+        "Collection" => {
+            json && matches!(
+                name,
+                "Property"
+                    | "NavigationProperty"
+                    | "Parameter"
+                    | "ReturnType"
+                    | "Term"
+                    | "EntitySet"
+                    | "Cast"
+                    | "IsOf"
+            )
+        }
         // Future attributes are ignored; known attributes on the wrong element are errors.
         _ => true,
     }
@@ -745,6 +778,7 @@ pub(super) fn json_source<R: io::Read>(
             return Err(invalid("$Version must be a string containing 4.0 or 4.01"));
         }
         json_shapes(&value)?;
+        super::json_rules::validate(&value)?;
         for (ns, schema) in value
             .as_object()
             .ok_or_else(|| invalid("Document must be an object"))?
@@ -863,6 +897,12 @@ fn json_shapes(value: &serde_json::Value) -> io::Result<()> {
                     }
                 }
                 let valid = match key.as_str() {
+                    "$MaxLength" => value.as_u64().is_some_and(|n| n > 0),
+                    "$Precision" => value.is_u64(),
+                    "$Scale" => {
+                        value.is_u64() || matches!(value.as_str(), Some("variable" | "floating"))
+                    }
+                    "$SRID" => value.is_u64() || value.as_str() == Some("variable"),
                     "$Version" | "$EntityContainer" | "$Kind" | "$Name" | "$Namespace"
                     | "$Alias" | "$Type" | "$BaseType" | "$UnderlyingType" | "$BaseTerm"
                     | "$Extends" | "$TermNamespace" | "$TargetNamespace" | "$Qualifier"

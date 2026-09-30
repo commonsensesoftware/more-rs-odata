@@ -30,9 +30,9 @@ inventory completeness, unique IDs, override integrity, and real code/test links
 
 | Disposition | Paragraphs | Meaning |
 |---|---:|---|
-| covered | 15 | Direct evidence for the complete paragraph identified here |
+| covered | 18 | Direct evidence for the complete paragraph identified here |
 | partial | 402 | Implementation exists, but behavior or independent clause-level evidence is incomplete |
-| unsupported | 9 | Known static obligation not completely implemented |
+| unsupported | 6 | Known static obligation not completely implemented |
 | advisory | 26 | SHOULD guidance that does not reject documents |
 | outside-static-scope | 33 | HTTP, runtime values/execution, metarules, or example text |
 
@@ -49,9 +49,11 @@ defaults, and referenced grammar artifacts also matter even when not represented
 by a capitalized MUST paragraph.
 
 1. [Source fidelity and strict representation parity](../TODO/conformance-source-parity.md):
-   JSON alias-only qualification, same-container binding target spelling, all
-   known member ownership/type rules, document-order preservation, and authored
-   versus defaulted collection nullability.
+   implemented strict JSON alias-only qualification, same-container binding target
+   spelling, declaration member checks, and authored versus defaulted collection
+   nullability. Meaningful order is retained; serialization groups cross-kind
+   interleaving as documented in the delivery record. Expression-specific and
+   cross-format output checks remain in the following tasks.
 2. [Reference annotations and complete scope isolation](../TODO/conformance-reference-metadata.md):
    reference/Include metadata, schema-version loader hints, and scope checks for
    every structural/expression path, including dependencies loaded transitively.

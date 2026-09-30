@@ -477,6 +477,7 @@ fn resolves_container_imports_and_navigation_bindings() {
                 entity_set_path: None,
                 parameters: Vec::new(),
                 return_type: Some(csdl::ReturnType {
+                    nullable_default: None,
                     type_name: Some("Edm.Int32".to_owned()),
                     is_collection: false,
                     nullable: None,
@@ -1083,6 +1084,7 @@ fn validates_container_targets() {
                 entity_set_path: None,
                 parameters: Vec::new(),
                 return_type: Some(csdl::ReturnType {
+                    nullable_default: None,
                     type_name: Some("Edm.Int32".to_owned()),
                     is_collection: false,
                     nullable: None,
@@ -1198,6 +1200,7 @@ fn rejects_unresolved_function_and_action_import_targets() {
                 entity_set_path: None,
                 parameters: Vec::new(),
                 return_type: Some(csdl::ReturnType {
+                    nullable_default: None,
                     type_name: Some("Edm.Int32".to_owned()),
                     is_collection: false,
                     nullable: None,
@@ -1395,6 +1398,7 @@ fn validates_operation_binding_semantics() {
                 entity_set_path: Some("binding/Target".to_owned()),
                 parameters: Vec::new(),
                 return_type: Some(csdl::ReturnType {
+                    nullable_default: None,
                     type_name: Some("Edm.Int32".to_owned()),
                     is_collection: false,
                     nullable: None,
@@ -1412,6 +1416,7 @@ fn validates_operation_binding_semantics() {
                 is_bound: Some(false),
                 entity_set_path: Some("binding/Target".to_owned()),
                 parameters: vec![csdl::Parameter {
+                    nullable_default: None,
                     name: "binding".to_owned(),
                     type_name: Some("Demo.Thing".to_owned()),
                     is_collection: false,
@@ -1432,6 +1437,7 @@ fn validates_operation_binding_semantics() {
                 is_bound: Some(true),
                 entity_set_path: Some("other/Target".to_owned()),
                 parameters: vec![csdl::Parameter {
+                    nullable_default: None,
                     name: "binding".to_owned(),
                     type_name: Some("Demo.Thing".to_owned()),
                     is_collection: false,

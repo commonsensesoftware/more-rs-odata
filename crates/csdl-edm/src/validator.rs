@@ -1442,7 +1442,7 @@ fn validate_operation_signature(
     if return_type.is_some_and(|ret| {
         ret.is_collection
             && matches!(ret.ty, crate::edm::TermType::Entity(_))
-            && ret.nullable.is_some()
+            && ret.nullable_was_authored
     }) {
         invalid_operation(
             name,

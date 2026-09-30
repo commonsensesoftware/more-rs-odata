@@ -580,7 +580,7 @@ fn write_callable<W: io::Write>(
         if let Some(t) = xml_wrap_type(parameter.type_name.as_deref(), parameter.is_collection) {
             parameter_attrs.push(("Type".to_string(), t));
         }
-        if let Some(nullable) = parameter.nullable {
+        if let Some(nullable) = parameter.nullable.or(parameter.nullable_default) {
             parameter_attrs.push((
                 "Nullable".to_string(),
                 if nullable { "true" } else { "false" }.to_string(),
@@ -1696,7 +1696,8 @@ fn callable_to_json(
             &mut rt_obj,
             rt.type_name.as_deref(),
             rt.is_collection,
-            rt.nullable.or_else(|| (!rt.is_collection).then_some(true)),
+            rt.nullable
+                .or_else(|| (rt.nullable_default.is_none() && !rt.is_collection).then_some(true)),
             rt.max_length,
             namespace,
         );
@@ -1848,9 +1849,9 @@ fn parameter_to_json(parameter: &Parameter, namespace: &str) -> Value {
         &mut obj,
         parameter.type_name.as_deref(),
         parameter.is_collection,
-        parameter
-            .nullable
-            .or_else(|| (!parameter.is_collection).then_some(true)),
+        parameter.nullable.or_else(|| {
+            (parameter.nullable_default.is_none() && !parameter.is_collection).then_some(true)
+        }),
         parameter.max_length,
         namespace,
     );

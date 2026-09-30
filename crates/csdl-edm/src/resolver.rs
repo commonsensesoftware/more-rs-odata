@@ -1413,6 +1413,7 @@ fn resolve_operation_parameters(
                 aliases,
             )?;
             Ok(OperationParameter {
+                nullable_was_authored: parameter.nullable.is_some(),
                 facets: TypeFacets {
                     max_length: parameter.max_length,
                     precision: parameter.precision.clone(),
@@ -1424,7 +1425,7 @@ fn resolve_operation_parameters(
                 name: parameter.name.clone(),
                 ty,
                 is_collection: parameter.is_collection,
-                nullable: parameter.nullable,
+                nullable: parameter.nullable.or(parameter.nullable_default),
             })
         })
         .collect()
@@ -1463,6 +1464,7 @@ fn resolve_operation_return_type(
         aliases,
     )?;
     Ok(Some(OperationReturnType {
+        nullable_was_authored: return_type.nullable.is_some(),
         facets: TypeFacets {
             max_length: return_type.max_length,
             precision: return_type.precision.clone(),
@@ -1472,7 +1474,7 @@ fn resolve_operation_return_type(
         },
         ty,
         is_collection: return_type.is_collection,
-        nullable: return_type.nullable,
+        nullable: return_type.nullable.or(return_type.nullable_default),
     }))
 }
 

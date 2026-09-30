@@ -780,8 +780,7 @@ fn emit_callable(
             let pname = take_string(&mut p, "$Name").unwrap_or_default();
             let is_collection = take_bool(&mut p, "$Collection")?.unwrap_or(false);
             let raw_type = take_string(&mut p, "$Type").or_else(|| Some("Edm.String".into()));
-            let nullable =
-                take_bool(&mut p, "$Nullable")?.or_else(|| (!is_collection).then_some(false));
+            let nullable = take_bool(&mut p, "$Nullable")?;
             let max_length = take_string_or_number(&mut p, "$MaxLength");
             let precision = take_string_or_number(&mut p, "$Precision");
             let scale = take_string_or_number(&mut p, "$Scale");
@@ -824,8 +823,7 @@ fn emit_callable(
         validate_callable_type(&rt)?;
         let is_collection = take_bool(&mut rt, "$Collection")?.unwrap_or(false);
         let raw_type = take_string(&mut rt, "$Type").or_else(|| Some("Edm.String".into()));
-        let nullable =
-            take_bool(&mut rt, "$Nullable")?.or_else(|| (!is_collection).then_some(false));
+        let nullable = take_bool(&mut rt, "$Nullable")?;
         let max_length = take_string_or_number(&mut rt, "$MaxLength");
         let precision = take_string_or_number(&mut rt, "$Precision");
         let scale = take_string_or_number(&mut rt, "$Scale");
