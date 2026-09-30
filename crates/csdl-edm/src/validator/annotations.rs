@@ -38,6 +38,7 @@ fn collect<'a>(models: impl Iterator<Item = &'a Model>) -> Vec<AnnotationDiagnos
         .flat_map(|m| m.annotations.get().into_iter().flatten())
         .collect::<Vec<_>>();
     let mut errors = Vec::new();
+    let labels = super::expressions::labels(&annotations);
     let mut applications = HashSet::new();
     for annotation in &annotations {
         if let Some(term) = &annotation.term {
@@ -156,13 +157,8 @@ fn collect<'a>(models: impl Iterator<Item = &'a Model>) -> Vec<AnnotationDiagnos
                 );
             }
         }
-        if let (Some(expression), Some(ty)) = (&annotation.expression, term.ty()) {
-            if !compatible(
-                expression,
-                ty,
-                term.is_collection,
-                term.nullable.unwrap_or(true),
-            ) {
+        if annotation.expression.is_some() {
+            if !super::expressions::valid(annotation, &labels) {
                 push(&mut errors, annotation, AnnotationIssue::IncompatibleValue);
             }
         }
@@ -254,7 +250,7 @@ fn is_collection(target: &AnnotationTarget) -> bool {
     }
 }
 
-fn compatible(
+pub(super) fn compatible(
     expression: &crate::expr::CsdlAnnotationExpression,
     ty: &TermType,
     collection: bool,

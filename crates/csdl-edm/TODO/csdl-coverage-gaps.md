@@ -193,7 +193,7 @@ required. Commit each completed task separately, including its tests and status.
       resolution. Preserve annotations on expressions and cast/type-test facets
       wherever permitted. Reject malformed known expressions instead of
       fabricating values or silently discarding extra operands.
-- [ ] **5. Recursive annotation type checking.** Validate record types/members,
+- [x] **5. Recursive annotation type checking.** Validate record types/members,
       property values, enum members, literal lexical values/facets, operator
       operands, conditional branches, function applications, casts, and label
       references. Check expression-path result types against expected term

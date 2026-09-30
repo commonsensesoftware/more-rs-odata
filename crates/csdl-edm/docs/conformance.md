@@ -54,7 +54,14 @@ namespace before attachments are resolved. Unincluded namespaces cannot be
 used as structural type references or bind annotation terms merely because a
 different document caused their definitions to be loaded.
 
-These profiles do not yet constitute a full conformance claim. Complete
-expressions, recursive expression type
-checking, and versioned serialization are tracked in
+Annotation expressions retain dynamic operators, nested annotations, and
+Cast/IsOf facets. The resolver binds their types, function candidates, enum
+members, labels, and paths. Recursive validation checks records, operands,
+literal facets, conditional branches, and expression result types. Invalid or
+unavailable expression bindings produce annotation diagnostics; they do not
+prevent tolerant consumption. Client-side function evaluation remains outside
+the library's scope.
+
+These profiles do not yet constitute a full conformance claim. Versioned
+serialization and the normative audit are tracked in
 [the ordered conformance tasks](../TODO/csdl-coverage-gaps.md#7-full-conformance-follow-up--dependency-order).

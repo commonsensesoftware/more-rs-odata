@@ -302,10 +302,21 @@ pub struct ResolvedAnnotation {
     /// Authored expression retained for consumers; paths are resolved separately.
     pub expression: Option<crate::expr::CsdlAnnotationExpression>,
     pub expression_paths: Vec<AnnotationExpressionPath>,
+    /// Resolver-owned bindings for recursive expression validation.
+    pub expression_bindings: AnnotationExpressionBindings,
+}
+
+#[derive(Debug, Default)]
+pub struct AnnotationExpressionBindings {
+    pub types: std::collections::HashMap<String, (TermType, bool)>,
+    pub functions: std::collections::HashMap<String, Vec<Arc<Function>>>,
+    pub enum_members: std::collections::HashMap<String, Vec<(Arc<EnumType>, Arc<EnumMember>)>>,
+    pub labels: std::collections::HashMap<String, String>,
 }
 
 #[derive(Debug)]
 pub struct AnnotationExpressionPath {
+    pub source: String,
     pub kind: AnnotationPathKind,
     pub segments: Arc<[AnnotationTarget]>,
 }

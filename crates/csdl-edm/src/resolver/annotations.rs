@@ -231,6 +231,145 @@ fn signature(
 }
 
 impl Scope<'_> {
+    fn bindings(&self, expression: Option<&Expr>, ns: &str) -> AnnotationExpressionBindings {
+        let mut out = AnnotationExpressionBindings::default();
+        if let Some(expression) = expression {
+            self.bind_expression(expression, ns, &mut out);
+        }
+        out
+    }
+
+    fn bind_expression(&self, expression: &Expr, ns: &str, out: &mut AnnotationExpressionBindings) {
+        let type_name = match expression {
+            Expr::Record { type_, .. } => type_.as_ref(),
+            Expr::Cast { type_, .. } | Expr::IsOf { type_, .. } => Some(type_),
+            _ => None,
+        };
+        if let Some(name) = type_name {
+            let inner = name
+                .strip_prefix("Collection(")
+                .and_then(|s| s.strip_suffix(')'));
+            let canonical = self.canonical(inner.unwrap_or(name), ns);
+            let ty = resolve_primitive(&canonical)
+                .map(TermType::Primitive)
+                .or_else(|| BuiltinType::parse(&canonical).map(TermType::Builtin))
+                .or_else(|| match canonical.as_str() {
+                    "Edm.EntityType" => Some(TermType::Entity(abstract_entity_type().clone())),
+                    "Edm.ComplexType" => Some(TermType::Complex(abstract_complex_type().clone())),
+                    _ => self.roots.get(&canonical).and_then(|roots| {
+                        roots.iter().find_map(|root| {
+                            let AnnotationTarget::Element(e) = root else {
+                                return None;
+                            };
+                            Some(match e.as_ref() {
+                                SchemaElement::EntityType(t) => TermType::Entity(t.clone()),
+                                SchemaElement::ComplexType(t) => TermType::Complex(t.clone()),
+                                SchemaElement::EnumType(t) => TermType::Enum(t.clone()),
+                                SchemaElement::TypeDefinition(t) => {
+                                    TermType::TypeDefinition(t.clone())
+                                }
+                                _ => return None,
+                            })
+                        })
+                    }),
+                });
+            if let Some(ty) = ty {
+                out.types.insert(name.clone(), (ty, inner.is_some()));
+            }
+        }
+        match expression {
+            Expr::Apply { function, .. } => {
+                let candidates = self
+                    .roots
+                    .get(&self.canonical(function, ns))
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|r| {
+                        let AnnotationTarget::Element(e) = r else {
+                            return None;
+                        };
+                        if let SchemaElement::Function(f) = e.as_ref() {
+                            Some(f.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                out.functions.insert(function.clone(), candidates);
+            }
+            Expr::EnumMember(value) => {
+                let members = value
+                    .split_whitespace()
+                    .map(|s| {
+                        let (type_name, member) = s.rsplit_once('/')?;
+                        self.roots
+                            .get(&self.canonical(type_name, ns))?
+                            .iter()
+                            .find_map(|r| {
+                                let AnnotationTarget::Element(e) = r else {
+                                    return None;
+                                };
+                                let SchemaElement::EnumType(t) = e.as_ref() else {
+                                    return None;
+                                };
+                                Some((
+                                    t.clone(),
+                                    t.members.iter().find(|m| m.name == member)?.clone(),
+                                ))
+                            })
+                    })
+                    .collect::<Option<Vec<_>>>();
+                if let Some(members) = members {
+                    out.enum_members.insert(value.clone(), members);
+                }
+            }
+            Expr::LabeledElement { name, .. } | Expr::LabeledElementReference(name) => {
+                out.labels.insert(name.clone(), self.canonical(name, ns));
+            }
+            _ => {}
+        }
+        match expression {
+            Expr::Annotated { expression, .. }
+            | Expr::Faceted { expression, .. }
+            | Expr::Not(expression)
+            | Expr::Neg(expression)
+            | Expr::UrlRef(expression)
+            | Expr::Cast {
+                expr: expression, ..
+            }
+            | Expr::IsOf {
+                expr: expression, ..
+            }
+            | Expr::LabeledElement {
+                expr: expression, ..
+            } => self.bind_expression(expression, ns, out),
+            Expr::BinaryExpression { lhs, rhs, .. } => {
+                self.bind_expression(lhs, ns, out);
+                self.bind_expression(rhs, ns, out);
+            }
+            Expr::If { test, then_, else_ } => {
+                self.bind_expression(test, ns, out);
+                self.bind_expression(then_, ns, out);
+                if let Some(e) = else_ {
+                    self.bind_expression(e, ns, out);
+                }
+            }
+            Expr::Apply { args, .. } | Expr::Collection(args) => {
+                for e in args {
+                    self.bind_expression(e, ns, out);
+                }
+            }
+            Expr::Record { properties, .. } => {
+                for p in properties {
+                    if let Some(e) = &p.value {
+                        self.bind_expression(e, ns, out);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
     fn canonical(&self, name: &str, ns: &str) -> String {
         if let Some((operation, args)) = name.split_once('(') {
             // Commas cannot occur in CSDL type names; Collection has no commas.
@@ -456,6 +595,7 @@ impl Scope<'_> {
                         .and_then(|term| term.default_expression())
                 }),
                 expression_paths,
+                expression_bindings: self.bindings(annotation.expression.as_ref(), ns),
             });
             if let Some(expression) = &annotation.expression {
                 let resolved = output.last().unwrap();
@@ -596,10 +736,53 @@ impl Scope<'_> {
                 .iter()
                 .map(|anchor| {
                     let mut path = anchor.to_vec();
-                    path.push(AnnotationTarget::Expression {
-                        kind: kind.clone(),
-                        ordinal: index,
-                    });
+                    if kind != AnnotationTargetKind::Annotation {
+                        path.push(AnnotationTarget::Expression {
+                            kind: kind.clone(),
+                            ordinal: index,
+                        });
+                    }
+                    Arc::from(path)
+                })
+                .collect::<Vec<Path>>();
+            let mut expression_paths = Vec::new();
+            if let Some(expression) = &annotation.expression {
+                for target in anchor {
+                    let end = target
+                        .iter()
+                        .position(|s| {
+                            matches!(
+                                s,
+                                AnnotationTarget::AppliedTerm { .. }
+                                    | AnnotationTarget::Expression { .. }
+                            )
+                        })
+                        .unwrap_or(target.len());
+                    let mut context = &target[..end];
+                    if matches!(
+                        context.last(),
+                        Some(
+                            AnnotationTarget::Property(_) | AnnotationTarget::NavigationProperty(_)
+                        )
+                    ) {
+                        context = &context[..context.len() - 1];
+                    }
+                    self.expression_paths(expression, ns, context, &mut expression_paths);
+                }
+            }
+            let applied = targets
+                .iter()
+                .map(|target| {
+                    let mut path = target.to_vec();
+                    path.push(
+                        self.terms
+                            .get(&term_name)
+                            .map(|term| AnnotationTarget::AppliedTerm {
+                                term: term.clone(),
+                                qualifier: annotation.qualifier.clone(),
+                            })
+                            .unwrap_or_else(|| AnnotationTarget::Unresolved(term_name.clone())),
+                    );
                     Arc::from(path)
                 })
                 .collect::<Vec<Path>>();
@@ -614,8 +797,23 @@ impl Scope<'_> {
                         .get(&term_name)
                         .and_then(|term| term.default_expression())
                 }),
-                expression_paths: Vec::new(),
+                expression_paths,
+                expression_bindings: self.bindings(annotation.expression.as_ref(), ns),
             });
+            if let Some(expression) = &annotation.expression {
+                self.nested(expression, ns, owner, &applied, ordinal, out);
+            }
+            if !annotation.annotations.is_empty() {
+                self.expression_annotations(
+                    &annotation.annotations,
+                    AnnotationTargetKind::Annotation,
+                    ns,
+                    owner,
+                    &applied,
+                    ordinal,
+                    out,
+                );
+            }
         }
     }
 
@@ -677,7 +875,11 @@ impl Scope<'_> {
         if let Some((path, kind)) = path {
             if path.starts_with('/') {
                 for segments in self.paths(path.trim_start_matches('/'), ns) {
-                    output.push(AnnotationExpressionPath { kind, segments });
+                    output.push(AnnotationExpressionPath {
+                        source: path.clone(),
+                        kind,
+                        segments,
+                    });
                 }
                 return;
             }
@@ -690,6 +892,7 @@ impl Scope<'_> {
                 segments.push(next);
             }
             output.push(AnnotationExpressionPath {
+                source: path.clone(),
                 kind,
                 segments: segments.into(),
             });

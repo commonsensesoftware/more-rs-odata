@@ -263,7 +263,7 @@ fn check_term(
     check(name, primitive, definition, facets, version, errors);
 }
 
-fn check(
+pub(super) fn check(
     name: &str,
     primitive: Option<&PrimitiveType>,
     definition: Option<&TypeDefinition>,
