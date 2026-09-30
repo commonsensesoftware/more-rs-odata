@@ -349,6 +349,9 @@ pub(super) fn document(roots: &[RawElement], json: bool) -> io::Result<()> {
     let mut aliases = HashSet::new();
     for schema in schemas.iter().chain(includes.iter()) {
         let ns = raw_attr(schema, "Namespace").unwrap();
+        if matches!(ns, "Edm" | "odata" | "System" | "Transient") {
+            return Err(invalid(format!("Reserved namespace: {ns}")));
+        }
         if !namespaces.insert(ns) {
             return Err(invalid(format!("Duplicate namespace: {ns}")));
         }
