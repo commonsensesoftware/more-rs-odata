@@ -398,7 +398,7 @@ fn versioned(node: &RawElement, version: &str, json: bool) -> io::Result<()> {
                 )));
             }
         }
-        if attr("Scale") == Some("floating") {
+        if attr("Scale").is_some_and(|scale| scale.eq_ignore_ascii_case("floating")) {
             return Err(invalid("Floating scale requires CSDL 4.01"));
         }
         if node.name == "Singleton" && attr("Nullable").is_some() {
@@ -974,7 +974,11 @@ fn json_shapes(value: &serde_json::Value) -> io::Result<()> {
                     "$MaxLength" => value.as_u64().is_some_and(|n| n > 0),
                     "$Precision" => value.is_u64(),
                     "$Scale" => {
-                        value.is_u64() || matches!(value.as_str(), Some("variable" | "floating"))
+                        value.is_u64()
+                            || value.as_str().is_some_and(|scale| {
+                                scale.eq_ignore_ascii_case("variable")
+                                    || scale.eq_ignore_ascii_case("floating")
+                            })
                     }
                     "$SRID" => value.is_u64() || value.as_str() == Some("variable"),
                     "$Version" | "$EntityContainer" | "$Kind" | "$Name" | "$Namespace"
