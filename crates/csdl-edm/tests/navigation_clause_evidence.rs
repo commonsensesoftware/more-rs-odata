@@ -303,3 +303,68 @@ fn collections_of_containing_complex_types_require_401() {
         }
     }
 }
+
+#[test]
+fn containment_cannot_be_the_terminal_navigation_binding() {
+    for (path, valid) in [("Child", false), ("Child/Related", true)] {
+        check(
+            &format!(
+                r#"<EntityType Name="Owner"><NavigationProperty Name="Child" Type="N.Child" ContainsTarget="true"/></EntityType><EntityType Name="Child"><NavigationProperty Name="Related" Type="N.Child"/></EntityType><EntityContainer Name="Service"><Singleton Name="Root" Type="N.Owner"><NavigationPropertyBinding Path="{path}" Target="Destination"/></Singleton><Singleton Name="Destination" Type="N.Child"/></EntityContainer>"#
+            ),
+            &format!(
+                r#""Owner":{{"$Kind":"EntityType","Child":{{"$Kind":"NavigationProperty","$Type":"N.Child","$ContainsTarget":true}}}},"Child":{{"$Kind":"EntityType","Related":{{"$Kind":"NavigationProperty","$Type":"N.Child"}}}},"Service":{{"$Kind":"EntityContainer","Root":{{"$Type":"N.Owner","$NavigationPropertyBinding":{{"{path}":"Destination"}}}},"Destination":{{"$Type":"N.Child"}}}}"#
+            ),
+            valid,
+        );
+    }
+}
+
+#[test]
+fn containment_parent_is_unique_across_an_inheritance_chain() {
+    for inherited in [false, true] {
+        for second in [false, true] {
+            let xml_second = if second {
+                r#"<NavigationProperty Name="OtherParent" Type="N.Owner" Nullable="false" Partner="OtherChild"/>"#
+            } else {
+                ""
+            };
+            let json_second = if second {
+                r#", "OtherParent":{"$Kind":"NavigationProperty","$Type":"N.Owner","$Partner":"OtherChild"}"#
+            } else {
+                ""
+            };
+            let xml_parent = r#"<NavigationProperty Name="Parent" Type="N.Owner" Nullable="false" Partner="Child"/>"#;
+            let json_parent =
+                r#""Parent":{"$Kind":"NavigationProperty","$Type":"N.Owner","$Partner":"Child"}"#;
+            let (xml_types, json_types) = if inherited {
+                (
+                    format!(
+                        r#"<EntityType Name="Base">{xml_parent}</EntityType><EntityType Name="Child" BaseType="N.Base">{xml_second}</EntityType>"#
+                    ),
+                    format!(
+                        r#""Base":{{"$Kind":"EntityType",{json_parent}}},"Child":{{"$Kind":"EntityType","$BaseType":"N.Base"{json_second}}}"#
+                    ),
+                )
+            } else {
+                (
+                    format!(
+                        r#"<EntityType Name="Base"/><EntityType Name="Child">{xml_parent}{xml_second}</EntityType>"#
+                    ),
+                    format!(
+                        r#""Base":{{"$Kind":"EntityType"}},"Child":{{"$Kind":"EntityType",{json_parent}{json_second}}}"#
+                    ),
+                )
+            };
+            let target = if inherited { "N.Base" } else { "N.Child" };
+            check(
+                &format!(
+                    r#"{xml_types}<EntityType Name="Owner"><NavigationProperty Name="Child" Type="{target}" ContainsTarget="true"/><NavigationProperty Name="OtherChild" Type="N.Child" ContainsTarget="true"/></EntityType>"#
+                ),
+                &format!(
+                    r#"{json_types},"Owner":{{"$Kind":"EntityType","Child":{{"$Kind":"NavigationProperty","$Type":"{target}","$ContainsTarget":true}},"OtherChild":{{"$Kind":"NavigationProperty","$Type":"N.Child","$ContainsTarget":true}}}}"#
+                ),
+                !second,
+            );
+        }
+    }
+}

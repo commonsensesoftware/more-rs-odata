@@ -30,8 +30,8 @@ inventory completeness, unique IDs, override integrity, and real code/test links
 
 | Disposition | Paragraphs | Meaning |
 |---|---:|---|
-| covered | 111 | Direct evidence for the complete paragraph identified here |
-| partial | 315 | Implementation exists, but behavior or independent clause-level evidence is incomplete |
+| covered | 115 | Direct evidence for the complete paragraph identified here |
+| partial | 311 | Implementation exists, but behavior or independent clause-level evidence is incomplete |
 | unsupported | 0 | No remaining paragraph assigned this disposition; partial does not imply complete implementation |
 | advisory | 26 | SHOULD guidance that does not reject documents |
 | outside-static-scope | 33 | HTTP, runtime values/execution, metarules, or example text |

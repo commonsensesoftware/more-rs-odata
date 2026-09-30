@@ -41,14 +41,16 @@ The focused evidence suites now independently author XML and JSON for reference/
 include shapes, schema declarations, structured inheritance, scalar/complex/related
 keys, facet bounds, navigation nullability/partners, enums and type definitions.
 These cases exposed and fixed reserved schema namespaces and symbolic-scale casing
-at the strict source boundary, plus declaring-type member name collisions in semantic validation. The matrix now records 111 covered and 315 partial
+at the strict source boundary, plus declaring-type member name collisions in semantic validation. The matrix now records 115 covered and 311 partial
 paragraphs; advisory and outside-static-scope dispositions remain unchanged.
 
 Structured member redeclaration, partner path/type clauses, containment partner
 cardinality and versioned complex collection containment now have focused evidence.
 The containment checks also now accept collection-valued non-recursive partners
 consistently across XML and JSON; their omitted Nullable facet is not scalar nullability.
-The next evidence pass covers remaining constraint/containment
+Containment binding endpoints and inheritance-chain parent uniqueness also have
+independent positive/negative XML and JSON evidence.
+The next evidence pass covers remaining constraint
 paths, operation/container clauses, annotation expressions and remaining grammar
 branches. Existing broad suites remain supporting evidence, not a substitute for
 the independent clause fixtures required below.
