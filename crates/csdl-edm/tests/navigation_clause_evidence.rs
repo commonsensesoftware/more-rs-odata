@@ -127,3 +127,85 @@ fn partner_declarations_are_reciprocal_when_present() {
         );
     }
 }
+
+#[test]
+fn partner_paths_allow_complex_and_derived_types_but_not_navigation_traversal() {
+    for (path, valid) in [
+        ("Back", true),
+        ("N.Derived/Back", true),
+        ("Details/Back", true),
+        ("Details/N.Special/DerivedBack", true),
+        ("Next/Back", false),
+        ("Missing/Back", false),
+        ("Code", false),
+        ("N.Other/Back", false),
+    ] {
+        check(
+            &format!(
+                r#"<EntityType Name="Source"><NavigationProperty Name="Related" Type="N.Target" Partner="{path}"/></EntityType><EntityType Name="Target"><Property Name="Code" Type="Edm.String"/><Property Name="Details" Type="N.C"/><NavigationProperty Name="Back" Type="N.Source"/><NavigationProperty Name="Next" Type="N.Target"/></EntityType><EntityType Name="Derived" BaseType="N.Target"/><EntityType Name="Other"><NavigationProperty Name="Back" Type="N.Source"/></EntityType><ComplexType Name="C"><NavigationProperty Name="Back" Type="N.Source"/></ComplexType><ComplexType Name="Special" BaseType="N.C"><NavigationProperty Name="DerivedBack" Type="N.Source"/></ComplexType>"#
+            ),
+            &format!(
+                r#""Source":{{"$Kind":"EntityType","Related":{{"$Kind":"NavigationProperty","$Type":"N.Target","$Partner":"{path}"}}}},"Target":{{"$Kind":"EntityType","Code":{{}},"Details":{{"$Type":"N.C"}},"Back":{{"$Kind":"NavigationProperty","$Type":"N.Source"}},"Next":{{"$Kind":"NavigationProperty","$Type":"N.Target"}}}},"Derived":{{"$Kind":"EntityType","$BaseType":"N.Target"}},"Other":{{"$Kind":"EntityType","Back":{{"$Kind":"NavigationProperty","$Type":"N.Source"}}}},"C":{{"$Kind":"ComplexType","Back":{{"$Kind":"NavigationProperty","$Type":"N.Source"}}}},"Special":{{"$Kind":"ComplexType","$BaseType":"N.C","DerivedBack":{{"$Kind":"NavigationProperty","$Type":"N.Source"}}}}"#
+            ),
+            valid,
+        );
+    }
+}
+
+#[test]
+fn partner_target_must_be_source_type_or_its_base() {
+    for (target, valid) in [("N.Source", true), ("N.Base", true), ("N.Target", false)] {
+        check(
+            &format!(
+                r#"<EntityType Name="Base"/><EntityType Name="Source" BaseType="N.Base"><NavigationProperty Name="Related" Type="N.Target" Partner="Back"/></EntityType><EntityType Name="Target"><NavigationProperty Name="Back" Type="{target}"/></EntityType>"#
+            ),
+            &format!(
+                r#""Base":{{"$Kind":"EntityType"}},"Source":{{"$Kind":"EntityType","$BaseType":"N.Base","Related":{{"$Kind":"NavigationProperty","$Type":"N.Target","$Partner":"Back"}}}},"Target":{{"$Kind":"EntityType","Back":{{"$Kind":"NavigationProperty","$Type":"{target}"}}}}"#
+            ),
+            valid,
+        );
+    }
+}
+
+#[test]
+fn constraint_paths_resolve_nested_properties_on_the_correct_owner() {
+    for (dependent, principal, valid) in [
+        ("Details/Code", "Details/Code", true),
+        ("Missing/Code", "Details/Code", false),
+        ("Details/Code", "Missing/Code", false),
+        ("Related/Details/Code", "Details/Code", false),
+        ("Details/Code", "Next/Details/Code", false),
+    ] {
+        check(
+            &format!(
+                r#"<ComplexType Name="C"><Property Name="Code" Type="Edm.Int32" Nullable="false"/></ComplexType><EntityType Name="Source"><Property Name="Details" Type="N.C" Nullable="false"/><NavigationProperty Name="Related" Type="N.Target" Nullable="false"><ReferentialConstraint Property="{dependent}" ReferencedProperty="{principal}"/></NavigationProperty></EntityType><EntityType Name="Target"><Property Name="Details" Type="N.C" Nullable="false"/><NavigationProperty Name="Next" Type="N.Target"/></EntityType>"#
+            ),
+            &format!(
+                r#""C":{{"$Kind":"ComplexType","Code":{{"$Type":"Edm.Int32"}}}},"Source":{{"$Kind":"EntityType","Details":{{"$Type":"N.C"}},"Related":{{"$Kind":"NavigationProperty","$Type":"N.Target","$ReferentialConstraint":{{"{dependent}":"{principal}"}}}}}},"Target":{{"$Kind":"EntityType","Details":{{"$Type":"N.C"}},"Next":{{"$Kind":"NavigationProperty","$Type":"N.Target"}}}}"#
+            ),
+            valid,
+        );
+    }
+}
+
+#[test]
+fn constraint_types_must_match_unless_both_are_complex() {
+    for (dependent, principal, valid) in [
+        ("Edm.Int32", "Edm.Int32", true),
+        ("Edm.String", "Edm.Int32", false),
+        ("N.First", "N.Second", true),
+        ("N.First", "Edm.String", false),
+    ] {
+        for owner in ["EntityType", "ComplexType"] {
+            check(
+                &format!(
+                    r#"<ComplexType Name="First"/><ComplexType Name="Second"/><{owner} Name="Source"><Property Name="Value" Type="{dependent}" Nullable="false"/><NavigationProperty Name="Related" Type="N.Target" Nullable="false"><ReferentialConstraint Property="Value" ReferencedProperty="Value"/></NavigationProperty></{owner}><EntityType Name="Target"><Property Name="Value" Type="{principal}" Nullable="false"/></EntityType>"#
+                ),
+                &format!(
+                    r#""First":{{"$Kind":"ComplexType"}},"Second":{{"$Kind":"ComplexType"}},"Source":{{"$Kind":"{owner}","Value":{{"$Type":"{dependent}"}},"Related":{{"$Kind":"NavigationProperty","$Type":"N.Target","$ReferentialConstraint":{{"Value":"Value"}}}}}},"Target":{{"$Kind":"EntityType","Value":{{"$Type":"{principal}"}}}}"#
+                ),
+                valid,
+            );
+        }
+    }
+}
