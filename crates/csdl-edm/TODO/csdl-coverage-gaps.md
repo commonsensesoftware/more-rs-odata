@@ -41,7 +41,7 @@ and rendered in [edm-semantic-graph.md](../../../docs/edm-semantic-graph.md).
 
 ## Delivery and limits
 
-The numbered implementation tasks below are complete. Regression suites cover
+The original implementation tasks in sections 1–6 are complete. Regression suites cover
 XML/JSON parsing, resolution, validation, round trips, expected failures, and
 the five example entrypoints. Feature configurations preserve the full default
 API and permit parsing/serialization without the EDM, resolver, or validator.
@@ -161,3 +161,53 @@ Related detailed design TODO:
       (top-level repo) and the rendered `docs/edm-semantic-graph.md`. Keep
       this TODO file focused on delivery tracking; the catalog is the source
       of truth for what CSDL 4.01 expresses.
+
+## 7. Full Conformance Follow-up — dependency order
+
+Checkpoint: completion of sections 1–6 is not a claim of full CSDL conformance.
+Complete the following tasks in order, moving a dependency earlier only when
+required. Commit each completed task separately, including its tests and status.
+
+- [ ] **1. Document and declaration validation.** Validate XML namespaces,
+      document structure, required attributes, element cardinalities, supported
+      versions, identifier/namespace Unicode syntax and lengths, reserved aliases,
+      and document-wide alias collisions. Distinguish malformed known constructs
+      from unknown extensions that tolerant consumers must ignore. Introduce
+      explicit tolerant-consumption and strict-authoring validation profiles;
+      retain annotation diagnostics without making tolerant consumption fail.
+- [ ] **2. Service-document identity.** Preserve, resolve, validate, and serialize
+      JSON `$EntityContainer`. Distinguish service metadata from vocabulary/model
+      documents, applying service-specific container requirements only where
+      appropriate. Do not choose a service container merely by declaration order.
+- [ ] **3. Referenced-document resolution.** Add a caller-supplied document loader
+      or registry, relative-URI resolution, document-local alias scopes, schema
+      inclusion and `IncludeAnnotations` filtering. Resolve external types and
+      terms without requiring manual schema merging. Handle repeated/cyclic
+      references deterministically; automatic network access is not required.
+- [ ] **4. Complete annotation expression representation.** Implement
+      `ModelElementPath`, `Has`, `In`, `Add`, `Sub`, `Neg`, `Mul`, `Div`,
+      `DivBy`, and `Mod` throughout model, XML/JSON parsing, serialization, and
+      resolution. Preserve annotations on expressions and cast/type-test facets
+      wherever permitted. Reject malformed known expressions instead of
+      fabricating values or silently discarding extra operands.
+- [ ] **5. Recursive annotation type checking.** Validate record types/members,
+      property values, enum members, literal lexical values/facets, operator
+      operands, conditional branches, function applications, casts, and label
+      references. Check expression-path result types against expected term
+      types. Keep strict authoring diagnostics separate from tolerant consumption.
+- [ ] **6. Version and serialization conformance.** Audit every applicable
+      4.0/4.01 difference, including expressions, paths, vocabulary types,
+      constraints, facet placement, and collection nullability. Validate the
+      declared output version and prevent silent emission of incompatible
+      constructs. Cover XML/JSON representation defaults and semantic round trips.
+- [ ] **7. Conformance evidence.** Build a normative requirement-to-code-to-test
+      matrix with positive/negative XML/JSON cases, referenced-document fixtures,
+      and semantic round-trip checks. Audit every applicable MUST/MUST NOT and
+      account explicitly for SHOULD rules, profiles, and unsupported cases.
+      Passing existing examples alone is not evidence of exhaustive conformance.
+
+Static CSDL validation is the scope. Runtime expression evaluation, service-data
+integrity, and execution of delete actions are separate concerns. The normative
+sources are the OASIS CSDL XML and JSON 4.01 specifications and their referenced
+ABNF/schema artifacts; the local catalog supports traceability but does not
+replace a clause-by-clause audit.
