@@ -55,6 +55,15 @@ fn usage(
     if matches!(ty, TermType::Builtin(BuiltinType::Untyped)) && version == "4.0" {
         fail("Edm.Untyped requires CSDL 4.01");
     }
+    if version == "4.0"
+        && (matches!(
+            ty,
+            TermType::Builtin(BuiltinType::ModelElementPath | BuiltinType::AnyPropertyPath)
+        ) || collection
+            && matches!(ty, TermType::Complex(t) if std::sync::Arc::ptr_eq(t, abstract_complex_type())))
+    {
+        fail("Type requires CSDL 4.01");
+    }
     if !vocabulary && has_vocabulary_path(ty, &mut std::collections::HashSet::new()) {
         fail("Vocabulary path types are restricted to terms and their complex values");
     }
@@ -255,6 +264,13 @@ fn check_term(
     version: &str,
     errors: &mut Vec<ValidationError>,
 ) {
+    if version == "4.0" && facets.unicode.is_some() {
+        errors.push(ValidationError::InvalidFacet {
+            element: name.into(),
+            facet: "Unicode",
+            reason: "Unicode on terms and operation signatures requires CSDL 4.01",
+        });
+    }
     let (primitive, definition) = match ty {
         TermType::Primitive(p) => (Some(p), None),
         TermType::TypeDefinition(t) => (Some(&t.underlying_type), Some(t.as_ref())),

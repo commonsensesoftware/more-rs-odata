@@ -62,6 +62,22 @@ unavailable expression bindings produce annotation diagnostics; they do not
 prevent tolerant consumption. Client-side function evaluation remains outside
 the library's scope.
 
-These profiles do not yet constitute a full conformance claim. Versioned
-serialization and the normative audit are tracked in
+For guarded serialization use `write_as_with_profile(..., ValidationProfile::Strict)`
+or `try_to_json_value()`. These check grammar and declared-version restrictions
+before writing any bytes. They reject XML Base loss in JSON and an XML conversion
+that cannot preserve an explicit service-container selection. Resolve XML Base
+into reference URIs before converting such a document. Semantic validation is
+separate: resolve the complete graph with your loader and validate that graph
+before publishing it. Legacy `write_as` and `to_json_value` retain their existing
+unchecked behavior for compatibility.
+
+Strict XML authoring requires explicit collection-property nullability in 4.01,
+rejects deprecated `MaxLength="max"` in 4.01, and checks 4.0 restrictions on
+vocabulary types, expression operators/paths, floating scale, singleton
+nullability, and Unicode facet placement. Tolerant parsing still consumes these
+constructs. Imported schemas retain their own source version; changing the root
+document version affects local schemas only.
+
+These profiles do not yet constitute a full conformance claim. The normative
+audit is tracked in
 [the ordered conformance tasks](../TODO/csdl-coverage-gaps.md#7-full-conformance-follow-up--dependency-order).

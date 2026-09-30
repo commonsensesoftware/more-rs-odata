@@ -229,6 +229,15 @@ impl Resolver {
                 (ns.clone(), alias)
             })
             .collect::<BTreeMap<_, _>>();
+        let versions = selected
+            .iter()
+            .map(|(ns, (uri, _))| {
+                (
+                    ns.clone(),
+                    docs[uri].version.clone().unwrap_or_else(|| "4.01".into()),
+                )
+            })
+            .collect();
         let mut schemas = selected
             .into_values()
             .map(|(uri, mut s)| {
@@ -258,6 +267,7 @@ impl Resolver {
                 schemas,
             },
             Some(&schema_scopes),
+            Some(versions),
         )?;
         for schema in &mut result.schemas {
             if let Some(model) = std::sync::Arc::get_mut(schema) {

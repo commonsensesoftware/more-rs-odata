@@ -17,6 +17,75 @@ pub enum CsdlFormat {
 }
 
 impl CsdlDocument {
+    /// Check source grammar, version restrictions, and target representation
+    /// before writing any bytes. Semantic validation of external graphs remains
+    /// the caller's responsibility after resolving with its document loader.
+    pub fn write_as_with_profile<W: io::Write>(
+        &self,
+        mut writer: W,
+        format: CsdlFormat,
+        profile: crate::conformance::ValidationProfile,
+    ) -> io::Result<()> {
+        if profile == crate::conformance::ValidationProfile::Tolerant {
+            return self.write_as(writer, format);
+        }
+        let edmx = self
+            .edmx
+            .as_ref()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Missing CSDL document"))?;
+        if format == CsdlFormat::Json
+            && (edmx.base_uri.is_some() || edmx.references.iter().any(|r| r.base_uri.is_some()))
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Resolve XML Base into reference URIs before JSON serialization",
+            ));
+        }
+        if format == CsdlFormat::Xml && edmx.entity_container.is_some() {
+            let containers = edmx
+                .schemas
+                .iter()
+                .flat_map(|s| {
+                    s.elements.iter().filter_map(move |e| {
+                        if let SchemaElement::EntityContainer(c) = e {
+                            Some(format!("{}.{}", s.namespace, c.name))
+                        } else {
+                            None
+                        }
+                    })
+                })
+                .collect::<Vec<_>>();
+            if containers.len() != 1 || containers.first() != edmx.entity_container.as_ref() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "XML cannot preserve the selected service container",
+                ));
+            }
+        }
+        let mut xml = Vec::new();
+        self.write_as(&mut xml, CsdlFormat::Xml)?;
+        crate::parser::from_xml_reader_with_profile(xml.as_slice(), profile)?;
+        let bytes = if format == CsdlFormat::Xml {
+            xml
+        } else {
+            let mut json = Vec::new();
+            self.write_as(&mut json, format)?;
+            crate::parser::from_json_reader_with_profile(json.as_slice(), profile)?;
+            json
+        };
+        writer.write_all(&bytes)
+    }
+
+    pub fn try_to_json_value(&self) -> io::Result<Value> {
+        let mut bytes = Vec::new();
+        self.write_as_with_profile(
+            &mut bytes,
+            CsdlFormat::Json,
+            crate::conformance::ValidationProfile::Strict,
+        )?;
+        serde_json::from_slice(&bytes).map_err(io::Error::other)
+    }
+
     pub fn to_json_value(&self) -> Value {
         match &self.edmx {
             Some(edmx) => {
@@ -890,7 +959,7 @@ fn inline_attr_expr(expr: &CsdlAnnotationExpression) -> Option<(&'static str, St
         CsdlAnnotationExpression::Decimal(v) => Some(("Decimal", v.clone())),
         CsdlAnnotationExpression::Duration(v) => Some(("Duration", v.clone())),
         CsdlAnnotationExpression::EnumMember(v) => Some(("EnumMember", v.clone())),
-        CsdlAnnotationExpression::Float(v) => Some(("Float", v.to_string())),
+        CsdlAnnotationExpression::Float(v) => Some(("Float", crate::expr::float_literal(*v))),
         CsdlAnnotationExpression::Guid(v) => Some(("Guid", v.clone())),
         CsdlAnnotationExpression::Int(v) => Some(("Int", v.to_string())),
         CsdlAnnotationExpression::String(v) => Some(("String", v.clone())),
@@ -922,7 +991,9 @@ fn write_expr<W: io::Write>(
         CsdlAnnotationExpression::Decimal(v) => write_text(xml, "Decimal", v),
         CsdlAnnotationExpression::Duration(v) => write_text(xml, "Duration", v),
         CsdlAnnotationExpression::EnumMember(v) => write_text(xml, "EnumMember", v),
-        CsdlAnnotationExpression::Float(v) => write_text(xml, "Float", &v.to_string()),
+        CsdlAnnotationExpression::Float(v) => {
+            write_text(xml, "Float", &crate::expr::float_literal(*v))
+        }
         CsdlAnnotationExpression::Guid(v) => write_text(xml, "Guid", v),
         CsdlAnnotationExpression::Int(v) => write_text(xml, "Int", &v.to_string()),
         CsdlAnnotationExpression::String(v) => write_text(xml, "String", v),
@@ -2067,7 +2138,7 @@ fn expr_to_json(expr: &CsdlAnnotationExpression) -> Value {
         CsdlAnnotationExpression::Int(v) => Value::Number(Number::from(*v)),
         CsdlAnnotationExpression::Float(v) => Number::from_f64(*v)
             .map(Value::Number)
-            .unwrap_or_else(|| Value::String(v.to_string())),
+            .unwrap_or_else(|| Value::String(crate::expr::float_literal(*v))),
         CsdlAnnotationExpression::String(v) => Value::String(v.clone()),
         CsdlAnnotationExpression::Path(v) => {
             let mut m = Map::new();
@@ -2134,9 +2205,19 @@ fn expr_to_json(expr: &CsdlAnnotationExpression) -> Value {
         | CsdlAnnotationExpression::DateTimeOffset(v)
         | CsdlAnnotationExpression::Decimal(v)
         | CsdlAnnotationExpression::Duration(v)
-        | CsdlAnnotationExpression::EnumMember(v)
         | CsdlAnnotationExpression::Guid(v)
         | CsdlAnnotationExpression::TimeOfDay(v) => Value::String(v.clone()),
+        CsdlAnnotationExpression::EnumMember(v) => Value::String(
+            v.split_whitespace()
+                .map(|member| {
+                    member
+                        .rsplit_once('/')
+                        .map(|(_, name)| name)
+                        .unwrap_or(member)
+                })
+                .collect::<Vec<_>>()
+                .join(","),
+        ),
         CsdlAnnotationExpression::LabeledElementReference(v) => {
             serde_json::json!({"$LabeledElementReference": v})
         }

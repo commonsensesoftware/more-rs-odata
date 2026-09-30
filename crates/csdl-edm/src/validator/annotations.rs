@@ -13,6 +13,7 @@ pub enum AnnotationIssue {
     InvalidExpressionPath,
     IncompatibleValue,
     MissingTargetAnnotation,
+    UnsupportedVersion,
 }
 
 #[derive(Debug, Clone)]
@@ -26,7 +27,24 @@ pub struct AnnotationDiagnostic {
 /// validate_document fail: CSDL requires consumers to tolerate unknown/invalid
 /// annotations, including unavailable referenced vocabularies.
 pub fn validate_annotations(document: &DocumentModel) -> Vec<AnnotationDiagnostic> {
-    collect(document.all_schemas().map(Arc::as_ref))
+    let mut diagnostics = collect(document.all_schemas().map(Arc::as_ref));
+    for model in document.all_schemas() {
+        let version = document.schema_version(&model.namespace);
+        for annotation in model.annotations.get().into_iter().flatten() {
+            if annotation
+                .expression
+                .as_ref()
+                .is_some_and(|e| crate::parser::validation::expression_version(e, version).is_err())
+            {
+                push(
+                    &mut diagnostics,
+                    annotation,
+                    AnnotationIssue::UnsupportedVersion,
+                );
+            }
+        }
+    }
+    diagnostics
 }
 
 pub fn validate_model_annotations(model: &Model) -> Vec<AnnotationDiagnostic> {
@@ -321,7 +339,7 @@ pub(super) fn compatible(
         (Some(P::Int32), E::Int(n)) => i32::try_from(*n).is_ok(),
         (Some(P::Int64), E::Int(_) | E::String(_)) => true,
         (Some(P::Decimal), E::Decimal(_) | E::Int(_) | E::Float(_) | E::String(_)) => true,
-        (Some(P::Single | P::Double), E::Float(_) | E::Int(_)) => true,
+        (Some(P::Single | P::Double), E::Float(_) | E::Int(_) | E::String(_)) => true,
         (Some(P::String), E::String(_) | E::UrlRef(_)) => true,
         (Some(P::Binary), E::Binary(_) | E::String(_)) => true,
         (Some(P::Date), E::Date(_) | E::String(_)) => true,

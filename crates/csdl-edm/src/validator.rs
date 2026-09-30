@@ -4,6 +4,7 @@ mod annotations;
 mod expressions;
 mod types;
 mod values;
+use crate::edm::ConstraintPathSegment;
 pub use annotations::{
     AnnotationDiagnostic, AnnotationIssue, validate_annotations, validate_model_annotations,
 };
@@ -204,8 +205,39 @@ pub fn validate_document(document: &DocumentModel) -> Result<(), Vec<ValidationE
     let mut errors = Vec::new();
 
     for schema in document.all_schemas() {
-        errors.extend(engine.validate_model_collect(schema.as_ref(), &document.version));
-        if document.version == "4.0" {
+        let version = document.schema_version(&schema.namespace);
+        errors.extend(engine.validate_model_collect(schema.as_ref(), version));
+        if version == "4.0" {
+            for element in &schema.elements {
+                let navigations = match element.as_ref() {
+                    SchemaElement::EntityType(t) => t.navigation_properties(),
+                    SchemaElement::ComplexType(t) => t.navigation_properties(),
+                    _ => continue,
+                };
+                for nav in navigations {
+                    for constraint in &nav.referential_constraints {
+                        let invalid = [
+                            &constraint.property_path,
+                            &constraint.referenced_property_path,
+                        ]
+                        .iter()
+                        .any(|p| {
+                            p.get().is_some_and(|p| {
+                                p.iter().any(|segment| match segment {
+                                    ConstraintPathSegment::NavigationProperty(_) => true,
+                                    ConstraintPathSegment::Property(p) => p
+                                        .upgrade()
+                                        .is_some_and(|p| matches!(p.ty, ResolvedType::Complex(_))),
+                                    _ => false,
+                                })
+                            })
+                        });
+                        if invalid {
+                            errors.push(ValidationError::InvalidTypeUse { element: nav.name.clone(), reason: "Complex and navigation referential constraints require CSDL 4.01" });
+                        }
+                    }
+                }
+            }
             for element in &schema.elements {
                 if let SchemaElement::EntityType(entity) = element.as_ref() {
                     for key in entity.keys() {

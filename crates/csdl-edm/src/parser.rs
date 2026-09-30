@@ -5,7 +5,7 @@ use crate::csdl::*;
 use crate::csdl_xml_reader::{CsdlReader, SyntaxUnit};
 use crate::expr::CsdlAnnotationExpression;
 
-mod validation;
+pub(crate) mod validation;
 
 /// Parse with namespace-aware extension handling and optional authoring checks.
 pub fn from_xml_reader_with_profile<R: io::BufRead>(

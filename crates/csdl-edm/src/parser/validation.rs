@@ -166,8 +166,14 @@ pub(super) fn xml_source<R: io::BufRead>(
                     let attr = attr.map_err(io::Error::other)?;
                     let (ns, local) = reader.resolver().resolve_attribute(attr.key);
                     if matches!(&ns, ResolveResult::Bound(n) if n.as_ref() == b"http://www.w3.org/XML/1998/namespace")
-                        && local.as_ref() == b"base" {
-                        let value = attr.decoded_and_normalized_value(quick_xml::XmlVersion::Implicit1_0, reader.decoder()).map_err(io::Error::other)?;
+                        && local.as_ref() == b"base"
+                    {
+                        let value = attr
+                            .decoded_and_normalized_value(
+                                quick_xml::XmlVersion::Implicit1_0,
+                                reader.decoder(),
+                            )
+                            .map_err(io::Error::other)?;
                         start.push_attribute(("base", value.as_ref()));
                     }
                     if matches!(ns, ResolveResult::Unbound)
@@ -251,6 +257,7 @@ pub(super) fn document(roots: &[RawElement], json: bool) -> io::Result<()> {
         return Err(invalid("Version must be 4.0 or 4.01"));
     }
     walk(root, None, json)?;
+    versioned(root, raw_attr(root, "Version").unwrap(), json)?;
     let schemas = root
         .children
         .iter()
@@ -293,6 +300,185 @@ pub(super) fn document(roots: &[RawElement], json: bool) -> io::Result<()> {
         if !references.insert(raw_attr(reference, "Uri")) {
             return Err(invalid("Duplicate reference URI"));
         }
+    }
+    Ok(())
+}
+
+fn versioned(node: &RawElement, version: &str, json: bool) -> io::Result<()> {
+    let attr = |name| raw_attr(node, name);
+    if version == "4.0" {
+        if attr("Collection") == Some("true") && attr("Type") == Some("Edm.ComplexType") {
+            return Err(invalid("Collections of Edm.ComplexType require CSDL 4.01"));
+        }
+        for name in ["Type", "UnderlyingType"] {
+            if attr(name).is_some_and(|ty| {
+                matches!(
+                    ty,
+                    "Edm.Untyped"
+                        | "Edm.ModelElementPath"
+                        | "Edm.AnyPropertyPath"
+                        | "Collection(Edm.Untyped)"
+                        | "Collection(Edm.ComplexType)"
+                )
+            }) {
+                return Err(invalid(format!(
+                    "{} uses a type requiring CSDL 4.01",
+                    node.name
+                )));
+            }
+        }
+        if attr("Scale") == Some("floating") {
+            return Err(invalid("Floating scale requires CSDL 4.01"));
+        }
+        if node.name == "Singleton" && attr("Nullable").is_some() {
+            return Err(invalid("Singleton Nullable requires CSDL 4.01"));
+        }
+        if matches!(node.name.as_str(), "Term" | "Parameter" | "ReturnType")
+            && attr("Unicode").is_some()
+        {
+            return Err(invalid(
+                "Unicode on terms and operation signatures requires CSDL 4.01",
+            ));
+        }
+        if node.name == "Include" && node.children.iter().any(|a| attr_is_default_namespace(a)) {
+            return Err(invalid("DefaultNamespace on Include requires CSDL 4.01"));
+        }
+    } else {
+        if attr("MaxLength") == Some("max") {
+            return Err(invalid(
+                "CSDL 4.01 authors must omit MaxLength or specify a number",
+            ));
+        }
+        if !json
+            && node.name == "Property"
+            && attr("Type").is_some_and(|ty| ty.starts_with("Collection("))
+            && attr("Nullable").is_none()
+        {
+            return Err(invalid(
+                "CSDL 4.01 collection properties require explicit Nullable in XML",
+            ));
+        }
+    }
+    for expr in &node.annotation_expressions {
+        expression_version(expr, version)?;
+    }
+    for child in &node.children {
+        versioned(child, version, json)?;
+    }
+    Ok(())
+}
+
+fn attr_is_default_namespace(node: &RawElement) -> bool {
+    raw_attr(node, "Term").is_some_and(|s| {
+        matches!(
+            s,
+            "Core.DefaultNamespace" | "Org.OData.Core.V1.DefaultNamespace"
+        )
+    })
+}
+
+pub(crate) fn expression_version(
+    e: &crate::expr::CsdlAnnotationExpression,
+    version: &str,
+) -> io::Result<()> {
+    use crate::expr::{BinaryOperator as B, CsdlAnnotationExpression as E};
+    if version == "4.0" {
+        if let E::Cast { type_, .. } | E::IsOf { type_, .. } = e {
+            if matches!(
+                type_.as_str(),
+                "Edm.Untyped"
+                    | "Edm.ModelElementPath"
+                    | "Edm.AnyPropertyPath"
+                    | "Collection(Edm.ComplexType)"
+                    | "Collection(Edm.Untyped)"
+            ) {
+                return Err(invalid("Expression type requires CSDL 4.01"));
+            }
+        }
+        if matches!(
+            e,
+            E::ModelElementPath(_)
+                | E::Neg(_)
+                | E::BinaryExpression {
+                    op: B::Has | B::In | B::Add | B::Sub | B::Mul | B::Div | B::DivBy | B::Mod,
+                    ..
+                }
+        ) {
+            return Err(invalid(format!("{} requires CSDL 4.01", e.kind_name())));
+        }
+        if let E::Path(p)
+        | E::PropertyPath(p)
+        | E::NavigationPropertyPath(p)
+        | E::AnnotationPath(p) = e
+        {
+            if p.starts_with('/')
+                || p.split('/')
+                    .any(|s| s == "$count" || s.parse::<i64>().is_ok() || s.contains('('))
+            {
+                return Err(invalid("Path syntax requires CSDL 4.01"));
+            }
+        }
+    }
+    match e {
+        E::Annotated {
+            expression,
+            annotations,
+        } => {
+            expression_version(expression, version)?;
+            for a in annotations {
+                if let Some(e) = &a.expression {
+                    expression_version(e, version)?;
+                }
+            }
+        }
+        E::Faceted { expression, facets } => {
+            if version == "4.0" && facets.scale == Some(crate::csdl::ScaleFacet::Floating) {
+                return Err(invalid("Floating scale requires CSDL 4.01"));
+            }
+            if version == "4.01" && facets.max_length == Some(crate::csdl::MaxLengthFacet::Max) {
+                return Err(invalid("MaxLength max is not allowed in CSDL 4.01 output"));
+            }
+            expression_version(expression, version)?;
+        }
+        E::Not(e)
+        | E::Neg(e)
+        | E::UrlRef(e)
+        | E::Cast { expr: e, .. }
+        | E::IsOf { expr: e, .. }
+        | E::LabeledElement { expr: e, .. } => expression_version(e, version)?,
+        E::BinaryExpression { lhs, rhs, .. } => {
+            expression_version(lhs, version)?;
+            expression_version(rhs, version)?;
+        }
+        E::If { test, then_, else_ } => {
+            expression_version(test, version)?;
+            expression_version(then_, version)?;
+            if let Some(e) = else_ {
+                expression_version(e, version)?;
+            }
+        }
+        E::Apply { args, .. } | E::Collection(args) => {
+            for e in args {
+                expression_version(e, version)?;
+            }
+        }
+        E::Record {
+            properties,
+            annotations,
+            ..
+        } => {
+            for p in properties {
+                if let Some(e) = &p.value {
+                    expression_version(e, version)?;
+                }
+            }
+            for a in annotations {
+                if let Some(e) = &a.expression {
+                    expression_version(e, version)?;
+                }
+            }
+        }
+        _ => {}
     }
     Ok(())
 }
@@ -661,7 +847,9 @@ fn json_shapes(value: &serde_json::Value) -> io::Result<()> {
                 if key.contains('@') {
                     continue;
                 }
-                if let (Some(kind), Some(attribute)) = (map.get("$Kind").and_then(V::as_str), key.strip_prefix('$')) {
+                if let (Some(kind), Some(attribute)) =
+                    (map.get("$Kind").and_then(V::as_str), key.strip_prefix('$'))
+                {
                     if !attribute_allowed(kind, attribute, true) {
                         return Err(invalid(format!("{kind} does not allow {key}")));
                     }

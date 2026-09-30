@@ -841,7 +841,7 @@ fn literal(e: &E) -> Option<String> {
         E::Binary(v) => String::from_utf8(v.clone()).ok()?,
         E::Bool(v) => v.to_string(),
         E::Int(v) => v.to_string(),
-        E::Float(v) => v.to_string(),
+        E::Float(v) => crate::expr::float_literal(*v),
         E::String(v)
         | E::Date(v)
         | E::DateTimeOffset(v)

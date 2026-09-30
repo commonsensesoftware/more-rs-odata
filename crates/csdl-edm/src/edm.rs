@@ -217,11 +217,23 @@ pub struct DocumentModel {
     /// Explicit service identity; never selected by schema declaration order.
     pub service_container: Option<Arc<EntityContainer>>,
     pub version: String,
+    /// Declared version of each schema's source document, including imports.
+    pub schema_versions: std::collections::BTreeMap<String, String>,
     pub references: Vec<Reference>,
     pub schemas: Vec<Arc<Model>>,
 }
 
 impl DocumentModel {
+    pub fn schema_version(&self, namespace: &str) -> &str {
+        if self.schemas.iter().any(|s| s.namespace == namespace) {
+            &self.version
+        } else {
+            self.schema_versions
+                .get(namespace)
+                .map(String::as_str)
+                .unwrap_or(&self.version)
+        }
+    }
     pub fn all_schemas(&self) -> impl Iterator<Item = &Arc<Model>> {
         self.schemas.iter().chain(&self.referenced_schemas)
     }

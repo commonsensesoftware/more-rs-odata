@@ -198,7 +198,7 @@ required. Commit each completed task separately, including its tests and status.
       operands, conditional branches, function applications, casts, and label
       references. Check expression-path result types against expected term
       types. Keep strict authoring diagnostics separate from tolerant consumption.
-- [ ] **6. Version and serialization conformance.** Audit every applicable
+- [x] **6. Version and serialization conformance.** Audit every applicable
       4.0/4.01 difference, including expressions, paths, vocabulary types,
       constraints, facet placement, and collection nullability. Validate the
       declared output version and prevent silent emission of incompatible

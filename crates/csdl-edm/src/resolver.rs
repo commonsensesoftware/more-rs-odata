@@ -20,7 +20,10 @@ pub enum ResolveError {
     DuplicateName(String),
     NoSchemaInDocument,
     InvalidEntityContainer(String),
-    ReferenceDocument { uri: String, reason: String },
+    ReferenceDocument {
+        uri: String,
+        reason: String,
+    },
     MissingTypeName {
         element_kind: &'static str,
         element_name: String,
@@ -41,13 +44,36 @@ type ResolvedMembers = (Vec<Arc<Property>>, Vec<Arc<NavigationProperty>>);
 
 impl Resolver {
     pub fn resolve_document(document: csdl::Edmx) -> Result<DocumentModel, ResolveError> {
-        Self::resolve_document_scoped(document, None)
+        Self::resolve_document_scoped(document, None, None)
     }
 
-    fn resolve_document_scoped(document: csdl::Edmx,
-        scopes: Option<&std::collections::BTreeMap<String, std::collections::BTreeSet<String>>>) -> Result<DocumentModel, ResolveError> {
-        let legacy_schemas =
-            (document.version.as_deref() == Some("4.0")).then(|| document.schemas.clone());
+    fn resolve_document_scoped(
+        document: csdl::Edmx,
+        scopes: Option<&std::collections::BTreeMap<String, std::collections::BTreeSet<String>>>,
+        versions: Option<std::collections::BTreeMap<String, String>>,
+    ) -> Result<DocumentModel, ResolveError> {
+        let schema_versions = versions.unwrap_or_else(|| {
+            document
+                .schemas
+                .iter()
+                .map(|s| {
+                    (
+                        s.namespace.clone(),
+                        document.version.clone().unwrap_or_else(|| "4.01".into()),
+                    )
+                })
+                .collect()
+        });
+        let legacy_schemas = document
+            .schemas
+            .iter()
+            .filter(|s| {
+                schema_versions
+                    .get(&s.namespace)
+                    .is_some_and(|v| v == "4.0")
+            })
+            .cloned()
+            .collect::<Vec<_>>();
         let mut document_aliases = collect_document_aliases(&document.references);
         for schema in &document.schemas {
             if let Some(alias) = &schema.alias {
@@ -94,21 +120,33 @@ impl Resolver {
             return Err(ResolveError::NoSchemaInDocument);
         }
 
-        if let Some(authored_schemas) = legacy_schemas {
-            for (authored, resolved) in authored_schemas.iter().zip(&schemas) {
+        for authored in &legacy_schemas {
+            if let Some(resolved) = schemas.iter().find(|s| s.namespace == authored.namespace) {
                 reject_legacy_member_redefinitions(authored, resolved)?;
             }
         }
 
-        let service_container = document.entity_container.as_ref().map(|name| {
-            if !crate::conformance::is_qualified_name(name) {
-                return Err(ResolveError::InvalidEntityContainer(name.clone()));
-            }
-            schemas.iter().find_map(|schema| {
-                schema.containers().iter().find(|c| format!("{}.{}", schema.namespace, c.name) == *name).cloned()
-            }).ok_or_else(|| ResolveError::InvalidEntityContainer(name.clone()))
-        }).transpose()?;
+        let service_container = document
+            .entity_container
+            .as_ref()
+            .map(|name| {
+                if !crate::conformance::is_qualified_name(name) {
+                    return Err(ResolveError::InvalidEntityContainer(name.clone()));
+                }
+                schemas
+                    .iter()
+                    .find_map(|schema| {
+                        schema
+                            .containers()
+                            .iter()
+                            .find(|c| format!("{}.{}", schema.namespace, c.name) == *name)
+                            .cloned()
+                    })
+                    .ok_or_else(|| ResolveError::InvalidEntityContainer(name.clone()))
+            })
+            .transpose()?;
         Ok(DocumentModel {
+            schema_versions,
             referenced_schemas: Vec::new(),
             service_container,
             version: document.version.unwrap_or_else(|| "4.01".to_owned()),

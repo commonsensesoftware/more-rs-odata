@@ -1,3 +1,15 @@
+pub(crate) fn float_literal(value: f64) -> String {
+    if value.is_nan() {
+        "NaN".into()
+    } else if value == f64::INFINITY {
+        "INF".into()
+    } else if value == f64::NEG_INFINITY {
+        "-INF".into()
+    } else {
+        value.to_string()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum CsdlAnnotationExpression {
     /// Metadata attached to a dynamic expression, without changing its value.
