@@ -113,6 +113,20 @@ struct Checker<'a> {
     active: HashSet<String>,
 }
 impl Checker<'_> {
+    fn check_item(&mut self, e: &E, expected: &Expected) -> bool {
+        match e {
+            E::Annotated { expression, .. } => self.check_item(expression, expected),
+            E::If {
+                test,
+                then_,
+                else_: None,
+            } => {
+                self.check(test, &Expected::primitive(PrimitiveType::Boolean))
+                    && self.check(then_, expected)
+            }
+            _ => self.check(e, expected),
+        }
+    }
     fn check(&mut self, e: &E, expected: &Expected) -> bool {
         use PrimitiveType as P;
         match e {
@@ -156,14 +170,12 @@ impl Checker<'_> {
                 }
                 let mut item = expected.clone();
                 item.collection = false;
-                return values.iter().all(|v| self.check(v, &item));
+                return values.iter().all(|v| self.check_item(v, &item));
             }
             E::If { test, then_, else_ } => {
                 return self.check(test, &Expected::primitive(P::Boolean))
                     && self.check(then_, expected)
-                    && else_
-                        .as_ref()
-                        .map_or(expected.nullable, |e| self.check(e, expected));
+                    && else_.as_ref().is_some_and(|e| self.check(e, expected));
             }
             E::LabeledElement { name, expr } => {
                 let Some(canonical) = self.annotation.expression_bindings.labels.get(name) else {
@@ -448,8 +460,17 @@ impl Checker<'_> {
                 expected
             }
             E::Collection(values) => {
-                let mut ty = self.infer(values.first()?)?;
-                if ty.collection || !values.iter().all(|v| self.check(v, &ty)) {
+                let first = values.first()?;
+                let first = if let E::If {
+                    then_, else_: None, ..
+                } = first
+                {
+                    then_.as_ref()
+                } else {
+                    first
+                };
+                let mut ty = self.infer(first)?;
+                if ty.collection || !values.iter().all(|v| self.check_item(v, &ty)) {
                     return None;
                 }
                 ty.collection = true;

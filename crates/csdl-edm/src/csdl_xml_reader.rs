@@ -686,7 +686,9 @@ fn parse_start(e: &BytesStart<'_>) -> Result<(String, Vec<(String, String)>)> {
     for a in e.attributes() {
         let a = a.map_err(|err| Error::Csdl(format!("attribute parse error: {err}")))?;
         let key = local_name_string(a.key.as_ref())?;
-        let value = std::str::from_utf8(&a.value)?.to_string();
+        let value = quick_xml::escape::unescape(std::str::from_utf8(&a.value)?)
+            .map_err(|e| Error::Csdl(format!("attribute escape error: {e}")))?
+            .into_owned();
         attrs.push((key, value));
     }
     Ok((name, attrs))

@@ -72,7 +72,7 @@ fn service_container_must_be_namespace_qualified_and_exist() {
 
 #[test]
 fn xml_service_identity_roundtrips_to_json() {
-    let xml = r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><EntityContainer Name="Service"/></Schema></edmx:DataServices></edmx:Edmx>"#;
+    let xml = r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><EntityType Name="Item"/><EntityContainer Name="Service"><Singleton Name="Current" Type="N.Item"/></EntityContainer></Schema></edmx:DataServices></edmx:Edmx>"#;
     let document =
         parser::from_xml_reader_with_profile(xml.as_bytes(), ValidationProfile::Strict).unwrap();
     let json = document.to_json_value().to_string();

@@ -78,6 +78,9 @@ nullability, and Unicode facet placement. Tolerant parsing still consumes these
 constructs. Imported schemas retain their own source version; changing the root
 document version affects local schemas only.
 
-These profiles do not yet constitute a full conformance claim. The normative
-audit is tracked in
-[the ordered conformance tasks](../TODO/csdl-coverage-gaps.md#7-full-conformance-follow-up--dependency-order).
+These profiles do not constitute a full conformance claim. The
+[normative audit and matrix](conformance-audit.md) account for 485 requirement
+paragraphs and identify remaining implementation and evidence gaps. The
+[delivery record](../TODO/csdl-coverage-gaps.md#7-full-conformance-follow-up--dependency-order)
+and [ordered follow-ups](../TODO/README.md) distinguish completed work from
+requirements still needed for full validation.

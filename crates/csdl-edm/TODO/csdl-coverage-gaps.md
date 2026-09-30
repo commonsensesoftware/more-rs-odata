@@ -203,11 +203,15 @@ required. Commit each completed task separately, including its tests and status.
       constraints, facet placement, and collection nullability. Validate the
       declared output version and prevent silent emission of incompatible
       constructs. Cover XML/JSON representation defaults and semantic round trips.
-- [ ] **7. Conformance evidence.** Build a normative requirement-to-code-to-test
+- [x] **7. Conformance evidence.** Build a normative requirement-to-code-to-test
       matrix with positive/negative XML/JSON cases, referenced-document fixtures,
       and semantic round-trip checks. Audit every applicable MUST/MUST NOT and
       account explicitly for SHOULD rules, profiles, and unsupported cases.
       Passing existing examples alone is not evidence of exhaustive conformance.
+      Delivered the [485-paragraph inventory and evidence matrix](../docs/conformance-audit.md).
+      The audit found remaining unsupported behavior and incomplete direct evidence;
+      these are tracked as six focused follow-ups in [the TODO index](README.md).
+      Checked delivery boxes do not certify full CSDL conformance.
 
 Static CSDL validation is the scope. Runtime expression evaluation, service-data
 integrity, and execution of delete actions are separate concerns. The normative

@@ -595,6 +595,14 @@ fn walk(node: &RawElement, parent: Option<&str>, json: bool) -> io::Result<()> {
         || (name == "Reference" && count("Include") + count("IncludeAnnotations") == 0)
         || (name == "Annotations" && count("Annotation") == 0)
         || (name == "Key" && count("PropertyRef") == 0)
+        || (name == "EnumType" && count("Member") == 0)
+        || (!json
+            && name == "EntityContainer"
+            && count("EntitySet")
+                + count("Singleton")
+                + count("ActionImport")
+                + count("FunctionImport")
+                == 0)
         || (name == "Function" && count("ReturnType") != 1)
         || (matches!(name, "Function" | "Action") && count("ReturnType") > 1)
         || (name == "EntityType" && count("Key") > 1)
