@@ -23,6 +23,98 @@ const XML_TYPES: &str = r#"<EntityType Name="Entity"><Key><PropertyRef Name="ID"
 const JSON_TYPES: &str = r#""Entity":{"$Kind":"EntityType","$Key":["ID"],"ID":{"$Type":"Edm.Int32"}},"Complex":{"$Kind":"ComplexType"}"#;
 
 #[test]
+fn container_members_cannot_collide_with_operation_imports() {
+    for collection in [false, true] {
+        let (kind, attribute) = if collection {
+            ("EntitySet", "EntityType")
+        } else {
+            ("Singleton", "Type")
+        };
+        let marker = if collection {
+            r#""$Collection":true,"#
+        } else {
+            ""
+        };
+        for operation in ["Action", "Function"] {
+            for (name, valid) in [("Imported", true), ("Items", false)] {
+                check(
+                    &format!(
+                        r#"{XML_TYPES}<{operation} Name="Run"><ReturnType Type="Edm.String"/></{operation}><EntityContainer Name="Service"><{kind} Name="Items" {attribute}="N.Entity"/><{operation}Import Name="{name}" {operation}="N.Run"/></EntityContainer>"#
+                    ),
+                    &format!(
+                        r#"{JSON_TYPES},"Run":[{{"$Kind":"{operation}","$ReturnType":{{}}}}],"Service":{{"$Kind":"EntityContainer","Items":{{{marker}"$Type":"N.Entity"}},"{name}":{{"${operation}":"N.Run"}}}}"#
+                    ),
+                    valid,
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn inherited_sets_and_singletons_can_only_narrow_their_entity_type() {
+    for collection in [false, true] {
+        let (kind, attribute) = if collection {
+            ("EntitySet", "EntityType")
+        } else {
+            ("Singleton", "Type")
+        };
+        let marker = if collection {
+            r#""$Collection":true,"#
+        } else {
+            ""
+        };
+        for (ty, valid) in [("N.Derived", true), ("N.Entity", false), ("N.Other", false)] {
+            check(
+                &format!(
+                    r#"{XML_TYPES}<EntityType Name="Derived" BaseType="N.Entity"/><EntityType Name="Other"><Key><PropertyRef Name="ID"/></Key><Property Name="ID" Type="Edm.Int32" Nullable="false"/></EntityType><EntityContainer Name="Base"><{kind} Name="Items" {attribute}="N.Entity"/></EntityContainer><EntityContainer Name="Service" Extends="N.Base"><{kind} Name="Items" {attribute}="{ty}"/></EntityContainer>"#
+                ),
+                &format!(
+                    r#"{JSON_TYPES},"Derived":{{"$Kind":"EntityType","$BaseType":"N.Entity"}},"Other":{{"$Kind":"EntityType","$Key":["ID"],"ID":{{"$Type":"Edm.Int32"}}}},"Base":{{"$Kind":"EntityContainer","Items":{{{marker}"$Type":"N.Entity"}}}},"Service":{{"$Kind":"EntityContainer","$Extends":"N.Base","Items":{{{marker}"$Type":"{ty}"}}}}"#
+                ),
+                valid,
+            );
+        }
+    }
+}
+
+#[test]
+fn inherited_container_children_cannot_change_kind_or_redeclare_imports() {
+    for (xml_child, json_child) in [
+        (
+            r#"<Singleton Name="Items" Type="N.Entity"/>"#,
+            r#""Items":{"$Type":"N.Entity"}"#,
+        ),
+        (
+            r#"<ActionImport Name="Act" Action="N.Run"/>"#,
+            r#""Act":{"$Action":"N.Run"}"#,
+        ),
+        (
+            r#"<FunctionImport Name="Func" Function="N.Find"/>"#,
+            r#""Func":{"$Function":"N.Find"}"#,
+        ),
+    ] {
+        for redeclare in [false, true] {
+            let xml_child = if redeclare { xml_child } else { "" };
+            let json_child = if redeclare {
+                format!(",{json_child}")
+            } else {
+                String::new()
+            };
+            check(
+                &format!(
+                    r#"{XML_TYPES}<Action Name="Run"/><Function Name="Find"><ReturnType Type="Edm.String"/></Function><EntityContainer Name="Base"><EntitySet Name="Items" EntityType="N.Entity"/><ActionImport Name="Act" Action="N.Run"/><FunctionImport Name="Func" Function="N.Find"/></EntityContainer><EntityContainer Name="Middle" Extends="N.Base"><Singleton Name="MiddleItem" Type="N.Entity"/></EntityContainer><EntityContainer Name="Service" Extends="N.Middle"><Singleton Name="ServiceItem" Type="N.Entity"/>{xml_child}</EntityContainer>"#
+                ),
+                &format!(
+                    r#"{JSON_TYPES},"Run":[{{"$Kind":"Action"}}],"Find":[{{"$Kind":"Function","$ReturnType":{{}}}}],"Base":{{"$Kind":"EntityContainer","Items":{{"$Collection":true,"$Type":"N.Entity"}},"Act":{{"$Action":"N.Run"}},"Func":{{"$Function":"N.Find"}}}},"Middle":{{"$Kind":"EntityContainer","$Extends":"N.Base","MiddleItem":{{"$Type":"N.Entity"}}}},"Service":{{"$Kind":"EntityContainer","$Extends":"N.Middle","ServiceItem":{{"$Type":"N.Entity"}}{json_child}}}"#
+                ),
+                !redeclare,
+            );
+        }
+    }
+}
+
+#[test]
 fn entity_sets_and_singletons_require_entity_types_in_scope() {
     for collection in [false, true] {
         let (kind, attribute) = if collection {
