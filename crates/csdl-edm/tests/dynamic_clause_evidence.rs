@@ -30,16 +30,32 @@ fn comparison_expressions_require_two_compatible_operands() {
 }
 
 fn check(xml_expression: &str, json_expression: &str, collection: bool, valid: bool) {
+    check_type(
+        xml_expression,
+        json_expression,
+        "Edm.Boolean",
+        collection,
+        valid,
+    );
+}
+
+fn check_type(
+    xml_expression: &str,
+    json_expression: &str,
+    item_type: &str,
+    collection: bool,
+    valid: bool,
+) {
     let ty = if collection {
-        "Collection(Edm.Boolean)"
+        format!("Collection({item_type})")
     } else {
-        "Edm.Boolean"
+        item_type.to_owned()
     };
     let xml = format!(
         r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><Term Name="Value" Type="{ty}" Nullable="false"/><ComplexType Name="Owner"><Annotation Term="N.Value">{xml_expression}</Annotation></ComplexType></Schema></edmx:DataServices></edmx:Edmx>"#
     );
     let json = format!(
-        r#"{{"$Version":"4.01","N":{{"Value":{{"$Kind":"Term","$Type":"Edm.Boolean","$Collection":{collection}}},"Owner":{{"$Kind":"ComplexType","@N.Value":{json_expression}}}}}}}"#
+        r#"{{"$Version":"4.01","N":{{"Value":{{"$Kind":"Term","$Type":"{item_type}","$Collection":{collection}}},"Owner":{{"$Kind":"ComplexType","@N.Value":{json_expression}}}}}}}"#
     );
     for parsed in [
         parser::from_xml_reader_with_profile(xml.as_bytes(), P::Strict),
@@ -61,6 +77,65 @@ fn check(xml_expression: &str, json_expression: &str, collection: bool, valid: b
             result.is_ok(),
             valid,
             "{result:?}\n{xml_expression}\n{json_expression}"
+        );
+    }
+}
+
+#[test]
+fn membership_requires_a_scalar_and_compatible_collection() {
+    for (xml, json, valid) in [
+        (
+            "<Int>1</Int><Collection><Int>1</Int><Int>2</Int></Collection>",
+            "[1,[1,2]]",
+            true,
+        ),
+        ("<Int>1</Int><Int>2</Int>", "[1,2]", false),
+        (
+            "<Collection><Int>1</Int></Collection><Collection><Int>2</Int></Collection>",
+            "[[1],[2]]",
+            false,
+        ),
+        (
+            "<Int>1</Int><Collection><String>a</String></Collection>",
+            r#"[1,["a"]]"#,
+            false,
+        ),
+        ("<Int>1</Int>", "[1]", false),
+        ("<Int>1</Int><Collection/><Int>2</Int>", "[1,[],2]", false),
+    ] {
+        check(
+            &format!("<In>{xml}</In>"),
+            &format!(r#"{{"$In":{json}}}"#),
+            false,
+            valid,
+        );
+    }
+}
+
+#[test]
+fn arithmetic_expressions_require_numeric_operands_and_exact_arity() {
+    for operator in ["Add", "Sub", "Mul", "Div", "DivBy", "Mod", "Neg"] {
+        let arity = if operator == "Neg" { 1 } else { 2 };
+        for count in 0..=3 {
+            let xml = format!("<{operator}>{}</{operator}>", "<Int>2</Int>".repeat(count));
+            let json = if operator == "Neg" && count == 1 {
+                r#"{"$Neg":2}"#.to_owned()
+            } else {
+                format!(r#"{{"${operator}":[{}]}}"#, vec!["2"; count].join(","))
+            };
+            check_type(&xml, &json, "Edm.Double", false, count == arity);
+        }
+        let (xml, json) = if operator == "Neg" {
+            ("<Bool>true</Bool>", "true")
+        } else {
+            ("<Int>2</Int><Bool>true</Bool>", "[2,true]")
+        };
+        check_type(
+            &format!("<{operator}>{xml}</{operator}>"),
+            &format!(r#"{{"${operator}":{json}}}"#),
+            "Edm.Double",
+            false,
+            false,
         );
     }
 }
