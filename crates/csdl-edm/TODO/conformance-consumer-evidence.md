@@ -41,7 +41,7 @@ The focused evidence suites now independently author XML and JSON for reference/
 include shapes, schema declarations, structured inheritance, scalar/complex/related
 keys, facet bounds, navigation nullability/partners, enums and type definitions.
 These cases exposed and fixed reserved schema namespaces and symbolic-scale casing
-at the strict source boundary, plus declaring-type member name collisions in semantic validation. The matrix now records 151 covered and 275 partial
+at the strict source boundary, plus declaring-type member name collisions in semantic validation. The matrix now records 153 covered and 273 partial
 paragraphs; advisory and outside-static-scope dispositions remain unchanged.
 
 Structured member redeclaration, partner path/type clauses, containment partner
@@ -50,7 +50,7 @@ The containment checks also now accept collection-valued non-recursive partners
 consistently across XML and JSON; their omitted Nullable facet is not scalar nullability.
 Containment binding endpoints and inheritance-chain parent uniqueness also have
 independent positive/negative XML and JSON evidence.
-Constraint paths and required navigation declarations now have focused source evidence. Operation evidence covers overload identity, parameter names, return-type scope and collection nullability, required operation declarations, and entity-set paths. Collection return consistency and required parameter source shapes now have independent XML/JSON evidence. Remaining work includes parameter type scope and multiplicity, container clauses, annotation expressions and remaining grammar branches. Existing broad suites remain supporting evidence, not a substitute for
+Constraint paths and required navigation declarations now have focused source evidence. Operation evidence covers overload identity, parameter names, return-type scope and collection nullability, required operation declarations, and entity-set paths. Collection return consistency and required parameter source shapes now have independent XML/JSON evidence. Parameter type scope now has scalar and collection cases for primitive, entity, complex, enum and type-definition types. Remaining work includes representation-specific multiplicity evidence, container clauses, annotation expressions and remaining grammar branches. Existing broad suites remain supporting evidence, not a substitute for
 the independent clause fixtures required below.
 
 1. Complete the reviewed clause decomposition for the remaining mixed paragraphs.

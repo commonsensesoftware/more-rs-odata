@@ -20,6 +20,38 @@ fn check(xml: &str, json: &str, valid: bool) {
 }
 
 #[test]
+fn parameter_types_resolve_in_scope_for_scalar_and_collection_values() {
+    for kind in ["Action", "Function"] {
+        for collection in [false, true] {
+            for (ty, valid) in [
+                ("Edm.String", true),
+                ("N.Entity", true),
+                ("N.Complex", true),
+                ("N.Choice", true),
+                ("N.Code", true),
+                ("Missing.Type", false),
+                ("Edm.Unknown", false),
+            ] {
+                let xml_type = if collection {
+                    format!("Collection({ty})")
+                } else {
+                    ty.to_owned()
+                };
+                check(
+                    &format!(
+                        r#"<EntityType Name="Entity"/><ComplexType Name="Complex"/><EnumType Name="Choice"><Member Name="One" Value="1"/></EnumType><TypeDefinition Name="Code" UnderlyingType="Edm.String"/><{kind} Name="Run"><Parameter Name="value" Type="{xml_type}" Nullable="false"/><ReturnType Type="Edm.String"/></{kind}>"#
+                    ),
+                    &format!(
+                        r#""Entity":{{"$Kind":"EntityType"}},"Complex":{{"$Kind":"ComplexType"}},"Choice":{{"$Kind":"EnumType","One":1}},"Code":{{"$Kind":"TypeDefinition","$UnderlyingType":"Edm.String"}},"Run":[{{"$Kind":"{kind}","$Parameter":[{{"$Name":"value","$Type":"{ty}","$Collection":{collection}}}],"$ReturnType":{{}}}}]"#
+                    ),
+                    valid,
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn function_return_consistency_includes_collection_multiplicity() {
     for bound in [false, true] {
         for first_collection in [false, true] {
