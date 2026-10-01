@@ -59,6 +59,40 @@ fn xml_null_requires_element_notation_without_expression_children() {
 }
 
 #[test]
+fn concat_accepts_scalar_enums_and_type_definitions_but_not_structured_values() {
+    for item_type in ["N.Color", "N.Code", "N.Detail"] {
+        for collection in [false, true] {
+            for result_type in ["Edm.String", "Edm.Boolean"] {
+                let xml_type = if collection {
+                    format!("Collection({item_type})")
+                } else {
+                    item_type.into()
+                };
+                let xml = format!(
+                    r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><EnumType Name="Color"><Member Name="Red"/></EnumType><TypeDefinition Name="Code" UnderlyingType="Edm.String"/><ComplexType Name="Detail"/><Term Name="Value" Type="{result_type}"/><ComplexType Name="Owner"><Property Name="Input" Type="{xml_type}" Nullable="false"/><Annotation Term="N.Value"><Apply Function="odata.concat"><String>prefix</String><Path>Input</Path></Apply></Annotation></ComplexType></Schema></edmx:DataServices></edmx:Edmx>"#
+                );
+                let json = format!(
+                    r#"{{"$Version":"4.01","N":{{"Color":{{"$Kind":"EnumType","Red":0}},"Code":{{"$Kind":"TypeDefinition","$UnderlyingType":"Edm.String"}},"Detail":{{"$Kind":"ComplexType"}},"Value":{{"$Kind":"Term","$Type":"{result_type}"}},"Owner":{{"$Kind":"ComplexType","Input":{{"$Type":"{item_type}","$Collection":{collection}}},"@N.Value":{{"$Apply":["prefix",{{"$Path":"Input"}}],"$Function":"odata.concat"}}}}}}}}"#
+                );
+                for parsed in [
+                    parser::from_xml_reader_with_profile(xml.as_bytes(), P::Strict),
+                    parser::from_json_reader_with_profile(json.as_bytes(), P::Strict),
+                ] {
+                    let model = Resolver::resolve_document(parsed.unwrap().edmx.unwrap()).unwrap();
+                    validator::validate_document(&model).unwrap();
+                    let diagnostics = validator::validate_annotations(&model);
+                    assert_eq!(
+                        diagnostics.is_empty(),
+                        item_type != "N.Detail" && !collection && result_type == "Edm.String",
+                        "{item_type}, collection={collection}, result={result_type}: {diagnostics:?}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn uri_template_functions_require_string_templates_and_labeled_parameters() {
     for (xml, json, valid) in [
         (
