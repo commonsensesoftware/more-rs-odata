@@ -20,6 +20,92 @@ fn check(xml: &str, json: &str, valid: bool) {
 }
 
 #[test]
+fn functions_require_exactly_one_return_declaration() {
+    for (xml_return, json_return, valid) in [
+        (
+            r#"<ReturnType Type="Edm.String"/>"#,
+            r#", "$ReturnType":{}"#,
+            true,
+        ),
+        ("", "", false),
+        (
+            r#"<ReturnType Type="Edm.String"/><ReturnType Type="Edm.String"/>"#,
+            r#", "$ReturnType":[]"#,
+            false,
+        ),
+    ] {
+        check(
+            &format!(r#"<Function Name="Find">{xml_return}</Function>"#),
+            &format!(r#""Find":[{{"$Kind":"Function"{json_return}}}]"#),
+            valid,
+        );
+    }
+    check(
+        r#"<Action Name="Run"/>"#,
+        r#""Run":[{"$Kind":"Action"}]"#,
+        true,
+    );
+}
+
+#[test]
+fn operation_return_types_must_resolve_in_scope() {
+    for kind in ["Action", "Function"] {
+        for collection in [false, true] {
+            for (ty, valid) in [
+                ("Edm.String", true),
+                ("N.Entity", true),
+                ("N.Complex", true),
+                ("Missing.Type", false),
+                ("Edm.Unknown", false),
+            ] {
+                let xml_ty = if collection {
+                    format!("Collection({ty})")
+                } else {
+                    ty.to_owned()
+                };
+                let xml_nullable = if collection && ty != "N.Entity" {
+                    r#" Nullable="false""#
+                } else {
+                    ""
+                };
+                check(
+                    &format!(
+                        r#"<EntityType Name="Entity"/><ComplexType Name="Complex"/><{kind} Name="Run"><ReturnType Type="{xml_ty}"{xml_nullable}/></{kind}>"#
+                    ),
+                    &format!(
+                        r#""Entity":{{"$Kind":"EntityType"}},"Complex":{{"$Kind":"ComplexType"}},"Run":[{{"$Kind":"{kind}","$ReturnType":{{"$Type":"{ty}","$Collection":{collection}}}}}]"#
+                    ),
+                    valid,
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn entity_collection_returns_cannot_author_nullable() {
+    for kind in ["Action", "Function"] {
+        for nullable in [None, Some(false), Some(true)] {
+            let xml_nullable = nullable
+                .map(|b| format!(r#" Nullable="{b}""#))
+                .unwrap_or_default();
+            let json_nullable = nullable
+                .map(|b| format!(r#", "$Nullable":{b}"#))
+                .unwrap_or_default();
+            check(
+                &format!(
+                    r#"<EntityType Name="Entity"/><{kind} Name="Run"><ReturnType Type="Collection(N.Entity)"{xml_nullable}/></{kind}>"#
+                ),
+                &format!(
+                    r#""Entity":{{"$Kind":"EntityType"}},"Run":[{{"$Kind":"{kind}","$ReturnType":{{"$Type":"N.Entity","$Collection":true{json_nullable}}}}}]"#
+                ),
+                nullable.is_none(),
+            );
+        }
+    }
+}
+
+#[test]
 fn actions_overload_only_by_bound_parameter_type() {
     for bound in [false, true] {
         for (ty, collection, valid_bound) in [
