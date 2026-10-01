@@ -1,6 +1,34 @@
 #![cfg(all(feature = "resolver", feature = "validator"))]
 use csdl_edm::{conformance::ValidationProfile as P, parser, resolver::Resolver, validator};
 
+#[test]
+fn comparison_expressions_require_two_compatible_operands() {
+    for operator in ["Eq", "Ne", "Gt", "Ge", "Lt", "Le"] {
+        for count in 0..=3 {
+            let xml = format!("<{operator}>{}</{operator}>", "<Int>1</Int>".repeat(count));
+            let json = format!(r#"{{"${operator}":[{}]}}"#, vec!["1"; count].join(","));
+            check(&xml, &json, false, count == 2);
+        }
+        for (xml, json, valid) in [
+            ("<Int>1</Int><Float>2.5</Float>", "[1,2.5]", true),
+            ("<String>a</String><String>b</String>", r#"["a","b"]"#, true),
+            ("<Int>1</Int><String>a</String>", r#"[1,"a"]"#, false),
+            (
+                "<Collection><Int>1</Int></Collection><Int>1</Int>",
+                "[[1],1]",
+                false,
+            ),
+        ] {
+            check(
+                &format!("<{operator}>{xml}</{operator}>"),
+                &format!(r#"{{"${operator}":{json}}}"#),
+                false,
+                valid,
+            );
+        }
+    }
+}
+
 fn check(xml_expression: &str, json_expression: &str, collection: bool, valid: bool) {
     let ty = if collection {
         "Collection(Edm.Boolean)"
