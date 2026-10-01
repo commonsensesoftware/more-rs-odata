@@ -173,22 +173,27 @@ fn partner_target_must_be_source_type_or_its_base() {
 
 #[test]
 fn constraint_paths_resolve_nested_properties_on_the_correct_owner() {
-    for (dependent, principal, valid) in [
-        ("Details/Code", "Details/Code", true),
-        ("Missing/Code", "Details/Code", false),
-        ("Details/Code", "Missing/Code", false),
-        ("Related/Details/Code", "Details/Code", false),
-        ("Details/Code", "Next/Details/Code", false),
-    ] {
-        check(
-            &format!(
-                r#"<ComplexType Name="C"><Property Name="Code" Type="Edm.Int32" Nullable="false"/></ComplexType><EntityType Name="Source"><Property Name="Details" Type="N.C" Nullable="false"/><NavigationProperty Name="Related" Type="N.Target" Nullable="false"><ReferentialConstraint Property="{dependent}" ReferencedProperty="{principal}"/></NavigationProperty></EntityType><EntityType Name="Target"><Property Name="Details" Type="N.C" Nullable="false"/><NavigationProperty Name="Next" Type="N.Target"/></EntityType>"#
-            ),
-            &format!(
-                r#""C":{{"$Kind":"ComplexType","Code":{{"$Type":"Edm.Int32"}}}},"Source":{{"$Kind":"EntityType","Details":{{"$Type":"N.C"}},"Related":{{"$Kind":"NavigationProperty","$Type":"N.Target","$ReferentialConstraint":{{"{dependent}":"{principal}"}}}}}},"Target":{{"$Kind":"EntityType","Details":{{"$Type":"N.C"}},"Next":{{"$Kind":"NavigationProperty","$Type":"N.Target"}}}}"#
-            ),
-            valid,
-        );
+    for owner in ["EntityType", "ComplexType"] {
+        for (dependent, principal, valid) in [
+            ("Details/Code", "Details/Code", true),
+            ("Details/Inner/Code", "Details/Inner/Code", true),
+            ("Details//Code", "Details/Code", false),
+            ("Details/Code", "Details/Code/", false),
+            ("Missing/Code", "Details/Code", false),
+            ("Details/Code", "Missing/Code", false),
+            ("Related/Details/Code", "Details/Code", false),
+            ("Details/Code", "Next/Details/Code", false),
+        ] {
+            check(
+                &format!(
+                    r#"<ComplexType Name="C"><Property Name="Inner" Type="N.C"/><Property Name="Code" Type="Edm.Int32" Nullable="false"/></ComplexType><{owner} Name="Source"><Property Name="Details" Type="N.C" Nullable="false"/><NavigationProperty Name="Related" Type="N.Target" Nullable="false"><ReferentialConstraint Property="{dependent}" ReferencedProperty="{principal}"/></NavigationProperty></{owner}><EntityType Name="Target"><Property Name="Details" Type="N.C" Nullable="false"/><NavigationProperty Name="Next" Type="N.Target"/></EntityType>"#
+                ),
+                &format!(
+                    r#""C":{{"$Kind":"ComplexType","Inner":{{"$Type":"N.C","$Nullable":true}},"Code":{{"$Type":"Edm.Int32"}}}},"Source":{{"$Kind":"{owner}","Details":{{"$Type":"N.C"}},"Related":{{"$Kind":"NavigationProperty","$Type":"N.Target","$ReferentialConstraint":{{"{dependent}":"{principal}"}}}}}},"Target":{{"$Kind":"EntityType","Details":{{"$Type":"N.C"}},"Next":{{"$Kind":"NavigationProperty","$Type":"N.Target"}}}}"#
+                ),
+                valid,
+            );
+        }
     }
 }
 
@@ -366,5 +371,54 @@ fn containment_parent_is_unique_across_an_inheritance_chain() {
                 !second,
             );
         }
+    }
+}
+
+#[test]
+fn referential_constraints_require_both_property_paths() {
+    for (xml, json, valid) in [
+        (
+            r#"Property="FK" ReferencedProperty="Code""#,
+            r#"{"FK":"Code"}"#,
+            true,
+        ),
+        (r#"Property="FK""#, r#"{"FK":null}"#, false),
+        (r#"ReferencedProperty="Code""#, r#"{"":"Code"}"#, false),
+        ("", r#"{"FK":17}"#, false),
+    ] {
+        check(
+            &format!(
+                r#"<EntityType Name="Source"><Property Name="FK" Type="Edm.Int32" Nullable="false"/><NavigationProperty Name="Related" Type="N.Target" Nullable="false"><ReferentialConstraint {xml}/></NavigationProperty></EntityType><EntityType Name="Target"><Property Name="Code" Type="Edm.Int32" Nullable="false"/></EntityType>"#
+            ),
+            &format!(
+                r#""Source":{{"$Kind":"EntityType","FK":{{"$Type":"Edm.Int32"}},"Related":{{"$Kind":"NavigationProperty","$Type":"N.Target","$ReferentialConstraint":{json}}}}},"Target":{{"$Kind":"EntityType","Code":{{"$Type":"Edm.Int32"}}}}"#
+            ),
+            valid,
+        );
+    }
+}
+
+#[test]
+fn on_delete_requires_a_recognized_action() {
+    for action in ["Cascade", "None", "SetNull", "SetDefault", "Unknown", ""] {
+        let xml_action = if action.is_empty() {
+            String::new()
+        } else {
+            format!(r#" Action="{action}""#)
+        };
+        let json_action = if action.is_empty() {
+            "null".to_owned()
+        } else {
+            format!(r#""{action}""#)
+        };
+        check(
+            &format!(
+                r#"<EntityType Name="Source"><NavigationProperty Name="Related" Type="N.Source"><OnDelete{xml_action}/></NavigationProperty></EntityType>"#
+            ),
+            &format!(
+                r#""Source":{{"$Kind":"EntityType","Related":{{"$Kind":"NavigationProperty","$Type":"N.Source","$OnDelete":{json_action}}}}}"#
+            ),
+            !matches!(action, "Unknown" | ""),
+        );
     }
 }
