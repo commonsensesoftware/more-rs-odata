@@ -19,32 +19,74 @@ fn check(xml: &str, json: &str, valid: bool) {
     }
 }
 
+#[test]
+fn imports_require_names_and_operation_references() {
+    for kind in ["Action", "Function"] {
+        for name in [false, true] {
+            for reference in [false, true] {
+                let xml_name = if name { r#" Name="Imported""# } else { "" };
+                let xml_reference = if reference {
+                    format!(r#" {kind}="N.Run""#)
+                } else {
+                    String::new()
+                };
+                let json_name = if name { "Imported" } else { "" };
+                let json_reference = if reference { r#""N.Run""# } else { "null" };
+                check(
+                    &format!(
+                        r#"<{kind} Name="Run"><ReturnType Type="Edm.String"/></{kind}><EntityContainer Name="Service"><{kind}Import{xml_name}{xml_reference}/></EntityContainer>"#
+                    ),
+                    &format!(
+                        r#""Run":[{{"$Kind":"{kind}","$ReturnType":{{}}}}],"Service":{{"$Kind":"EntityContainer","{json_name}":{{"${kind}":{json_reference}}}}}"#
+                    ),
+                    name && reference,
+                );
+            }
+        }
+        check(
+            &format!(
+                r#"<{kind} Name="Run"><ReturnType Type="Edm.String"/></{kind}><EntityContainer Name="Service"><{kind}Import Name="Imported"/></EntityContainer>"#
+            ),
+            &format!(
+                r#""Run":[{{"$Kind":"{kind}","$ReturnType":{{}}}}],"Service":{{"$Kind":"EntityContainer","Imported":{{}}}}"#
+            ),
+            false,
+        );
+    }
+}
+
 const XML_TYPES: &str = r#"<EntityType Name="Entity"><Key><PropertyRef Name="ID"/></Key><Property Name="ID" Type="Edm.Int32" Nullable="false"/></EntityType><ComplexType Name="Complex"/>"#;
 const JSON_TYPES: &str = r#""Entity":{"$Kind":"EntityType","$Key":["ID"],"ID":{"$Type":"Edm.Int32"}},"Complex":{"$Kind":"ComplexType"}"#;
 
 #[test]
 fn import_entity_set_targets_resolve_to_sets_in_scope() {
     for kind in ["Action", "Function"] {
-        for (target, valid) in [
-            ("Items", true),
-            ("N.Other/Items", true),
-            ("Missing", false),
-            ("N.Missing/Items", false),
-            ("Single", false),
-        ] {
-            check(
-                &format!(
-                    r#"{XML_TYPES}<{kind} Name="Run"><ReturnType Type="N.Entity"/></{kind}><EntityContainer Name="Other"><EntitySet Name="Items" EntityType="N.Entity"/></EntityContainer><EntityContainer Name="Service"><EntitySet Name="Items" EntityType="N.Entity"/><Singleton Name="Single" Type="N.Entity"/><{kind}Import Name="Imported" {kind}="N.Run" EntitySet="{target}"/></EntityContainer>"#
-                ),
-                &format!(
-                    r#"{JSON_TYPES},"Run":[{{"$Kind":"{kind}","$ReturnType":{{"$Type":"N.Entity"}}}}],"Other":{{"$Kind":"EntityContainer","Items":{{"$Collection":true,"$Type":"N.Entity"}}}},"Service":{{"$Kind":"EntityContainer","Items":{{"$Collection":true,"$Type":"N.Entity"}},"Single":{{"$Type":"N.Entity"}},"Imported":{{"${kind}":"N.Run","$EntitySet":"{target}"}}}}"#
-                ),
-                valid,
-            );
+        for collection in [false, true] {
+            let returned = if collection {
+                "Collection(N.Entity)"
+            } else {
+                "N.Entity"
+            };
+            for (target, valid) in [
+                ("Items", true),
+                ("N.Other/Items", true),
+                ("Missing", false),
+                ("N.Missing/Items", false),
+                ("Single", false),
+            ] {
+                check(
+                    &format!(
+                        r#"{XML_TYPES}<{kind} Name="Run"><ReturnType Type="{returned}"/></{kind}><EntityContainer Name="Other"><EntitySet Name="Items" EntityType="N.Entity"/></EntityContainer><EntityContainer Name="Service"><EntitySet Name="Items" EntityType="N.Entity"/><Singleton Name="Single" Type="N.Entity"/><{kind}Import Name="Imported" {kind}="N.Run" EntitySet="{target}"/></EntityContainer>"#
+                    ),
+                    &format!(
+                        r#"{JSON_TYPES},"Run":[{{"$Kind":"{kind}","$ReturnType":{{"$Type":"N.Entity","$Collection":{collection}}}}}],"Other":{{"$Kind":"EntityContainer","Items":{{"$Collection":true,"$Type":"N.Entity"}}}},"Service":{{"$Kind":"EntityContainer","Items":{{"$Collection":true,"$Type":"N.Entity"}},"Single":{{"$Type":"N.Entity"}},"Imported":{{"${kind}":"N.Run","$EntitySet":"{target}"}}}}"#
+                    ),
+                    valid,
+                );
+            }
         }
     }
 }
-
 #[test]
 fn function_import_exposes_all_unbound_overloads_and_excludes_bound_ones() {
     let xml = r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><Function Name="Find"><Parameter Name="code" Type="Edm.Int32"/><ReturnType Type="Edm.String"/></Function><Function Name="Find"><Parameter Name="text" Type="Edm.String"/><ReturnType Type="Edm.String"/></Function><Function Name="Find" IsBound="true"><Parameter Name="binding" Type="Edm.Boolean"/><ReturnType Type="Edm.String"/></Function><EntityContainer Name="Service"><FunctionImport Name="Imported" Function="N.Find"/></EntityContainer></Schema></edmx:DataServices></edmx:Edmx>"#;
