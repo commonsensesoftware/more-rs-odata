@@ -2,6 +2,70 @@
 use csdl_edm::{conformance::ValidationProfile as P, parser, resolver::Resolver, validator};
 
 #[test]
+fn apply_concat_requires_at_least_two_scalar_arguments() {
+    for count in 0..=3 {
+        let xml = format!(
+            r#"<Apply Function="odata.concat">{}</Apply>"#,
+            "<String>a</String>".repeat(count)
+        );
+        let json = format!(
+            r#"{{"$Apply":[{}],"$Function":"odata.concat"}}"#,
+            vec![r#""a""#; count].join(",")
+        );
+        check_type(&xml, &json, "Edm.String", false, count >= 2);
+    }
+    for (xml, json, valid) in [
+        ("<String>a</String><Int>1</Int>", r#"["a",1]"#, true),
+        ("<String>a</String><Bool>true</Bool>", r#"["a",true]"#, true),
+        (
+            "<String>a</String><Collection><String>b</String></Collection>",
+            r#"["a",["b"]]"#,
+            false,
+        ),
+        ("<String>a</String><Record/>", r#"["a",{}]"#, false),
+    ] {
+        check_type(
+            &format!(r#"<Apply Function="odata.concat">{xml}</Apply>"#),
+            &format!(r#"{{"$Apply":{json},"$Function":"odata.concat"}}"#),
+            "Edm.String",
+            false,
+            valid,
+        );
+    }
+}
+
+#[test]
+fn apply_requires_function_reference_and_correct_builtin_signature() {
+    check_type(
+        r#"<Apply Function="odata.length"><String>abc</String></Apply>"#,
+        r#"{"$Apply":["abc"],"$Function":"odata.length"}"#,
+        "Edm.Int32",
+        false,
+        true,
+    );
+    for (xml, json) in [
+        (
+            r#"<Apply><String>abc</String></Apply>"#,
+            r#"{"$Apply":["abc"]}"#,
+        ),
+        (
+            r#"<Apply Function="odata.length"><Int>1</Int></Apply>"#,
+            r#"{"$Apply":[1],"$Function":"odata.length"}"#,
+        ),
+        (
+            r#"<Apply Function="odata.length"><String>a</String><String>b</String></Apply>"#,
+            r#"{"$Apply":["a","b"],"$Function":"odata.length"}"#,
+        ),
+        (
+            r#"<Apply Function="odata.unknown"><String>a</String></Apply>"#,
+            r#"{"$Apply":["a"],"$Function":"odata.unknown"}"#,
+        ),
+    ] {
+        check_type(xml, json, "Edm.Int32", false, false);
+    }
+}
+
+#[test]
 fn label_uniqueness_spans_annotations_but_not_schema_boundaries() {
     for separate_schema in [false, true] {
         for second_name in ["Flag", "Other"] {
