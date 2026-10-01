@@ -3,6 +3,49 @@ use csdl_edm::{
     conformance::ValidationProfile as P, edm::*, parser, resolver::Resolver, validator::*,
 };
 
+#[test]
+fn url_reference_requires_a_scalar_string_operand() {
+    for (xml, json, valid) in [
+        ("<String>value</String>", r#""value""#, true),
+        (
+            "<String>https://example.test/value</String>",
+            r#""https://example.test/value""#,
+            true,
+        ),
+        ("<Int>1</Int>", "1", false),
+        ("<Bool>true</Bool>", "true", false),
+        (
+            "<Collection><String>value</String></Collection>",
+            r#"["value"]"#,
+            false,
+        ),
+    ] {
+        for model in models(
+            &format!("<UrlRef>{xml}</UrlRef>"),
+            &format!(r#"{{"$UrlRef":{json}}}"#),
+        ) {
+            let mut options = AnnotationValidationOptions::default();
+            for uri in ["value", "https://example.test/value"] {
+                options
+                    .url_result_types
+                    .insert(uri.into(), supplied(PrimitiveType::Int32, false));
+            }
+            let diagnostics = validate_annotations_with_options(&model, &options);
+            assert_eq!(diagnostics.is_empty(), valid, "{diagnostics:?}: {xml}");
+        }
+    }
+}
+
+#[test]
+fn xml_url_reference_requires_exactly_one_child_expression() {
+    for body in ["", "<String>first</String><String>second</String>"] {
+        let xml = format!(
+            r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><Term Name="Value" Type="Edm.Int32"/><ComplexType Name="Owner"><Annotation Term="N.Value"><UrlRef>{body}</UrlRef></Annotation></ComplexType></Schema></edmx:DataServices></edmx:Edmx>"#
+        );
+        assert!(parser::from_xml_reader_with_profile(xml.as_bytes(), P::Strict).is_err());
+    }
+}
+
 fn supplied(ty: PrimitiveType, collection: bool) -> ExpressionType {
     ExpressionType {
         ty: TermType::Primitive(ty),
