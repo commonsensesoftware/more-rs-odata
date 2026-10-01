@@ -2,6 +2,62 @@
 use csdl_edm::{conformance::ValidationProfile as P, parser, resolver::Resolver, validator};
 
 #[test]
+fn transitive_base_terms_complete_each_required_member() {
+    for root in [false, true] {
+        for middle in [false, true] {
+            for leaf in [false, true] {
+                let xml_root = if root {
+                    r#"<Annotation Term="N.RootTerm"><Record><PropertyValue Property="RootValue" String="root"/></Record></Annotation>"#
+                } else {
+                    ""
+                };
+                let xml_middle = if middle {
+                    r#"<Annotation Term="N.MiddleTerm"><Record><PropertyValue Property="MiddleValue" String="middle"/></Record></Annotation>"#
+                } else {
+                    ""
+                };
+                let xml_leaf = if leaf {
+                    r#"<PropertyValue Property="LeafValue" String="leaf"/>"#
+                } else {
+                    ""
+                };
+                let json_root = if root {
+                    r#", "@N.RootTerm":{"RootValue":"root"}"#
+                } else {
+                    ""
+                };
+                let json_middle = if middle {
+                    r#", "@N.MiddleTerm":{"MiddleValue":"middle"}"#
+                } else {
+                    ""
+                };
+                let json_leaf = if leaf { r#""LeafValue":"leaf""# } else { "" };
+                let xml = format!(
+                    r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><ComplexType Name="Root"><Property Name="RootValue" Type="Edm.String" Nullable="false"/></ComplexType><ComplexType Name="Middle" BaseType="N.Root"><Property Name="MiddleValue" Type="Edm.String" Nullable="false"/></ComplexType><ComplexType Name="Leaf" BaseType="N.Middle"><Property Name="LeafValue" Type="Edm.String" Nullable="false"/></ComplexType><Term Name="RootTerm" Type="N.Root"/><Term Name="MiddleTerm" Type="N.Middle" BaseTerm="N.RootTerm"/><Term Name="LeafTerm" Type="N.Leaf" BaseTerm="N.MiddleTerm"/><ComplexType Name="Owner">{xml_root}{xml_middle}<Annotation Term="N.LeafTerm"><Record>{xml_leaf}</Record></Annotation></ComplexType></Schema></edmx:DataServices></edmx:Edmx>"#
+                );
+                let json = format!(
+                    r#"{{"$Version":"4.01","N":{{"Root":{{"$Kind":"ComplexType","RootValue":{{}}}},"Middle":{{"$Kind":"ComplexType","$BaseType":"N.Root","MiddleValue":{{}}}},"Leaf":{{"$Kind":"ComplexType","$BaseType":"N.Middle","LeafValue":{{}}}},"RootTerm":{{"$Kind":"Term","$Type":"N.Root"}},"MiddleTerm":{{"$Kind":"Term","$Type":"N.Middle","$BaseTerm":"N.RootTerm"}},"LeafTerm":{{"$Kind":"Term","$Type":"N.Leaf","$BaseTerm":"N.MiddleTerm"}},"Owner":{{"$Kind":"ComplexType"{json_root}{json_middle},"@N.LeafTerm":{{{json_leaf}}}}}}}}}"#
+                );
+                for parsed in [
+                    parser::from_xml_reader_with_profile(xml.as_bytes(), P::Strict),
+                    parser::from_json_reader_with_profile(json.as_bytes(), P::Strict),
+                ] {
+                    let model = Resolver::resolve_document(parsed.unwrap().edmx.unwrap()).unwrap();
+                    validator::validate_document(&model).unwrap();
+                    let diagnostics = validator::validate_annotations(&model);
+                    let leaf_invalid = diagnostics.iter().any(|d| d.term == "N.LeafTerm");
+                    assert_eq!(
+                        !leaf_invalid,
+                        root && middle && leaf,
+                        "{diagnostics:?}: root={root}, middle={middle}, leaf={leaf}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn base_term_annotations_supply_inherited_record_members() {
     for base_present in [false, true] {
         for own_present in [false, true] {
