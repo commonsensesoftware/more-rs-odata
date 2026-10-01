@@ -2,6 +2,64 @@
 use csdl_edm::{conformance::ValidationProfile as P, parser, resolver::Resolver, validator};
 
 #[test]
+fn collection_items_must_be_compatible_with_the_expected_element_type() {
+    for (xml, json, ty, valid) in [
+        ("<Collection/>", "[]", "Edm.Boolean", true),
+        (
+            "<Collection><Bool>true</Bool></Collection>",
+            "[true]",
+            "Edm.Boolean",
+            true,
+        ),
+        (
+            "<Collection><Bool>true</Bool><Bool>false</Bool></Collection>",
+            "[true,false]",
+            "Edm.Boolean",
+            true,
+        ),
+        (
+            "<Collection><Int>1</Int><Float>2.5</Float></Collection>",
+            "[1,2.5]",
+            "Edm.Double",
+            true,
+        ),
+        (
+            "<Collection><Bool>true</Bool><Int>1</Int></Collection>",
+            "[true,1]",
+            "Edm.Boolean",
+            false,
+        ),
+        (
+            "<Collection><Int>1</Int><String>a</String></Collection>",
+            r#"[1,"a"]"#,
+            "Edm.Double",
+            false,
+        ),
+        (
+            "<Collection><Collection><Bool>true</Bool></Collection></Collection>",
+            "[[true]]",
+            "Edm.Boolean",
+            false,
+        ),
+        (
+            "<Collection><Null/></Collection>",
+            "[null]",
+            "Edm.Boolean",
+            false,
+        ),
+        ("<Bool>true</Bool>", "true", "Edm.Boolean", false),
+    ] {
+        check_type(xml, json, ty, true, valid);
+    }
+    check(
+        "<Collection><Bool>true</Bool></Collection>",
+        "[true]",
+        false,
+        false,
+    );
+}
+
+#[test]
 fn cast_and_isof_require_one_operand_and_resolved_target_type() {
     for operator in ["Cast", "IsOf"] {
         let result_type = if operator == "Cast" {
