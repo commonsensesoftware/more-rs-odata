@@ -3,6 +3,52 @@
 use csdl_edm::{conformance::ValidationProfile as P, parser, resolver::Resolver, validator};
 
 #[test]
+fn enum_constants_resolve_members_and_require_flags_for_combinations() {
+    for flags in [false, true] {
+        for (xml_value, json_value, valid) in [
+            ("N.Choice/One", "One", true),
+            ("N.Choice/Two", "Two", true),
+            ("N.Choice/One N.Choice/Two", "One,Two", flags),
+            ("N.Choice/Missing", "Missing", false),
+            ("N.Other/One", "MissingType/One", false),
+            ("One", "N.Choice/One", false),
+            ("N.Choice/One N.Other/Two", "One,Missing", false),
+        ] {
+            let xml = format!(
+                r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><EnumType Name="Choice" IsFlags="{flags}"><Member Name="One" Value="1"/><Member Name="Two" Value="2"/></EnumType><EnumType Name="Other"><Member Name="One" Value="1"/><Member Name="Two" Value="2"/></EnumType><Term Name="Value" Type="N.Choice"/><ComplexType Name="Owner"><Annotation Term="N.Value"><EnumMember>{xml_value}</EnumMember></Annotation></ComplexType></Schema></edmx:DataServices></edmx:Edmx>"#
+            );
+            let json = format!(
+                r#"{{"$Version":"4.01","N":{{"Choice":{{"$Kind":"EnumType","$IsFlags":{flags},"One":1,"Two":2}},"Other":{{"$Kind":"EnumType","One":1,"Two":2}},"Value":{{"$Kind":"Term","$Type":"N.Choice"}},"Owner":{{"$Kind":"ComplexType","@N.Value":"{json_value}"}}}}}}"#
+            );
+            for parsed in [
+                parser::from_xml_reader_with_profile(xml.as_bytes(), P::Strict),
+                parser::from_json_reader_with_profile(json.as_bytes(), P::Strict),
+            ] {
+                let result = parsed
+                    .map_err(|e| e.to_string())
+                    .and_then(|d| {
+                        Resolver::resolve_document(d.edmx.unwrap()).map_err(|e| format!("{e:?}"))
+                    })
+                    .and_then(|model| {
+                        validator::validate_document(&model).map_err(|e| format!("{e:?}"))?;
+                        let diagnostics = validator::validate_annotations(&model);
+                        if diagnostics.is_empty() {
+                            Ok(())
+                        } else {
+                            Err(format!("{diagnostics:?}"))
+                        }
+                    });
+                assert_eq!(
+                    result.is_ok(),
+                    valid,
+                    "{result:?}: {xml_value} / {json_value}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn binary_constants_require_base64url_encoding() {
     for (value, valid) in [
         ("", true),
