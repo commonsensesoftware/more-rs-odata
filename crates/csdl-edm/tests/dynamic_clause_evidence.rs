@@ -2,6 +2,67 @@
 use csdl_edm::{conformance::ValidationProfile as P, parser, resolver::Resolver, validator};
 
 #[test]
+fn has_requires_two_operands_of_the_same_flags_enum() {
+    for flags in [false, true] {
+        for (right_type, collection, compatible) in [
+            ("N.Choice", false, true),
+            ("N.Other", false, false),
+            ("Edm.Int32", false, false),
+            ("N.Choice", true, false),
+        ] {
+            for count in 0..=3 {
+                let operands = ["Left", "Right", "Left"];
+                let xml_operands = operands[..count]
+                    .iter()
+                    .map(|p| format!("<Path>{p}</Path>"))
+                    .collect::<String>();
+                let json_operands = operands[..count]
+                    .iter()
+                    .map(|p| format!(r#"{{"$Path":"{p}"}}"#))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                let xml_type = if collection {
+                    format!("Collection({right_type})")
+                } else {
+                    right_type.to_owned()
+                };
+                let xml = format!(
+                    r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><EnumType Name="Choice" IsFlags="{flags}"><Member Name="One" Value="1"/></EnumType><EnumType Name="Other" IsFlags="true"><Member Name="One" Value="1"/></EnumType><Term Name="Value" Type="Edm.Boolean"/><ComplexType Name="Owner"><Property Name="Left" Type="N.Choice" Nullable="false"/><Property Name="Right" Type="{xml_type}" Nullable="false"/><Annotation Term="N.Value"><Has>{xml_operands}</Has></Annotation></ComplexType></Schema></edmx:DataServices></edmx:Edmx>"#
+                );
+                let json = format!(
+                    r#"{{"$Version":"4.01","N":{{"Choice":{{"$Kind":"EnumType","$IsFlags":{flags},"One":1}},"Other":{{"$Kind":"EnumType","$IsFlags":true,"One":1}},"Value":{{"$Kind":"Term","$Type":"Edm.Boolean"}},"Owner":{{"$Kind":"ComplexType","Left":{{"$Type":"N.Choice"}},"Right":{{"$Type":"{right_type}","$Collection":{collection}}},"@N.Value":{{"$Has":[{json_operands}]}}}}}}}}"#
+                );
+                for parsed in [
+                    parser::from_xml_reader_with_profile(xml.as_bytes(), P::Strict),
+                    parser::from_json_reader_with_profile(json.as_bytes(), P::Strict),
+                ] {
+                    let result = parsed
+                        .map_err(|e| e.to_string())
+                        .and_then(|d| {
+                            Resolver::resolve_document(d.edmx.unwrap())
+                                .map_err(|e| format!("{e:?}"))
+                        })
+                        .and_then(|m| {
+                            validator::validate_document(&m).map_err(|e| format!("{e:?}"))?;
+                            let diagnostics = validator::validate_annotations(&m);
+                            if diagnostics.is_empty() {
+                                Ok(())
+                            } else {
+                                Err(format!("{diagnostics:?}"))
+                            }
+                        });
+                    assert_eq!(
+                        result.is_ok(),
+                        flags && compatible && count == 2,
+                        "{result:?}: flags={flags}, right={xml_type}, operands={count}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn comparison_expressions_require_two_compatible_operands() {
     for operator in ["Eq", "Ne", "Gt", "Ge", "Lt", "Le"] {
         for count in 0..=3 {
