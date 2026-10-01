@@ -115,6 +115,7 @@ pub(super) fn xml_source_with_diagnostics<R: io::BufRead>(
     diagnostics: &mut Vec<super::ParseDiagnostic>,
 ) -> io::Result<Vec<u8>> {
     let mut reader = NsReader::from_reader(source);
+    reader.config_mut().check_comments = true;
     let mut writer = Writer::new(Vec::new());
     let mut buffer = Vec::new();
     let mut skipped = 0usize;
@@ -132,8 +133,17 @@ pub(super) fn xml_source_with_diagnostics<R: io::BufRead>(
         // Check character data before recovery can discard an annotation or
         // unknown subtree. Those policies cannot make malformed XML valid.
         let character_data = match &event {
-            Event::Text(text) => Some(text.decode().map_err(io::Error::other)?.into_owned()),
+            Event::Text(text) | Event::Comment(text) => {
+                Some(text.decode().map_err(io::Error::other)?.into_owned())
+            }
             Event::CData(text) => Some(text.decode().map_err(io::Error::other)?.into_owned()),
+            Event::PI(instruction) => Some(
+                reader
+                    .decoder()
+                    .decode(instruction.as_ref())
+                    .map_err(io::Error::other)?
+                    .into_owned(),
+            ),
             Event::GeneralRef(reference) => {
                 let name = reference.decode().map_err(io::Error::other)?;
                 Some(

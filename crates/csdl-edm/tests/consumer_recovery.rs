@@ -7,6 +7,37 @@ fn xml(expression: &str) -> String {
 }
 
 #[test]
+fn malformed_xml_comments_and_processing_instructions_cannot_be_skipped() {
+    for (markup, valid) in [
+        ("<!--ordinary comment-->", true),
+        ("<?extension valid data?>", true),
+        ("<!--invalid--comment-->", false),
+        ("<!--\u{1}-->", false),
+        ("<?extension \u{b}?>", false),
+    ] {
+        for skipped in [false, true] {
+            let markup = if skipped {
+                format!("<Future>{markup}</Future>")
+            } else {
+                markup.into()
+            };
+            let source = xml("<Int>1</Int>").replace(
+                "<ComplexType Name=\"Kept\"/>",
+                &format!("{markup}<ComplexType Name=\"Kept\"/>"),
+            );
+            for profile in [P::Strict, P::Tolerant] {
+                let result = parser::from_xml_reader_with_report(source.as_bytes(), profile);
+                assert_eq!(
+                    result.is_ok(),
+                    valid,
+                    "{profile:?}, skipped={skipped}: {markup:?}: {result:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn malformed_xml_character_data_cannot_be_recovered_or_skipped() {
     for body in [
         "\u{1}",
