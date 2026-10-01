@@ -7,6 +7,48 @@ fn xml(expression: &str) -> String {
 }
 
 #[test]
+fn malformed_xml_character_data_cannot_be_recovered_or_skipped() {
+    for body in [
+        "\u{1}",
+        "&#1;",
+        "&#xFFFE;",
+        "&undeclared;",
+        "<![CDATA[\u{b}]]>",
+    ] {
+        for element in ["String", "Future"] {
+            let source = xml(&format!("<{element}>{body}</{element}>"));
+            for profile in [P::Strict, P::Tolerant] {
+                assert!(
+                    parser::from_xml_reader_with_report(source.as_bytes(), profile).is_err(),
+                    "{profile:?}: {element}: {body:?}"
+                );
+            }
+        }
+        let source = xml("<Int>1</Int>").replace(
+            "<ComplexType Name=\"Kept\"/>",
+            &format!("<Future>{body}</Future><ComplexType Name=\"Kept\"/>"),
+        );
+        for profile in [P::Strict, P::Tolerant] {
+            assert!(
+                parser::from_xml_reader_with_report(source.as_bytes(), profile).is_err(),
+                "Skipped extension: {profile:?}: {body:?}"
+            );
+        }
+    }
+    for body in ["&#9;&#10;&#13;", "&lt;&amp;&gt;", "<![CDATA[café 日本語]]>"] {
+        let source = xml(&format!("<String>{body}</String>"));
+        for profile in [P::Strict, P::Tolerant] {
+            let report = parser::from_xml_reader_with_report(source.as_bytes(), profile).unwrap();
+            assert!(report.diagnostics.is_empty());
+            assert_eq!(
+                report.document.edmx.unwrap().schemas[0].annotations.len(),
+                1
+            );
+        }
+    }
+}
+
+#[test]
 fn unavailable_xml_operands_drop_whole_annotation_with_diagnostic() {
     for expression in [
         "<Future/>",

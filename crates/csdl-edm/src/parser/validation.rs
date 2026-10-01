@@ -129,6 +129,27 @@ pub(super) fn xml_source_with_diagnostics<R: io::BufRead>(
         let event = reader
             .read_event_into(&mut buffer)
             .map_err(io::Error::other)?;
+        // Check character data before recovery can discard an annotation or
+        // unknown subtree. Those policies cannot make malformed XML valid.
+        let character_data = match &event {
+            Event::Text(text) => Some(text.decode().map_err(io::Error::other)?.into_owned()),
+            Event::CData(text) => Some(text.decode().map_err(io::Error::other)?.into_owned()),
+            Event::GeneralRef(reference) => {
+                let name = reference.decode().map_err(io::Error::other)?;
+                Some(
+                    quick_xml::escape::unescape(&format!("&{name};"))
+                        .map_err(io::Error::other)?
+                        .into_owned(),
+                )
+            }
+            _ => None,
+        };
+        if character_data
+            .as_deref()
+            .is_some_and(|value| !crate::csdl_xml_reader::valid_xml_characters(value))
+        {
+            return Err(invalid("invalid XML character in text"));
+        }
         match event {
             Event::Start(ref e) | Event::Empty(ref e) => {
                 // XML well-formedness errors cannot be recovered by dropping an

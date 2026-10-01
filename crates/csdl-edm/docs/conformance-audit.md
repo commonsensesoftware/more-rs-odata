@@ -139,7 +139,7 @@ direct evidence; covered sub-obligations alone do not promote the paragraph.
 
 `conformance_audit.rs` checks XML escaping/cardinalities, two-operand If contexts,
 matrix/policy/obligation integrity, and resolved `$count` paths. `consumer_recovery.rs`
-covers positive/negative recovery boundaries in both source formats.
+covers positive/negative recovery boundaries in both source formats. XML character-data checks precede annotation recovery and extension skipping, so malformed characters and undeclared entities cannot be silently discarded.
 `imported_grammar.rs` checks corpus identity and executes imported scalar cases;
 these exposed missing omitted-seconds and leap-second handling, now fixed.
 `conformance_clauses.rs` independently authors XML and JSON cases for duplicate
