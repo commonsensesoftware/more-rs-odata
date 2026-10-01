@@ -2,6 +2,46 @@
 use csdl_edm::{conformance::ValidationProfile as P, parser, resolver::Resolver, validator};
 
 #[test]
+fn uri_template_functions_require_string_templates_and_labeled_parameters() {
+    for (xml, json, valid) in [
+        (
+            "<String>https://example.test/{id}</String><LabeledElement Name=\"id\"><Int>1</Int></LabeledElement>",
+            r#"["https://example.test/{id}",{"$Name":"id","$LabeledElement":1}]"#,
+            true,
+        ),
+        (
+            "<String>https://example.test/</String>",
+            r#"["https://example.test/"]"#,
+            false,
+        ),
+        ("", "[]", false),
+        (
+            "<Int>1</Int><LabeledElement Name=\"id\"><Int>1</Int></LabeledElement>",
+            r#"[1,{"$Name":"id","$LabeledElement":1}]"#,
+            false,
+        ),
+        (
+            "<String>https://example.test/{id}</String><Int>1</Int>",
+            r#"["https://example.test/{id}",1]"#,
+            false,
+        ),
+        (
+            "<String>https://example.test/{id}</String><LabeledElement Name=\"id\"><Int>1</Int></LabeledElement><Int>2</Int>",
+            r#"["https://example.test/{id}",{"$Name":"id","$LabeledElement":1},2]"#,
+            false,
+        ),
+    ] {
+        check_type(
+            &format!(r#"<Apply Function="odata.fillUriTemplate">{xml}</Apply>"#),
+            &format!(r#"{{"$Apply":{json},"$Function":"odata.fillUriTemplate"}}"#),
+            "Edm.String",
+            false,
+            valid,
+        );
+    }
+}
+
+#[test]
 fn apply_concat_requires_at_least_two_scalar_arguments() {
     for count in 0..=3 {
         let xml = format!(
