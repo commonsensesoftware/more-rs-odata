@@ -839,6 +839,9 @@ impl Checker<'_> {
 
     fn apply(&mut self, function: &str, args: &[E]) -> Option<Expected> {
         use PrimitiveType as P;
+        if !crate::conformance::is_qualified_name(function) {
+            return None;
+        }
         if let Some(signatures) = self
             .options
             .client_functions

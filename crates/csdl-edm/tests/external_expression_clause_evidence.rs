@@ -13,6 +13,32 @@ fn supplied(ty: PrimitiveType, collection: bool) -> ExpressionType {
     }
 }
 
+#[test]
+fn supplied_client_functions_require_nonreserved_qualified_names() {
+    for (name, valid) in [
+        ("Client.measure", true),
+        ("measure", false),
+        ("odata.custom", false),
+        ("odata.length", false),
+    ] {
+        for model in models(
+            &format!(r#"<Apply Function="{name}"><Bool>true</Bool></Apply>"#),
+            &format!(r#"{{"$Apply":[true],"$Function":"{name}"}}"#),
+        ) {
+            let mut options = AnnotationValidationOptions::default();
+            options.client_functions.insert(
+                name.into(),
+                vec![ClientFunctionSignature {
+                    parameters: vec![supplied(PrimitiveType::Boolean, false)],
+                    return_type: supplied(PrimitiveType::Int32, false),
+                }],
+            );
+            let diagnostics = validate_annotations_with_options(&model, &options);
+            assert_eq!(diagnostics.is_empty(), valid, "{name}: {diagnostics:?}");
+        }
+    }
+}
+
 fn models(xml_expression: &str, json_expression: &str) -> Vec<DocumentModel> {
     let xml = format!(
         r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><Term Name="Value" Type="Edm.Int32" Nullable="false"/><ComplexType Name="Owner"><Annotation Term="N.Value">{xml_expression}</Annotation></ComplexType></Schema></edmx:DataServices></edmx:Edmx>"#
