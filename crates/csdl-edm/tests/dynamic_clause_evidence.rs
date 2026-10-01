@@ -2,6 +2,43 @@
 use csdl_edm::{conformance::ValidationProfile as P, parser, resolver::Resolver, validator};
 
 #[test]
+fn structured_collection_items_must_derive_from_the_expected_type() {
+    for (item_type, valid) in [
+        ("N.Base", true),
+        ("N.Derived", true),
+        ("N.Other", false),
+        ("Missing.Type", false),
+    ] {
+        let xml = format!(
+            r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><ComplexType Name="Base"/><ComplexType Name="Derived" BaseType="N.Base"/><ComplexType Name="Other"/><Term Name="Value" Type="Collection(N.Base)" Nullable="false"/><ComplexType Name="Owner"><Annotation Term="N.Value"><Collection><Record Type="N.Base"/><Record Type="{item_type}"/></Collection></Annotation></ComplexType></Schema></edmx:DataServices></edmx:Edmx>"#
+        );
+        let json = format!(
+            r##"{{"$Version":"4.01","N":{{"Base":{{"$Kind":"ComplexType"}},"Derived":{{"$Kind":"ComplexType","$BaseType":"N.Base"}},"Other":{{"$Kind":"ComplexType"}},"Value":{{"$Kind":"Term","$Type":"N.Base","$Collection":true}},"Owner":{{"$Kind":"ComplexType","@N.Value":[{{"@type":"#N.Base"}},{{"@type":"#{item_type}"}}]}}}}}}"##
+        );
+        for parsed in [
+            parser::from_xml_reader_with_profile(xml.as_bytes(), P::Strict),
+            parser::from_json_reader_with_profile(json.as_bytes(), P::Strict),
+        ] {
+            let result = parsed
+                .map_err(|e| e.to_string())
+                .and_then(|d| {
+                    Resolver::resolve_document(d.edmx.unwrap()).map_err(|e| format!("{e:?}"))
+                })
+                .and_then(|m| {
+                    validator::validate_document(&m).map_err(|e| format!("{e:?}"))?;
+                    let diagnostics = validator::validate_annotations(&m);
+                    if diagnostics.is_empty() {
+                        Ok(())
+                    } else {
+                        Err(format!("{diagnostics:?}"))
+                    }
+                });
+            assert_eq!(result.is_ok(), valid, "{result:?}: {item_type}");
+        }
+    }
+}
+
+#[test]
 fn collection_items_must_be_compatible_with_the_expected_element_type() {
     for (xml, json, ty, valid) in [
         ("<Collection/>", "[]", "Edm.Boolean", true),
