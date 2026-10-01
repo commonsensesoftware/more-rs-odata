@@ -3,10 +3,14 @@
 use csdl_edm::{conformance::ValidationProfile as P, parser, resolver::Resolver, validator};
 
 fn check(xml: &str, json: &str, valid: bool) {
+    check_version(xml, json, "4.01", valid);
+}
+
+fn check_version(xml: &str, json: &str, version: &str, valid: bool) {
     let xml = format!(
-        r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N">{xml}</Schema></edmx:DataServices></edmx:Edmx>"#
+        r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="{version}"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N">{xml}</Schema></edmx:DataServices></edmx:Edmx>"#
     );
-    let json = format!(r#"{{"$Version":"4.01","N":{{{json}}}}}"#);
+    let json = format!(r#"{{"$Version":"{version}","N":{{{json}}}}}"#);
     for parsed in [
         parser::from_xml_reader_with_profile(xml.as_bytes(), P::Strict),
         parser::from_json_reader_with_profile(json.as_bytes(), P::Strict),
@@ -16,6 +20,92 @@ fn check(xml: &str, json: &str, valid: bool) {
             .and_then(|d| Resolver::resolve_document(d.edmx.unwrap()).map_err(|e| format!("{e:?}")))
             .and_then(|m| validator::validate_document(&m).map_err(|e| format!("{e:?}")));
         assert_eq!(result.is_ok(), valid, "{result:?}\n{xml}\n{json}");
+    }
+}
+
+#[test]
+fn import_names_are_identifiers_and_unique_across_operation_kinds() {
+    for first in ["Action", "Function"] {
+        for second in ["Action", "Function"] {
+            let first_target = if first == "Action" { "N.Run" } else { "N.Find" };
+            let second_target = if second == "Action" {
+                "N.Run"
+            } else {
+                "N.Find"
+            };
+            for (name, valid) in [
+                ("Other", true),
+                ("Imported", false),
+                ("1Invalid", false),
+                ("", false),
+            ] {
+                check(
+                    &format!(
+                        r#"<Action Name="Run"/><Function Name="Find"><ReturnType Type="Edm.String"/></Function><EntityContainer Name="Service"><{first}Import Name="Imported" {first}="{first_target}"/><{second}Import Name="{name}" {second}="{second_target}"/></EntityContainer>"#
+                    ),
+                    &format!(
+                        r#""Run":[{{"$Kind":"Action"}}],"Find":[{{"$Kind":"Function","$ReturnType":{{}}}}],"Service":{{"$Kind":"EntityContainer","Imported":{{"${first}":"{first_target}"}},"{name}":{{"${second}":"{second_target}"}}}}"#
+                    ),
+                    valid,
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn singleton_nullable_cannot_be_authored_in_40() {
+    for version in ["4.0", "4.01"] {
+        for nullable in [None, Some(false), Some(true)] {
+            let xml_nullable = nullable
+                .map(|v| format!(r#" Nullable="{v}""#))
+                .unwrap_or_default();
+            let json_nullable = nullable
+                .map(|v| format!(r#", "$Nullable":{v}"#))
+                .unwrap_or_default();
+            check_version(
+                &format!(
+                    r#"{XML_TYPES}<EntityContainer Name="Service"><Singleton Name="Item" Type="N.Entity"{xml_nullable}/></EntityContainer>"#
+                ),
+                &format!(
+                    r#"{JSON_TYPES},"Service":{{"$Kind":"EntityContainer","Item":{{"$Type":"N.Entity"{json_nullable}}}}}"#
+                ),
+                version,
+                version == "4.01" || nullable.is_none(),
+            );
+        }
+    }
+}
+
+#[test]
+fn json_singleton_nullable_defaults_false_and_requires_a_boolean() {
+    for (value, expected) in [
+        (None, Some(false)),
+        (Some("false"), Some(false)),
+        (Some("true"), Some(true)),
+        (Some("null"), None),
+        (Some("1"), None),
+        (Some(r#""true""#), None),
+    ] {
+        let member = value
+            .map(|v| format!(r#", "$Nullable":{v}"#))
+            .unwrap_or_default();
+        let json = format!(
+            r#"{{"$Version":"4.01","N":{{{JSON_TYPES},"Service":{{"$Kind":"EntityContainer","Item":{{"$Type":"N.Entity"{member}}}}}}}}}"#
+        );
+        let parsed = parser::from_json_reader_with_profile(json.as_bytes(), P::Strict);
+        let Some(expected) = expected else {
+            assert!(parsed.is_err(), "{json}");
+            continue;
+        };
+        let model = Resolver::resolve_document(parsed.unwrap().edmx.unwrap()).unwrap();
+        validator::validate_document(&model).unwrap();
+        let csdl_edm::edm::EntityContainerElement::Singleton(item) =
+            model.schemas[0].containers()[0].elements[0].as_ref()
+        else {
+            panic!("expected singleton");
+        };
+        assert_eq!(item.nullable.unwrap_or(false), expected);
     }
 }
 
