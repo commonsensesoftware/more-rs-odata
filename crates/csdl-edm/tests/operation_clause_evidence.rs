@@ -20,6 +20,58 @@ fn check(xml: &str, json: &str, valid: bool) {
 }
 
 #[test]
+fn operation_entity_set_paths_start_at_binding_and_traverse_navigation_or_casts() {
+    for kind in ["Action", "Function"] {
+        for (path, valid) in [
+            ("binding", true),
+            ("binding/Related", true),
+            ("binding/N.Derived", true),
+            ("binding/N.Derived/Related", true),
+            ("other", false),
+            ("other/Related", false),
+            ("binding/Text", false),
+            ("binding/Missing", false),
+            ("binding/N.Other", false),
+            ("binding//Related", false),
+        ] {
+            let returned = if path == "binding/N.Derived" {
+                "N.Derived"
+            } else {
+                "N.Entity"
+            };
+            check(
+                &format!(
+                    r#"<EntityType Name="Entity"><Property Name="Text" Type="Edm.String"/><NavigationProperty Name="Related" Type="N.Entity"/></EntityType><EntityType Name="Derived" BaseType="N.Entity"/><EntityType Name="Other"/><{kind} Name="Run" IsBound="true" EntitySetPath="{path}"><Parameter Name="binding" Type="N.Entity"/><Parameter Name="other" Type="N.Entity"/><ReturnType Type="{returned}"/></{kind}>"#
+                ),
+                &format!(
+                    r#""Entity":{{"$Kind":"EntityType","Text":{{}},"Related":{{"$Kind":"NavigationProperty","$Type":"N.Entity"}}}},"Derived":{{"$Kind":"EntityType","$BaseType":"N.Entity"}},"Other":{{"$Kind":"EntityType"}},"Run":[{{"$Kind":"{kind}","$IsBound":true,"$EntitySetPath":"{path}","$Parameter":[{{"$Name":"binding","$Type":"N.Entity"}},{{"$Name":"other","$Type":"N.Entity"}}],"$ReturnType":{{"$Type":"{returned}"}}}}]"#
+                ),
+                valid,
+            );
+        }
+    }
+}
+
+#[test]
+fn operation_declarations_require_xml_names_and_json_kinds() {
+    for kind in ["Action", "Function"] {
+        for present in [false, true] {
+            let xml_name = if present { r#" Name="Run""# } else { "" };
+            let json_kind = if present {
+                format!(r#""$Kind":"{kind}","#)
+            } else {
+                String::new()
+            };
+            check(
+                &format!(r#"<{kind}{xml_name}><ReturnType Type="Edm.String"/></{kind}>"#),
+                &format!(r#""Run":[{{{json_kind}"$ReturnType":{{}}}}]"#),
+                present,
+            );
+        }
+    }
+}
+
+#[test]
 fn functions_require_exactly_one_return_declaration() {
     for (xml_return, json_return, valid) in [
         (
