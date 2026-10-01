@@ -2,6 +2,52 @@
 use csdl_edm::{conformance::ValidationProfile as P, parser, resolver::Resolver, validator};
 
 #[test]
+fn label_uniqueness_spans_annotations_but_not_schema_boundaries() {
+    for separate_schema in [false, true] {
+        for second_name in ["Flag", "Other"] {
+            let xml_second = format!(
+                r#"<ComplexType Name="Second"><Annotation Term="N.Value"><LabeledElement Name="{second_name}" Bool="false"/></Annotation></ComplexType>"#
+            );
+            let json_second = format!(
+                r#""Second":{{"$Kind":"ComplexType","@N.Value":{{"$Name":"{second_name}","$LabeledElement":false}}}}"#
+            );
+            let (xml_tail, json_tail) = if separate_schema {
+                (
+                    format!(
+                        r#"</Schema><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="M">{xml_second}</Schema>"#
+                    ),
+                    format!(r#"}},"M":{{{json_second}}}"#),
+                )
+            } else {
+                (
+                    format!("{xml_second}</Schema>"),
+                    format!(",{json_second}}}"),
+                )
+            };
+            let xml = format!(
+                r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><Term Name="Value" Type="Edm.Boolean"/><ComplexType Name="First"><Annotation Term="N.Value"><LabeledElement Name="Flag" Bool="true"/></Annotation></ComplexType>{xml_tail}</edmx:DataServices></edmx:Edmx>"#
+            );
+            let json = format!(
+                r#"{{"$Version":"4.01","N":{{"Value":{{"$Kind":"Term","$Type":"Edm.Boolean"}},"First":{{"$Kind":"ComplexType","@N.Value":{{"$Name":"Flag","$LabeledElement":true}}}}{json_tail}}}"#
+            );
+            for parsed in [
+                parser::from_xml_reader_with_profile(xml.as_bytes(), P::Strict),
+                parser::from_json_reader_with_profile(json.as_bytes(), P::Strict),
+            ] {
+                let model = Resolver::resolve_document(parsed.unwrap().edmx.unwrap()).unwrap();
+                validator::validate_document(&model).unwrap();
+                let diagnostics = validator::validate_annotations(&model);
+                assert_eq!(
+                    diagnostics.is_empty(),
+                    separate_schema || second_name != "Flag",
+                    "{diagnostics:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn labels_require_identifiers_and_references_must_resolve_in_scope() {
     for (name, reference, valid) in [
         ("Flag", "N.Flag", true),
