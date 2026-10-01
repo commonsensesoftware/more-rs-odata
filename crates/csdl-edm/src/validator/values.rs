@@ -198,11 +198,23 @@ pub(super) fn primitive(value: &str, ty: &PrimitiveType, facets: &TypeFacets) ->
         Duration => duration(value, precision.unwrap_or(0)),
         Binary => {
             let unpadded = value.trim_end_matches('=');
+            let padding = value.len() - unpadded.len();
+            let valid_tail = match unpadded.len() % 4 {
+                0 => padding == 0,
+                2 => matches!(padding, 0 | 2) && unpadded.ends_with(['A', 'Q', 'g', 'w']),
+                3 => {
+                    matches!(padding, 0 | 1)
+                        && unpadded.ends_with([
+                            'A', 'E', 'I', 'M', 'Q', 'U', 'Y', 'c', 'g', 'k', 'o', 's', 'w', '0',
+                            '4', '8',
+                        ])
+                }
+                _ => false,
+            };
             unpadded
                 .bytes()
                 .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
-                && unpadded.len() % 4 != 1
-                && value.len() - unpadded.len() <= 2
+                && valid_tail
         }
         PrimitiveType => true,
         // Streams are resources rather than scalar literal values.

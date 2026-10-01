@@ -3,6 +3,49 @@
 use csdl_edm::{conformance::ValidationProfile as P, parser, resolver::Resolver, validator};
 
 #[test]
+fn binary_constants_require_base64url_encoding() {
+    for (value, valid) in [
+        ("", true),
+        ("AA", true),
+        ("AAA", true),
+        ("AAAA", true),
+        ("-_8", true),
+        ("AA==", true),
+        ("AAA=", true),
+        ("AB", false),
+        ("AAB", false),
+        ("AA=", false),
+        ("AAA==", false),
+        ("A", false),
+        ("AA+", false),
+        ("AA/", false),
+        ("AA!", false),
+        ("AA AA", false),
+    ] {
+        check("Binary", value, valid);
+    }
+}
+
+#[test]
+fn decimal_constants_accept_large_values_and_reject_invalid_lexical_forms() {
+    for (xml, json, valid) in [
+        ("0", "0", true),
+        ("-12.5", "-12.5", true),
+        (
+            "123456789012345678901234567890.125",
+            "123456789012345678901234567890.125",
+            true,
+        ),
+        ("1.2.3", r#""1.2.3""#, false),
+        ("NaN", r#""NaN""#, false),
+        ("INF", r#""INF""#, false),
+        ("one", r#""one""#, false),
+    ] {
+        check_literal("Decimal", "Decimal", xml, json, valid);
+    }
+}
+
+#[test]
 fn boolean_constants_require_boolean_literals() {
     for (xml, json, valid) in [
         ("true", "true", true),
@@ -54,11 +97,21 @@ fn check_literal(kind: &str, xml_kind: &str, value: &str, json_value: &str, vali
     let temporal = matches!(kind, "DateTimeOffset" | "TimeOfDay" | "Duration");
     let xml_precision = if temporal { r#" Precision="12""# } else { "" };
     let json_precision = if temporal { r#", "$Precision":12"# } else { "" };
+    let xml_scale = if kind == "Decimal" {
+        r#" Scale="variable""#
+    } else {
+        ""
+    };
+    let json_scale = if kind == "Decimal" {
+        r#", "$Scale":"variable""#
+    } else {
+        ""
+    };
     let xml = format!(
-        r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><Term Name="Value" Type="Edm.{kind}"{xml_precision}/><ComplexType Name="Owner"><Annotation Term="N.Value"><{xml_kind}>{value}</{xml_kind}></Annotation></ComplexType></Schema></edmx:DataServices></edmx:Edmx>"#
+        r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><Term Name="Value" Type="Edm.{kind}"{xml_precision}{xml_scale}/><ComplexType Name="Owner"><Annotation Term="N.Value"><{xml_kind}>{value}</{xml_kind}></Annotation></ComplexType></Schema></edmx:DataServices></edmx:Edmx>"#
     );
     let json = format!(
-        r#"{{"$Version":"4.01","N":{{"Value":{{"$Kind":"Term","$Type":"Edm.{kind}"{json_precision}}},"Owner":{{"$Kind":"ComplexType","@N.Value":{json_value}}}}}}}"#
+        r#"{{"$Version":"4.01","N":{{"Value":{{"$Kind":"Term","$Type":"Edm.{kind}"{json_precision}{json_scale}}},"Owner":{{"$Kind":"ComplexType","@N.Value":{json_value}}}}}}}"#
     );
     for parsed in [
         parser::from_xml_reader_with_profile(xml.as_bytes(), P::Strict),
