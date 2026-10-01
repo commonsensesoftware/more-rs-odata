@@ -149,6 +149,48 @@ const XML_TYPES: &str = r#"<EntityType Name="Entity"><Key><PropertyRef Name="ID"
 const JSON_TYPES: &str = r#""Entity":{"$Kind":"EntityType","$Key":["ID"],"ID":{"$Type":"Edm.Int32"}},"Complex":{"$Kind":"ComplexType"}"#;
 
 #[test]
+fn binding_paths_traverse_complex_cast_and_containment_segments() {
+    for collection in [false, true] {
+        let (kind, attribute) = if collection {
+            ("EntitySet", "EntityType")
+        } else {
+            ("Singleton", "Type")
+        };
+        let marker = if collection {
+            r#""$Collection":true,"#
+        } else {
+            ""
+        };
+        for (path, valid) in [
+            ("Related", true),
+            ("Details/Related", true),
+            ("Details/N.Special/Extra", true),
+            ("N.Derived/Extra", true),
+            ("Child/Related", true),
+            ("Child/Child/Related", true),
+            ("Child", false),
+            ("Related/Related", false),
+            ("Related/Child/Related", false),
+            ("Extra", false),
+            ("Details/Extra", false),
+            ("ID", false),
+            ("Missing", false),
+            ("N.Other/Related", false),
+        ] {
+            check(
+                &format!(
+                    r#"<EntityType Name="Entity"><Key><PropertyRef Name="ID"/></Key><Property Name="ID" Type="Edm.Int32" Nullable="false"/><Property Name="Details" Type="N.Complex"/><NavigationProperty Name="Related" Type="N.Entity"/><NavigationProperty Name="Child" Type="N.Entity" ContainsTarget="true"/></EntityType><EntityType Name="Derived" BaseType="N.Entity"><NavigationProperty Name="Extra" Type="N.Entity"/></EntityType><EntityType Name="Other"><NavigationProperty Name="Related" Type="N.Entity"/></EntityType><ComplexType Name="Complex"><NavigationProperty Name="Related" Type="N.Entity"/></ComplexType><ComplexType Name="Special" BaseType="N.Complex"><NavigationProperty Name="Extra" Type="N.Entity"/></ComplexType><EntityContainer Name="Service"><{kind} Name="Source" {attribute}="N.Entity"><NavigationPropertyBinding Path="{path}" Target="Destination"/></{kind}><EntitySet Name="Destination" EntityType="N.Entity"/></EntityContainer>"#
+                ),
+                &format!(
+                    r#""Entity":{{"$Kind":"EntityType","$Key":["ID"],"ID":{{"$Type":"Edm.Int32"}},"Details":{{"$Type":"N.Complex"}},"Related":{{"$Kind":"NavigationProperty","$Type":"N.Entity"}},"Child":{{"$Kind":"NavigationProperty","$Type":"N.Entity","$ContainsTarget":true}}}},"Derived":{{"$Kind":"EntityType","$BaseType":"N.Entity","Extra":{{"$Kind":"NavigationProperty","$Type":"N.Entity"}}}},"Other":{{"$Kind":"EntityType","Related":{{"$Kind":"NavigationProperty","$Type":"N.Entity"}}}},"Complex":{{"$Kind":"ComplexType","Related":{{"$Kind":"NavigationProperty","$Type":"N.Entity"}}}},"Special":{{"$Kind":"ComplexType","$BaseType":"N.Complex","Extra":{{"$Kind":"NavigationProperty","$Type":"N.Entity"}}}},"Service":{{"$Kind":"EntityContainer","Source":{{{marker}"$Type":"N.Entity","$NavigationPropertyBinding":{{"{path}":"Destination"}}}},"Destination":{{"$Collection":true,"$Type":"N.Entity"}}}}"#
+                ),
+                valid,
+            );
+        }
+    }
+}
+
+#[test]
 fn import_entity_set_targets_resolve_to_sets_in_scope() {
     for kind in ["Action", "Function"] {
         for collection in [false, true] {
