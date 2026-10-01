@@ -2,6 +2,67 @@
 use csdl_edm::{conformance::ValidationProfile as P, parser, resolver::Resolver, validator};
 
 #[test]
+fn labels_require_identifiers_and_references_must_resolve_in_scope() {
+    for (name, reference, valid) in [
+        ("Flag", "N.Flag", true),
+        ("Flag", "N.Missing", false),
+        ("Flag", "Missing.Flag", false),
+        ("Flag", "Flag", false),
+        ("1Invalid", "N.1Invalid", false),
+        ("", "N.Empty", false),
+    ] {
+        check(
+            &format!(
+                r#"<Collection><LabeledElement Name="{name}"><Bool>true</Bool></LabeledElement><LabeledElementReference>{reference}</LabeledElementReference></Collection>"#
+            ),
+            &format!(
+                r#"[{{"$Name":"{name}","$LabeledElement":true}},{{"$LabeledElementReference":"{reference}"}}]"#
+            ),
+            true,
+            valid,
+        );
+    }
+}
+
+#[test]
+fn label_names_are_unique_within_the_schema() {
+    for (second, valid) in [("Other", true), ("Flag", false)] {
+        check(
+            &format!(
+                r#"<Collection><LabeledElement Name="Flag"><Bool>true</Bool></LabeledElement><LabeledElement Name="{second}"><Bool>false</Bool></LabeledElement></Collection>"#
+            ),
+            &format!(
+                r#"[{{"$Name":"Flag","$LabeledElement":true}},{{"$Name":"{second}","$LabeledElement":false}}]"#
+            ),
+            true,
+            valid,
+        );
+    }
+}
+
+#[test]
+fn labels_require_names_and_one_expression() {
+    check(
+        r#"<LabeledElement Name="Flag" Bool="true"/>"#,
+        r#"{"$Name":"Flag","$LabeledElement":true}"#,
+        false,
+        true,
+    );
+    check(
+        r#"<LabeledElement><Bool>true</Bool></LabeledElement>"#,
+        r#"{"$LabeledElement":true}"#,
+        false,
+        false,
+    );
+    for body in ["", "<Bool>true</Bool><Bool>false</Bool>"] {
+        let xml = format!(
+            r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><Term Name="Value" Type="Edm.Boolean"/><ComplexType Name="Owner"><Annotation Term="N.Value"><LabeledElement Name="Flag">{body}</LabeledElement></Annotation></ComplexType></Schema></edmx:DataServices></edmx:Edmx>"#
+        );
+        assert!(parser::from_xml_reader_with_profile(xml.as_bytes(), P::Strict).is_err());
+    }
+}
+
+#[test]
 fn structured_collection_items_must_derive_from_the_expected_type() {
     for (item_type, valid) in [
         ("N.Base", true),
