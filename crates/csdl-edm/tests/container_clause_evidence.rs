@@ -149,6 +149,29 @@ const XML_TYPES: &str = r#"<EntityType Name="Entity"><Key><PropertyRef Name="ID"
 const JSON_TYPES: &str = r#""Entity":{"$Kind":"EntityType","$Key":["ID"],"ID":{"$Type":"Edm.Int32"}},"Complex":{"$Kind":"ComplexType"}"#;
 
 #[test]
+fn containment_binding_targets_must_start_at_a_singleton_in_scope() {
+    for (target, valid) in [
+        ("N.Other/Root/Child", true),
+        ("N.Other/Items", true),
+        ("N.Other/Root", true),
+        ("N.Other/Items/Child", false),
+        ("N.Missing/Root/Child", false),
+        ("N.Other/Missing/Child", false),
+        ("Root/Child", false),
+    ] {
+        check(
+            &format!(
+                r#"<EntityType Name="Entity"><Key><PropertyRef Name="ID"/></Key><Property Name="ID" Type="Edm.Int32" Nullable="false"/><NavigationProperty Name="Child" Type="N.Entity" ContainsTarget="true"/><NavigationProperty Name="Related" Type="N.Entity"/></EntityType><EntityContainer Name="Other"><Singleton Name="Root" Type="N.Entity"/><EntitySet Name="Items" EntityType="N.Entity"/></EntityContainer><EntityContainer Name="Service"><Singleton Name="Source" Type="N.Entity"><NavigationPropertyBinding Path="Related" Target="{target}"/></Singleton></EntityContainer>"#
+            ),
+            &format!(
+                r#""Entity":{{"$Kind":"EntityType","$Key":["ID"],"ID":{{"$Type":"Edm.Int32"}},"Child":{{"$Kind":"NavigationProperty","$Type":"N.Entity","$ContainsTarget":true}},"Related":{{"$Kind":"NavigationProperty","$Type":"N.Entity"}}}},"Other":{{"$Kind":"EntityContainer","Root":{{"$Type":"N.Entity"}},"Items":{{"$Collection":true,"$Type":"N.Entity"}}}},"Service":{{"$Kind":"EntityContainer","Source":{{"$Type":"N.Entity","$NavigationPropertyBinding":{{"Related":"{target}"}}}}}}"#
+            ),
+            valid,
+        );
+    }
+}
+
+#[test]
 fn binding_target_paths_traverse_only_single_valued_complex_or_containment() {
     for (target, valid) in [
         ("Root/Child", true),
