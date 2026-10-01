@@ -92,20 +92,31 @@ fn check(kind: &str, value: &str, valid: bool) {
     check_literal(kind, kind, value, &format!("\"{value}\""), valid);
 }
 fn check_literal(kind: &str, xml_kind: &str, value: &str, json_value: &str, valid: bool) {
+    check_with_scale(kind, xml_kind, value, json_value, "variable", valid);
+}
+
+fn check_with_scale(
+    kind: &str,
+    xml_kind: &str,
+    value: &str,
+    json_value: &str,
+    scale: &str,
+    valid: bool,
+) {
     // Inputs are authored independently in each representation; JSON strings
     // receive their literal type from the resolved term.
     let temporal = matches!(kind, "DateTimeOffset" | "TimeOfDay" | "Duration");
     let xml_precision = if temporal { r#" Precision="12""# } else { "" };
     let json_precision = if temporal { r#", "$Precision":12"# } else { "" };
     let xml_scale = if kind == "Decimal" {
-        r#" Scale="variable""#
+        format!(r#" Scale="{scale}""#)
     } else {
-        ""
+        String::new()
     };
     let json_scale = if kind == "Decimal" {
-        r#", "$Scale":"variable""#
+        format!(r#", "$Scale":"{scale}""#)
     } else {
-        ""
+        String::new()
     };
     let xml = format!(
         r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><Term Name="Value" Type="Edm.{kind}"{xml_precision}{xml_scale}/><ComplexType Name="Owner"><Annotation Term="N.Value"><{xml_kind}>{value}</{xml_kind}></Annotation></ComplexType></Schema></edmx:DataServices></edmx:Edmx>"#
@@ -131,6 +142,38 @@ fn check_literal(kind: &str, xml_kind: &str, value: &str, json_value: &str, vali
             });
         assert_eq!(result.is_ok(), valid, "{result:?}: {kind} {value}");
     }
+}
+
+#[test]
+fn decimal_floating_scale_accepts_exponents_and_special_values() {
+    for scale in ["variable", "floating"] {
+        for (xml, json, valid) in [
+            ("1.25e2", "1.25e2", scale == "floating"),
+            ("-2.5e-3", "-2.5e-3", scale == "floating"),
+            ("INF", r#""INF""#, scale == "floating"),
+            ("-INF", r#""-INF""#, scale == "floating"),
+            ("NaN", r#""NaN""#, scale == "floating"),
+            ("Infinity", r#""Infinity""#, false),
+            ("1e", r#""1e""#, false),
+            ("1e+", r#""1e+""#, false),
+            ("1e2e3", r#""1e2e3""#, false),
+        ] {
+            check_with_scale("Decimal", "Decimal", xml, json, scale, valid);
+        }
+    }
+}
+
+#[test]
+fn string_constants_accept_empty_unicode_and_escaped_characters() {
+    for (xml, json) in [
+        ("", r#""""#),
+        ("café 日本語", r#""café 日本語""#),
+        ("&lt;&amp;&gt;", r#""<&>""#),
+        ("line&#10;two", r#""line\ntwo""#),
+    ] {
+        check_literal("String", "String", xml, json, true);
+    }
+    check_literal("String", "String", "\u{1}", "17", false);
 }
 
 #[test]

@@ -354,9 +354,21 @@ impl<R: BufRead> CsdlReader<R> {
                     out.push_str(&unescaped);
                 }
                 Event::CData(t) => out.push_str(std::str::from_utf8(&t)?),
+                Event::GeneralRef(reference) => {
+                    let reference = reference
+                        .decode()
+                        .map_err(|e| Error::Csdl(format!("reference decode error: {e}")))?;
+                    let encoded = format!("&{reference};");
+                    let decoded = quick_xml::escape::unescape(&encoded)
+                        .map_err(|e| Error::Csdl(format!("text unescape error: {e}")))?;
+                    out.push_str(&decoded);
+                }
                 Event::End(e) => {
                     let n = local_name_string(e.name().as_ref())?;
                     if n == name {
+                        if !out.chars().all(|c| matches!(c, '\t' | '\n' | '\r' | '\u{20}'..='\u{D7FF}' | '\u{E000}'..='\u{FFFD}' | '\u{10000}'..='\u{10FFFF}')) {
+                            return Err(self.csdl_err("invalid XML character in constant text"));
+                        }
                         return Ok(out);
                     }
                     return Err(
