@@ -2,6 +2,51 @@
 use csdl_edm::{conformance::ValidationProfile as P, parser, resolver::Resolver, validator};
 
 #[test]
+fn cast_and_isof_require_one_operand_and_resolved_target_type() {
+    for operator in ["Cast", "IsOf"] {
+        let result_type = if operator == "Cast" {
+            "Edm.Int64"
+        } else {
+            "Edm.Boolean"
+        };
+        for count in 0..=3 {
+            let xml = format!(
+                r#"<{operator} Type="Edm.Int64">{}</{operator}>"#,
+                "<Int>1</Int>".repeat(count)
+            );
+            let xml = if count == 3 {
+                format!("<{operator}><Int>1</Int></{operator}>")
+            } else {
+                xml
+            };
+            if count == 1 {
+                check_type(
+                    &xml,
+                    &format!(r#"{{"${operator}":1,"$Type":"Edm.Int64"}}"#),
+                    result_type,
+                    false,
+                    true,
+                );
+            } else {
+                let document = format!(
+                    r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><Term Name="Value" Type="Edm.Boolean"/><ComplexType Name="Owner"><Annotation Term="N.Value">{xml}</Annotation></ComplexType></Schema></edmx:DataServices></edmx:Edmx>"#
+                );
+                assert!(
+                    parser::from_xml_reader_with_profile(document.as_bytes(), P::Strict).is_err()
+                );
+            }
+        }
+        check_type(
+            &format!(r#"<{operator} Type="Missing.Type"><Int>1</Int></{operator}>"#),
+            &format!(r#"{{"${operator}":1,"$Type":"Missing.Type"}}"#),
+            result_type,
+            false,
+            false,
+        );
+    }
+}
+
+#[test]
 fn has_requires_two_operands_of_the_same_flags_enum() {
     for flags in [false, true] {
         for (right_type, collection, compatible) in [
