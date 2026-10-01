@@ -713,6 +713,8 @@ fn walk(node: &RawElement, parent: Option<&str>, json: bool) -> io::Result<()> {
 
 pub(super) fn attribute_allowed(name: &str, key: &str, json: bool) -> bool {
     match key {
+        // Null has element notation only; it is not an unknown future attribute.
+        "Null" => false,
         "Kind" if json => matches!(
             name,
             "EntityType"

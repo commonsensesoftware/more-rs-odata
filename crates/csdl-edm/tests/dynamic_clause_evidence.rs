@@ -2,6 +2,63 @@
 use csdl_edm::{conformance::ValidationProfile as P, parser, resolver::Resolver, validator};
 
 #[test]
+fn null_values_require_nullable_scalar_contexts() {
+    for nullable in [false, true] {
+        for collection in [false, true] {
+            check_type_nullable(
+                "<Null/>",
+                "null",
+                "Edm.String",
+                collection,
+                nullable,
+                nullable && !collection,
+            );
+            if collection {
+                check_type_nullable(
+                    "<Collection><Null/></Collection>",
+                    "[null]",
+                    "Edm.String",
+                    true,
+                    nullable,
+                    nullable,
+                );
+            }
+        }
+        check_type_nullable(
+            "<String>null</String>",
+            r#""null""#,
+            "Edm.String",
+            false,
+            nullable,
+            true,
+        );
+    }
+}
+
+#[test]
+fn xml_null_requires_element_notation_without_expression_children() {
+    for (annotation, valid) in [
+        (r#"<Annotation Term="N.Value"><Null/></Annotation>"#, true),
+        (
+            r#"<Annotation Term="N.Value"><Null></Null></Annotation>"#,
+            true,
+        ),
+        (r#"<Annotation Term="N.Value" Null="true"/>"#, false),
+        (r#"<Annotation Term="N.Value" Null=""/>"#, false),
+        (
+            r#"<Annotation Term="N.Value"><Null><String>x</String></Null></Annotation>"#,
+            false,
+        ),
+    ] {
+        let xml = format!(
+            r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N">{annotation}</Schema></edmx:DataServices></edmx:Edmx>"#
+        );
+        let parsed = parser::from_xml_reader_with_profile(xml.as_bytes(), P::Strict);
+        assert_eq!(parsed.is_ok(), valid, "{annotation}: {parsed:?}");
+    }
+}
+
+#[test]
 fn uri_template_functions_require_string_templates_and_labeled_parameters() {
     for (xml, json, valid) in [
         (
@@ -458,16 +515,34 @@ fn check_type(
     collection: bool,
     valid: bool,
 ) {
+    check_type_nullable(
+        xml_expression,
+        json_expression,
+        item_type,
+        collection,
+        false,
+        valid,
+    );
+}
+
+fn check_type_nullable(
+    xml_expression: &str,
+    json_expression: &str,
+    item_type: &str,
+    collection: bool,
+    nullable: bool,
+    valid: bool,
+) {
     let ty = if collection {
         format!("Collection({item_type})")
     } else {
         item_type.to_owned()
     };
     let xml = format!(
-        r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><Term Name="Value" Type="{ty}" Nullable="false"/><ComplexType Name="Owner"><Annotation Term="N.Value">{xml_expression}</Annotation></ComplexType></Schema></edmx:DataServices></edmx:Edmx>"#
+        r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><Term Name="Value" Type="{ty}" Nullable="{nullable}"/><ComplexType Name="Owner"><Annotation Term="N.Value">{xml_expression}</Annotation></ComplexType></Schema></edmx:DataServices></edmx:Edmx>"#
     );
     let json = format!(
-        r#"{{"$Version":"4.01","N":{{"Value":{{"$Kind":"Term","$Type":"{item_type}","$Collection":{collection}}},"Owner":{{"$Kind":"ComplexType","@N.Value":{json_expression}}}}}}}"#
+        r#"{{"$Version":"4.01","N":{{"Value":{{"$Kind":"Term","$Type":"{item_type}","$Collection":{collection},"$Nullable":{nullable}}},"Owner":{{"$Kind":"ComplexType","@N.Value":{json_expression}}}}}}}"#
     );
     for parsed in [
         parser::from_xml_reader_with_profile(xml.as_bytes(), P::Strict),
