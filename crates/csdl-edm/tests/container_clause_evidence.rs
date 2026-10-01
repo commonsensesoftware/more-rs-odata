@@ -23,6 +23,79 @@ const XML_TYPES: &str = r#"<EntityType Name="Entity"><Key><PropertyRef Name="ID"
 const JSON_TYPES: &str = r#""Entity":{"$Kind":"EntityType","$Key":["ID"],"ID":{"$Type":"Edm.Int32"}},"Complex":{"$Kind":"ComplexType"}"#;
 
 #[test]
+fn imports_require_unbound_operations_of_the_correct_kind_in_scope() {
+    for kind in ["Action", "Function"] {
+        for bound in [false, true] {
+            for (target, found) in [("N.Run", true), ("Missing.Run", false), ("N.Other", false)] {
+                let other = if kind == "Action" {
+                    "Function"
+                } else {
+                    "Action"
+                };
+                check(
+                    &format!(
+                        r#"<{kind} Name="Run" IsBound="{bound}"><Parameter Name="binding" Type="Edm.String"/><ReturnType Type="Edm.String"/></{kind}><{other} Name="Other"><ReturnType Type="Edm.String"/></{other}><EntityContainer Name="Service"><{kind}Import Name="Imported" {kind}="{target}"/></EntityContainer>"#
+                    ),
+                    &format!(
+                        r#""Run":[{{"$Kind":"{kind}","$IsBound":{bound},"$Parameter":[{{"$Name":"binding"}}],"$ReturnType":{{}}}}],"Other":[{{"$Kind":"{other}","$ReturnType":{{}}}}],"Service":{{"$Kind":"EntityContainer","Imported":{{"${kind}":"{target}"}}}}"#
+                    ),
+                    found && !bound,
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn container_children_require_xml_names_and_types() {
+    for collection in [false, true] {
+        let (kind, attribute) = if collection {
+            ("EntitySet", "EntityType")
+        } else {
+            ("Singleton", "Type")
+        };
+        let marker = if collection {
+            r#""$Collection":true,"#
+        } else {
+            ""
+        };
+        for (name, ty, valid) in [
+            (true, true, true),
+            (false, true, false),
+            (true, false, false),
+            (false, false, false),
+        ] {
+            let xml_name = if name { r#" Name="Items""# } else { "" };
+            let xml_type = if ty {
+                format!(r#" {attribute}="N.Entity""#)
+            } else {
+                String::new()
+            };
+            let json_name = if name { "Items" } else { "" };
+            let json_type = if ty { r#""N.Entity""# } else { "null" };
+            check(
+                &format!(
+                    r#"{XML_TYPES}<EntityContainer Name="Service"><{kind}{xml_name}{xml_type}/></EntityContainer>"#
+                ),
+                &format!(
+                    r#"{JSON_TYPES},"Service":{{"$Kind":"EntityContainer","{json_name}":{{{marker}"$Type":{json_type}}}}}"#
+                ),
+                valid,
+            );
+        }
+        check(
+            &format!(
+                r#"{XML_TYPES}<EntityContainer Name="Service"><{kind} Name="Items"/></EntityContainer>"#
+            ),
+            &format!(
+                r#"{JSON_TYPES},"Service":{{"$Kind":"EntityContainer","Items":{{{marker}"@N.Note":"missing type"}}}}"#
+            ),
+            false,
+        );
+    }
+}
+
+#[test]
 fn container_members_cannot_collide_with_operation_imports() {
     for collection in [false, true] {
         let (kind, attribute) = if collection {
