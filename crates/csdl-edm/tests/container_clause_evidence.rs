@@ -23,6 +23,61 @@ const XML_TYPES: &str = r#"<EntityType Name="Entity"><Key><PropertyRef Name="ID"
 const JSON_TYPES: &str = r#""Entity":{"$Kind":"EntityType","$Key":["ID"],"ID":{"$Type":"Edm.Int32"}},"Complex":{"$Kind":"ComplexType"}"#;
 
 #[test]
+fn import_entity_set_targets_resolve_to_sets_in_scope() {
+    for kind in ["Action", "Function"] {
+        for (target, valid) in [
+            ("Items", true),
+            ("N.Other/Items", true),
+            ("Missing", false),
+            ("N.Missing/Items", false),
+            ("Single", false),
+        ] {
+            check(
+                &format!(
+                    r#"{XML_TYPES}<{kind} Name="Run"><ReturnType Type="N.Entity"/></{kind}><EntityContainer Name="Other"><EntitySet Name="Items" EntityType="N.Entity"/></EntityContainer><EntityContainer Name="Service"><EntitySet Name="Items" EntityType="N.Entity"/><Singleton Name="Single" Type="N.Entity"/><{kind}Import Name="Imported" {kind}="N.Run" EntitySet="{target}"/></EntityContainer>"#
+                ),
+                &format!(
+                    r#"{JSON_TYPES},"Run":[{{"$Kind":"{kind}","$ReturnType":{{"$Type":"N.Entity"}}}}],"Other":{{"$Kind":"EntityContainer","Items":{{"$Collection":true,"$Type":"N.Entity"}}}},"Service":{{"$Kind":"EntityContainer","Items":{{"$Collection":true,"$Type":"N.Entity"}},"Single":{{"$Type":"N.Entity"}},"Imported":{{"${kind}":"N.Run","$EntitySet":"{target}"}}}}"#
+                ),
+                valid,
+            );
+        }
+    }
+}
+
+#[test]
+fn function_import_exposes_all_unbound_overloads_and_excludes_bound_ones() {
+    let xml = r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><Function Name="Find"><Parameter Name="code" Type="Edm.Int32"/><ReturnType Type="Edm.String"/></Function><Function Name="Find"><Parameter Name="text" Type="Edm.String"/><ReturnType Type="Edm.String"/></Function><Function Name="Find" IsBound="true"><Parameter Name="binding" Type="Edm.Boolean"/><ReturnType Type="Edm.String"/></Function><EntityContainer Name="Service"><FunctionImport Name="Imported" Function="N.Find"/></EntityContainer></Schema></edmx:DataServices></edmx:Edmx>"#;
+    let json = r#"{"$Version":"4.01","N":{"Find":[{"$Kind":"Function","$Parameter":[{"$Name":"code","$Type":"Edm.Int32"}],"$ReturnType":{}},{"$Kind":"Function","$Parameter":[{"$Name":"text"}],"$ReturnType":{}},{"$Kind":"Function","$IsBound":true,"$Parameter":[{"$Name":"binding","$Type":"Edm.Boolean"}],"$ReturnType":{}}],"Service":{"$Kind":"EntityContainer","Imported":{"$Function":"N.Find"}}}}"#;
+    for parsed in [
+        parser::from_xml_reader_with_profile(xml.as_bytes(), P::Strict),
+        parser::from_json_reader_with_profile(json.as_bytes(), P::Strict),
+    ] {
+        let model = Resolver::resolve_document(parsed.unwrap().edmx.unwrap()).unwrap();
+        validator::validate_document(&model).unwrap();
+        let import = model.schemas[0].containers()[0]
+            .elements
+            .iter()
+            .find_map(|e| match e.as_ref() {
+                csdl_edm::edm::EntityContainerElement::FunctionImport(i) => Some(i),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(import.overloads.len(), 2);
+        let mut names: Vec<_> = import
+            .overloads
+            .iter()
+            .map(|f| {
+                assert!(!f.is_bound);
+                f.parameters[0].name.as_str()
+            })
+            .collect();
+        names.sort();
+        assert_eq!(names, ["code", "text"]);
+    }
+}
+
+#[test]
 fn imports_require_unbound_operations_of_the_correct_kind_in_scope() {
     for kind in ["Action", "Function"] {
         for bound in [false, true] {
