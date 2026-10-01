@@ -20,6 +20,93 @@ fn check(xml: &str, json: &str, valid: bool) {
 }
 
 #[test]
+fn operation_collection_encoding_preserves_resolved_multiplicity() {
+    for kind in ["Action", "Function"] {
+        for (json_collection, collection) in [
+            ("", false),
+            (r#", "$Collection":false"#, false),
+            (r#", "$Collection":true"#, true),
+        ] {
+            let xml_type = if collection {
+                "Collection(Edm.String)"
+            } else {
+                "Edm.String"
+            };
+            let xml = format!(
+                r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><{kind} Name="Run"><Parameter Name="value" Type="{xml_type}" Nullable="false"/><ReturnType Type="{xml_type}" Nullable="false"/></{kind}></Schema></edmx:DataServices></edmx:Edmx>"#
+            );
+            let json = format!(
+                r#"{{"$Version":"4.01","N":{{"Run":[{{"$Kind":"{kind}","$Parameter":[{{"$Name":"value","$Type":"Edm.String"{json_collection}}}],"$ReturnType":{{"$Type":"Edm.String"{json_collection}}}}}]}}}}"#
+            );
+            for parsed in [
+                parser::from_xml_reader_with_profile(xml.as_bytes(), P::Strict),
+                parser::from_json_reader_with_profile(json.as_bytes(), P::Strict),
+            ] {
+                let model = Resolver::resolve_document(parsed.unwrap().edmx.unwrap()).unwrap();
+                validator::validate_document(&model).unwrap();
+                let (parameters, returned) = match model.schemas[0].elements[0].as_ref() {
+                    csdl_edm::edm::SchemaElement::Action(a) => {
+                        (&a.parameters, a.return_type.as_ref().unwrap())
+                    }
+                    csdl_edm::edm::SchemaElement::Function(f) => {
+                        (&f.parameters, f.return_type.as_ref().unwrap())
+                    }
+                    _ => panic!("expected operation"),
+                };
+                assert_eq!(parameters[0].is_collection, collection);
+                assert_eq!(returned.is_collection, collection);
+            }
+        }
+    }
+}
+
+#[test]
+fn operation_collection_markers_require_boolean_values() {
+    for kind in ["Action", "Function"] {
+        for marker in [r#""true""#, "1", "null", "[]", "{}"] {
+            for parameter in [false, true] {
+                let parameter_marker = if parameter {
+                    format!(r#", "$Collection":{marker}"#)
+                } else {
+                    String::new()
+                };
+                let return_marker = if parameter {
+                    String::new()
+                } else {
+                    format!(r#", "$Collection":{marker}"#)
+                };
+                let json = format!(
+                    r#"{{"$Version":"4.01","N":{{"Run":[{{"$Kind":"{kind}","$Parameter":[{{"$Name":"value","$Type":"Edm.String"{parameter_marker}}}],"$ReturnType":{{"$Type":"Edm.String"{return_marker}}}}}]}}}}"#
+                );
+                assert!(
+                    parser::from_json_reader_with_profile(json.as_bytes(), P::Strict).is_err(),
+                    "{json}"
+                );
+            }
+        }
+        for parameter in [false, true] {
+            let parameter_type = if parameter {
+                "Collection(Edm.String)"
+            } else {
+                "Edm.String"
+            };
+            let return_type = if parameter {
+                "Edm.String"
+            } else {
+                "Collection(Edm.String)"
+            };
+            let json = format!(
+                r#"{{"$Version":"4.01","N":{{"Run":[{{"$Kind":"{kind}","$Parameter":[{{"$Name":"value","$Type":"{parameter_type}"}}],"$ReturnType":{{"$Type":"{return_type}"}}}}]}}}}"#
+            );
+            assert!(
+                parser::from_json_reader_with_profile(json.as_bytes(), P::Strict).is_err(),
+                "JSON uses an item type and a separate collection marker: {json}"
+            );
+        }
+    }
+}
+
+#[test]
 fn parameter_types_resolve_in_scope_for_scalar_and_collection_values() {
     for kind in ["Action", "Function"] {
         for collection in [false, true] {

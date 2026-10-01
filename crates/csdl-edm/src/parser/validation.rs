@@ -981,8 +981,9 @@ fn json_shapes(value: &serde_json::Value) -> io::Result<()> {
                             })
                     }
                     "$SRID" => value.is_u64() || value.as_str() == Some("variable"),
+                    "$Type" => value.as_str().is_some_and(is_qualified_name),
                     "$Version" | "$EntityContainer" | "$Kind" | "$Name" | "$Namespace"
-                    | "$Alias" | "$Type" | "$BaseType" | "$UnderlyingType" | "$BaseTerm"
+                    | "$Alias" | "$BaseType" | "$UnderlyingType" | "$BaseTerm"
                     | "$Extends" | "$TermNamespace" | "$TargetNamespace" | "$Qualifier"
                     | "$Partner" | "$Action" | "$Function" | "$EntitySet" | "$EntitySetPath" => {
                         value.is_string()
