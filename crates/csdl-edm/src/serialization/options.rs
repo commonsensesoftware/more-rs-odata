@@ -18,7 +18,9 @@ pub struct SerializationOptions {
     /// Encode typed Int64 and Decimal values as JSON strings.
     pub ieee754_compatible: bool,
     pub metadata: MetadataLevel,
-    /// Absolute source document URI used to resolve XML Base and references.
+    /// Absolute source document URI used to resolve XML Base, references and
+    /// literal UrlRef operands. Rebasing rejects dynamic UrlRef operands whose
+    /// eventual relative URL cannot be preserved statically.
     pub source_uri: Option<String>,
     pub profile: ValidationProfile,
 }
@@ -108,6 +110,19 @@ impl CsdlDocument {
             }
         }
         self.write_with_catalog(&mut output, format, &options, &catalog)?;
+        let mut output_annotation_options = annotation_options.clone();
+        let mut source = self
+            .edmx
+            .clone()
+            .ok_or_else(|| io::Error::other("Missing Edmx"))?;
+        for (authored, absolute) in rebase(&mut source, &options)? {
+            if let Some(result_type) = annotation_options.url_result_types.get(&authored) {
+                output_annotation_options
+                    .url_result_types
+                    .entry(absolute)
+                    .or_insert_with(|| result_type.clone());
+            }
+        }
         let parsed = match format {
             CsdlFormat::Xml => crate::parser::from_xml_reader(output.as_slice()),
             CsdlFormat::Json => crate::parser::from_json_reader(output.as_slice()),
@@ -115,7 +130,7 @@ impl CsdlDocument {
         let resolved =
             crate::resolver::Resolver::resolve_with_loader(parsed, root_uri, &mut loader)
                 .map_err(|e| io::Error::other(format!("{e:?}")))?;
-        validate_graph(&resolved, options.profile, annotation_options)?;
+        validate_graph(&resolved, options.profile, &output_annotation_options)?;
         writer.write_all(&output)
     }
 }
@@ -157,7 +172,8 @@ fn validate_graph(
     Ok(())
 }
 
-fn rebase(edmx: &mut Edmx, options: &SerializationOptions) -> io::Result<()> {
+fn rebase(edmx: &mut Edmx, options: &SerializationOptions) -> io::Result<Vec<(String, String)>> {
+    let mut changes = Vec::new();
     let has_base = edmx.base_uri.is_some() || edmx.references.iter().any(|r| r.base_uri.is_some());
     let Some(source) = &options.source_uri else {
         if has_base {
@@ -165,7 +181,7 @@ fn rebase(edmx: &mut Edmx, options: &SerializationOptions) -> io::Result<()> {
                 "source_uri is required to rebase XML Base",
             ));
         }
-        return Ok(());
+        return Ok(changes);
     };
     let mut base = url::Url::parse(source).map_err(io::Error::other)?;
     if let Some(part) = edmx.base_uri.take() {
@@ -180,8 +196,15 @@ fn rebase(edmx: &mut Edmx, options: &SerializationOptions) -> io::Result<()> {
             .join(&reference.uri)
             .map_err(io::Error::other)?
             .to_string();
+        super::urls::annotations(&mut reference.annotations, &base, &mut changes)?;
+        for include in &mut reference.includes {
+            super::urls::annotations(&mut include.annotations, &base, &mut changes)?;
+        }
     }
-    Ok(())
+    for schema in &mut edmx.schemas {
+        super::urls::schema(schema, &base, &mut changes)?;
+    }
+    Ok(changes)
 }
 
 pub(super) struct Catalog {

@@ -10,6 +10,7 @@ use crate::csdl::*;
 use crate::expr::{CsdlAnnotationExpression, PropertyValue};
 mod defaults;
 mod options;
+mod urls;
 pub use options::{MetadataLevel, SerializationOptions};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

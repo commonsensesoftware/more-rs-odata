@@ -17,7 +17,7 @@ pub struct ClientFunctionSignature {
     pub return_type: ExpressionType,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct AnnotationValidationOptions {
     /// Keys are authored qualified client-function names.
     pub client_functions: HashMap<String, Vec<ClientFunctionSignature>>,
