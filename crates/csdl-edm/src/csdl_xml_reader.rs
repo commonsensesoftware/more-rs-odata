@@ -366,7 +366,7 @@ impl<R: BufRead> CsdlReader<R> {
                 Event::End(e) => {
                     let n = local_name_string(e.name().as_ref())?;
                     if n == name {
-                        if !out.chars().all(|c| matches!(c, '\t' | '\n' | '\r' | '\u{20}'..='\u{D7FF}' | '\u{E000}'..='\u{FFFD}' | '\u{10000}'..='\u{10FFFF}')) {
+                        if !valid_xml_characters(&out) {
                             return Err(self.csdl_err("invalid XML character in constant text"));
                         }
                         return Ok(out);
@@ -694,6 +694,10 @@ fn attr_value(attrs: &[(String, String)], key: &str) -> Option<String> {
     attrs.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone())
 }
 
+pub(crate) fn valid_xml_characters(value: &str) -> bool {
+    value.chars().all(|c| matches!(c, '\t' | '\n' | '\r' | '\u{20}'..='\u{D7FF}' | '\u{E000}'..='\u{FFFD}' | '\u{10000}'..='\u{10FFFF}'))
+}
+
 fn parse_start(e: &BytesStart<'_>) -> Result<(String, Vec<(String, String)>)> {
     let name = local_name_string(e.name().as_ref())?;
     let mut attrs = Vec::new();
@@ -703,6 +707,9 @@ fn parse_start(e: &BytesStart<'_>) -> Result<(String, Vec<(String, String)>)> {
         let value = quick_xml::escape::unescape(std::str::from_utf8(&a.value)?)
             .map_err(|e| Error::Csdl(format!("attribute escape error: {e}")))?
             .into_owned();
+        if !valid_xml_characters(&value) {
+            return Err(Error::Csdl("invalid XML character in attribute value".into()));
+        }
         attrs.push((key, value));
     }
     Ok((name, attrs))

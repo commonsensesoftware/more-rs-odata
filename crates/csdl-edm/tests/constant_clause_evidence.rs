@@ -3,6 +3,28 @@
 use csdl_edm::{conformance::ValidationProfile as P, parser, resolver::Resolver, validator};
 
 #[test]
+fn xml_constant_attributes_reject_invalid_literal_and_escaped_characters() {
+    for (value, valid) in [
+        ("&#9;&#10;&#13;", true),
+        ("&#x20;&#xD7FF;&#xE000;&#xFFFD;&#x10000;", true),
+        ("&#1;", false),
+        ("&#xB;", false),
+        ("&#xFFFE;", false),
+        ("\u{1}", false),
+        ("\u{b}", false),
+        ("\u{fffe}", false),
+    ] {
+        let xml = format!(
+            r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><Annotation Term="N.Value" String="{value}"/></Schema></edmx:DataServices></edmx:Edmx>"#
+        );
+        for profile in [P::Strict, P::Tolerant] {
+            let parsed = parser::from_xml_reader_with_profile(xml.as_bytes(), profile);
+            assert_eq!(parsed.is_ok(), valid, "{profile:?}: {value:?}: {parsed:?}");
+        }
+    }
+}
+
+#[test]
 fn enum_constants_resolve_members_and_require_flags_for_combinations() {
     for flags in [false, true] {
         for (xml_value, json_value, valid) in [
@@ -20,8 +42,15 @@ fn enum_constants_resolve_members_and_require_flags_for_combinations() {
             let json = format!(
                 r#"{{"$Version":"4.01","N":{{"Choice":{{"$Kind":"EnumType","$IsFlags":{flags},"One":1,"Two":2}},"Other":{{"$Kind":"EnumType","One":1,"Two":2}},"Value":{{"$Kind":"Term","$Type":"N.Choice"}},"Owner":{{"$Kind":"ComplexType","@N.Value":"{json_value}"}}}}}}"#
             );
+            let xml_attribute = xml.replace(
+                &format!(
+                    "<Annotation Term=\"N.Value\"><EnumMember>{xml_value}</EnumMember></Annotation>"
+                ),
+                &format!("<Annotation Term=\"N.Value\" EnumMember=\"{xml_value}\"/>"),
+            );
             for parsed in [
                 parser::from_xml_reader_with_profile(xml.as_bytes(), P::Strict),
+                parser::from_xml_reader_with_profile(xml_attribute.as_bytes(), P::Strict),
                 parser::from_json_reader_with_profile(json.as_bytes(), P::Strict),
             ] {
                 let result = parsed
@@ -170,8 +199,16 @@ fn check_with_scale(
     let json = format!(
         r#"{{"$Version":"4.01","N":{{"Value":{{"$Kind":"Term","$Type":"Edm.{kind}"{json_precision}{json_scale}}},"Owner":{{"$Kind":"ComplexType","@N.Value":{json_value}}}}}}}"#
     );
+    // Exercise attribute notation independently of element text parsing.
+    // Existing entity references are intentional source, so escape only quotes.
+    let attribute_value = value.replace('"', "&quot;");
+    let xml_attribute = xml.replace(
+        &format!("<Annotation Term=\"N.Value\"><{xml_kind}>{value}</{xml_kind}></Annotation>"),
+        &format!("<Annotation Term=\"N.Value\" {xml_kind}=\"{attribute_value}\"/>"),
+    );
     for parsed in [
         parser::from_xml_reader_with_profile(xml.as_bytes(), P::Strict),
+        parser::from_xml_reader_with_profile(xml_attribute.as_bytes(), P::Strict),
         parser::from_json_reader_with_profile(json.as_bytes(), P::Strict),
     ] {
         let result = parsed

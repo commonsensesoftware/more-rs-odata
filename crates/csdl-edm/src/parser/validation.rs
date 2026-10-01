@@ -131,6 +131,18 @@ pub(super) fn xml_source_with_diagnostics<R: io::BufRead>(
             .map_err(io::Error::other)?;
         match event {
             Event::Start(ref e) | Event::Empty(ref e) => {
+                // XML well-formedness errors cannot be recovered by dropping an
+                // annotation or skipping an unknown extension subtree.
+                for attr in e.attributes() {
+                    let attr = attr.map_err(io::Error::other)?;
+                    let value = attr.decoded_and_normalized_value(
+                        quick_xml::XmlVersion::Implicit1_0,
+                        reader.decoder(),
+                    ).map_err(io::Error::other)?;
+                    if !crate::csdl_xml_reader::valid_xml_characters(&value) {
+                        return Err(invalid("invalid XML character in attribute value"));
+                    }
+                }
                 let empty = matches!(event, Event::Empty(_));
                 if depth == 0 {
                     roots += 1;
