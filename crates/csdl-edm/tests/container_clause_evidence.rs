@@ -149,6 +149,71 @@ const XML_TYPES: &str = r#"<EntityType Name="Entity"><Key><PropertyRef Name="ID"
 const JSON_TYPES: &str = r#""Entity":{"$Kind":"EntityType","$Key":["ID"],"ID":{"$Type":"Edm.Int32"}},"Complex":{"$Kind":"ComplexType"}"#;
 
 #[test]
+fn binding_simple_targets_are_local_sets_or_singletons() {
+    for (target, valid) in [
+        ("Items", true),
+        ("Single", true),
+        ("Remote", false),
+        ("N.Other/Remote", true),
+        ("Missing", false),
+    ] {
+        check(
+            &format!(
+                r#"{XML_TYPES}<EntityType Name="Source"><NavigationProperty Name="Related" Type="N.Entity"/></EntityType><EntityContainer Name="Other"><EntitySet Name="Remote" EntityType="N.Entity"/></EntityContainer><EntityContainer Name="Service"><Singleton Name="Root" Type="N.Source"><NavigationPropertyBinding Path="Related" Target="{target}"/></Singleton><EntitySet Name="Items" EntityType="N.Entity"/><Singleton Name="Single" Type="N.Entity"/></EntityContainer>"#
+            ),
+            &format!(
+                r#"{JSON_TYPES},"Source":{{"$Kind":"EntityType","Related":{{"$Kind":"NavigationProperty","$Type":"N.Entity"}}}},"Other":{{"$Kind":"EntityContainer","Remote":{{"$Collection":true,"$Type":"N.Entity"}}}},"Service":{{"$Kind":"EntityContainer","Root":{{"$Type":"N.Source","$NavigationPropertyBinding":{{"{target_path}":"{target}"}}}},"Items":{{"$Collection":true,"$Type":"N.Entity"}},"Single":{{"$Type":"N.Entity"}}}}"#,
+                target_path = "Related"
+            ),
+            valid,
+        );
+    }
+}
+
+#[test]
+fn binding_declarations_require_paths_and_string_targets() {
+    for (xml_binding, json_binding, valid) in [
+        (
+            r#"Path="Related" Target="Item""#,
+            r#"{"Related":"Item"}"#,
+            true,
+        ),
+        (r#"Target="Item""#, r#"{"":"Item"}"#, false),
+        (r#"Path="Related""#, r#"{"Related":null}"#, false),
+        ("", "[]", false),
+        (
+            r#"Path="Related" Target="Missing""#,
+            r#"{"Related":17}"#,
+            false,
+        ),
+    ] {
+        check(
+            &format!(
+                r#"<EntityType Name="Entity"><NavigationProperty Name="Related" Type="N.Entity"/></EntityType><EntityContainer Name="Service"><Singleton Name="Item" Type="N.Entity"><NavigationPropertyBinding {xml_binding}/></Singleton></EntityContainer>"#
+            ),
+            &format!(
+                r#""Entity":{{"$Kind":"EntityType","Related":{{"$Kind":"NavigationProperty","$Type":"N.Entity"}}}},"Service":{{"$Kind":"EntityContainer","Item":{{"$Type":"N.Entity","$NavigationPropertyBinding":{json_binding}}}}}"#
+            ),
+            valid,
+        );
+    }
+}
+
+#[test]
+fn json_local_binding_targets_must_omit_container_qualification() {
+    for (target, valid) in [("Item", true), ("N.Service/Item", false)] {
+        let json = format!(
+            r#"{{"$Version":"4.01","N":{{"Entity":{{"$Kind":"EntityType","Related":{{"$Kind":"NavigationProperty","$Type":"N.Entity"}}}},"Service":{{"$Kind":"EntityContainer","Item":{{"$Type":"N.Entity","$NavigationPropertyBinding":{{"Related":"{target}"}}}}}}}}}}"#
+        );
+        assert_eq!(
+            parser::from_json_reader_with_profile(json.as_bytes(), P::Strict).is_ok(),
+            valid,
+            "{json}"
+        );
+    }
+}
+
+#[test]
 fn binding_paths_traverse_complex_cast_and_containment_segments() {
     for collection in [false, true] {
         let (kind, attribute) = if collection {
