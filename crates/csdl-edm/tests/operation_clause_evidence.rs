@@ -20,6 +20,85 @@ fn check(xml: &str, json: &str, valid: bool) {
 }
 
 #[test]
+fn function_return_consistency_includes_collection_multiplicity() {
+    for bound in [false, true] {
+        for first_collection in [false, true] {
+            for second_collection in [false, true] {
+                let first_type = if first_collection {
+                    "Collection(Edm.String)"
+                } else {
+                    "Edm.String"
+                };
+                let second_type = if second_collection {
+                    "Collection(Edm.String)"
+                } else {
+                    "Edm.String"
+                };
+                let xml_binding = if bound {
+                    r#"<Parameter Name="binding" Type="Edm.Boolean"/>"#
+                } else {
+                    ""
+                };
+                let json_binding = if bound {
+                    r#"{"$Name":"binding","$Type":"Edm.Boolean"},"#
+                } else {
+                    ""
+                };
+                check(
+                    &format!(
+                        r#"<Function Name="Find" IsBound="{bound}">{xml_binding}<Parameter Name="code" Type="Edm.Int32"/><ReturnType Type="{first_type}" Nullable="false"/></Function><Function Name="Find" IsBound="{bound}">{xml_binding}<Parameter Name="text" Type="Edm.String"/><ReturnType Type="{second_type}" Nullable="false"/></Function>"#
+                    ),
+                    &format!(
+                        r#""Find":[{{"$Kind":"Function","$IsBound":{bound},"$Parameter":[{json_binding}{{"$Name":"code","$Type":"Edm.Int32"}}],"$ReturnType":{{"$Collection":{first_collection}}}}},{{"$Kind":"Function","$IsBound":{bound},"$Parameter":[{json_binding}{{"$Name":"text"}}],"$ReturnType":{{"$Collection":{second_collection}}}}}]"#
+                    ),
+                    first_collection == second_collection,
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn parameters_require_names_and_xml_types() {
+    for kind in ["Action", "Function"] {
+        for (xml_parameter, json_parameter, valid) in [
+            (
+                r#"Name="value" Type="Edm.String""#,
+                r#"{"$Name":"value","$Type":"Edm.String"}"#,
+                true,
+            ),
+            (r#"Type="Edm.String""#, r#"{"$Type":"Edm.String"}"#, false),
+            (
+                r#"Name="value""#,
+                r#"{"$Name":"value","$Type":null}"#,
+                false,
+            ),
+            ("", "{}", false),
+        ] {
+            check(
+                &format!(
+                    r#"<{kind} Name="Run"><Parameter {xml_parameter}/><ReturnType Type="Edm.String"/></{kind}>"#
+                ),
+                &format!(
+                    r#""Run":[{{"$Kind":"{kind}","$Parameter":[{json_parameter}],"$ReturnType":{{}}}}]"#
+                ),
+                valid,
+            );
+        }
+        // JSON deliberately defaults an omitted type to Edm.String.
+        check(
+            &format!(
+                r#"<{kind} Name="Run"><Parameter Name="value" Type="Edm.String"/><ReturnType Type="Edm.String"/></{kind}>"#
+            ),
+            &format!(
+                r#""Run":[{{"$Kind":"{kind}","$Parameter":[{{"$Name":"value"}}],"$ReturnType":{{}}}}]"#
+            ),
+            true,
+        );
+    }
+}
+
+#[test]
 fn operation_entity_set_paths_start_at_binding_and_traverse_navigation_or_casts() {
     for kind in ["Action", "Function"] {
         for (path, valid) in [
