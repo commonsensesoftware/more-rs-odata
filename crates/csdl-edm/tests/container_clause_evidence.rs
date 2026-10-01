@@ -149,6 +149,46 @@ const XML_TYPES: &str = r#"<EntityType Name="Entity"><Key><PropertyRef Name="ID"
 const JSON_TYPES: &str = r#""Entity":{"$Kind":"EntityType","$Key":["ID"],"ID":{"$Type":"Edm.Int32"}},"Complex":{"$Kind":"ComplexType"}"#;
 
 #[test]
+fn binding_target_paths_traverse_only_single_valued_complex_or_containment() {
+    for (target, valid) in [
+        ("Root/Child", true),
+        ("Root/Child/Child", true),
+        ("Root/Details/Child", true),
+        ("Root/Children", true),
+        ("Root/Children/Child", false),
+        ("Root/Values/Child", false),
+        ("Root/Related/Child", false),
+        ("Root/Details", false),
+        ("Root/Missing", false),
+    ] {
+        check(
+            &format!(
+                r#"<EntityType Name="Entity"><Key><PropertyRef Name="ID"/></Key><Property Name="ID" Type="Edm.Int32" Nullable="false"/><Property Name="Details" Type="N.Complex"/><Property Name="Values" Type="Collection(N.Complex)" Nullable="false"/><NavigationProperty Name="Child" Type="N.Entity" ContainsTarget="true"/><NavigationProperty Name="Children" Type="Collection(N.Entity)" ContainsTarget="true"/><NavigationProperty Name="Related" Type="N.Entity"/></EntityType><ComplexType Name="Complex"><NavigationProperty Name="Child" Type="N.Entity" ContainsTarget="true"/></ComplexType><EntityContainer Name="Service"><Singleton Name="Source" Type="N.Entity"><NavigationPropertyBinding Path="Related" Target="{target}"/></Singleton><Singleton Name="Root" Type="N.Entity"/></EntityContainer>"#
+            ),
+            &format!(
+                r#""Entity":{{"$Kind":"EntityType","$Key":["ID"],"ID":{{"$Type":"Edm.Int32"}},"Details":{{"$Type":"N.Complex"}},"Values":{{"$Type":"N.Complex","$Collection":true}},"Child":{{"$Kind":"NavigationProperty","$Type":"N.Entity","$ContainsTarget":true}},"Children":{{"$Kind":"NavigationProperty","$Type":"N.Entity","$Collection":true,"$ContainsTarget":true}},"Related":{{"$Kind":"NavigationProperty","$Type":"N.Entity"}}}},"Complex":{{"$Kind":"ComplexType","Child":{{"$Kind":"NavigationProperty","$Type":"N.Entity","$ContainsTarget":true}}}},"Service":{{"$Kind":"EntityContainer","Source":{{"$Type":"N.Entity","$NavigationPropertyBinding":{{"Related":"{target}"}}}},"Root":{{"$Type":"N.Entity"}}}}"#
+            ),
+            valid,
+        );
+    }
+}
+
+#[test]
+fn binding_paths_are_unique_but_may_differ_by_cast() {
+    for (second_path, valid) in [("Related", false), ("N.Derived/Related", true)] {
+        check(
+            &format!(
+                r#"<EntityType Name="Entity"><NavigationProperty Name="Related" Type="N.Entity"/></EntityType><EntityType Name="Derived" BaseType="N.Entity"/><EntityContainer Name="Service"><Singleton Name="Root" Type="N.Entity"><NavigationPropertyBinding Path="Related" Target="First"/><NavigationPropertyBinding Path="{second_path}" Target="Second"/></Singleton><Singleton Name="First" Type="N.Entity"/><Singleton Name="Second" Type="N.Entity"/></EntityContainer>"#
+            ),
+            &format!(
+                r#""Entity":{{"$Kind":"EntityType","Related":{{"$Kind":"NavigationProperty","$Type":"N.Entity"}}}},"Derived":{{"$Kind":"EntityType","$BaseType":"N.Entity"}},"Service":{{"$Kind":"EntityContainer","Root":{{"$Type":"N.Entity","$NavigationPropertyBinding":{{"Related":"First","{second_path}":"Second"}}}},"First":{{"$Type":"N.Entity"}},"Second":{{"$Type":"N.Entity"}}}}"#
+            ),
+            valid,
+        );
+    }
+}
+
+#[test]
 fn binding_simple_targets_are_local_sets_or_singletons() {
     for (target, valid) in [
         ("Items", true),
