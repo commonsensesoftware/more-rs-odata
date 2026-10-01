@@ -2,17 +2,63 @@
 
 use csdl_edm::{conformance::ValidationProfile as P, parser, resolver::Resolver, validator};
 
+#[test]
+fn boolean_constants_require_boolean_literals() {
+    for (xml, json, valid) in [
+        ("true", "true", true),
+        ("false", "false", true),
+        ("TRUE", r#""true""#, false),
+        ("1", "1", false),
+        ("yes", r#""yes""#, false),
+    ] {
+        check_literal("Boolean", "Bool", xml, json, valid);
+    }
+}
+
+#[test]
+fn integer_constants_enforce_int64_limits_and_integral_syntax() {
+    for (xml, json, valid) in [
+        ("0", "0", true),
+        ("9223372036854775807", "9223372036854775807", true),
+        ("-9223372036854775808", "-9223372036854775808", true),
+        ("9223372036854775808", "9223372036854775808", false),
+        ("-9223372036854775809", "-9223372036854775809", false),
+        ("1.5", "1.5", false),
+        ("one", r#""one""#, false),
+    ] {
+        check_literal("Int64", "Int", xml, json, valid);
+    }
+}
+
+#[test]
+fn floating_constants_accept_exponents_and_special_values() {
+    for (xml, json, valid) in [
+        ("1.25e2", "1.25e2", true),
+        ("-0.5", "-0.5", true),
+        ("INF", r#""INF""#, true),
+        ("-INF", r#""-INF""#, true),
+        ("NaN", r#""NaN""#, true),
+        ("Infinity", r#""Infinity""#, false),
+        ("1.2.3", r#""1.2.3""#, false),
+    ] {
+        check_literal("Double", "Float", xml, json, valid);
+    }
+}
+
 fn check(kind: &str, value: &str, valid: bool) {
+    check_literal(kind, kind, value, &format!("\"{value}\""), valid);
+}
+fn check_literal(kind: &str, xml_kind: &str, value: &str, json_value: &str, valid: bool) {
     // Inputs are authored independently in each representation; JSON strings
     // receive their literal type from the resolved term.
     let temporal = matches!(kind, "DateTimeOffset" | "TimeOfDay" | "Duration");
     let xml_precision = if temporal { r#" Precision="12""# } else { "" };
     let json_precision = if temporal { r#", "$Precision":12"# } else { "" };
     let xml = format!(
-        r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><Term Name="Value" Type="Edm.{kind}"{xml_precision}/><ComplexType Name="Owner"><Annotation Term="N.Value"><{kind}>{value}</{kind}></Annotation></ComplexType></Schema></edmx:DataServices></edmx:Edmx>"#
+        r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><Term Name="Value" Type="Edm.{kind}"{xml_precision}/><ComplexType Name="Owner"><Annotation Term="N.Value"><{xml_kind}>{value}</{xml_kind}></Annotation></ComplexType></Schema></edmx:DataServices></edmx:Edmx>"#
     );
     let json = format!(
-        r#"{{"$Version":"4.01","N":{{"Value":{{"$Kind":"Term","$Type":"Edm.{kind}"{json_precision}}},"Owner":{{"$Kind":"ComplexType","@N.Value":"{value}"}}}}}}"#
+        r#"{{"$Version":"4.01","N":{{"Value":{{"$Kind":"Term","$Type":"Edm.{kind}"{json_precision}}},"Owner":{{"$Kind":"ComplexType","@N.Value":{json_value}}}}}}}"#
     );
     for parsed in [
         parser::from_xml_reader_with_profile(xml.as_bytes(), P::Strict),

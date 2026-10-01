@@ -395,7 +395,7 @@ pub(super) fn compatible(
         (Some(P::Int32), E::Int(n)) => i32::try_from(*n).is_ok(),
         (Some(P::Int64), E::Int(_) | E::String(_)) => true,
         (Some(P::Decimal), E::Decimal(_) | E::Int(_) | E::Float(_) | E::String(_)) => true,
-        (Some(P::Single | P::Double), E::Float(_) | E::Int(_) | E::String(_)) => true,
+        (Some(P::Single | P::Double), E::Float(_) | E::Decimal(_) | E::Int(_) | E::String(_)) => true,
         (Some(P::String), E::String(_) | E::UrlRef(_)) => true,
         (Some(P::Binary), E::Binary(_) | E::String(_)) => true,
         (Some(P::Date), E::Date(_) | E::String(_)) => true,

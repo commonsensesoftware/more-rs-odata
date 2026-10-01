@@ -751,11 +751,15 @@ fn constant_attr_to_expr(key: &str, value: String) -> Result<CsdlAnnotationExpre
         "Decimal" => CsdlAnnotationExpression::Decimal(value),
         "Duration" => CsdlAnnotationExpression::Duration(value),
         "EnumMember" => CsdlAnnotationExpression::EnumMember(value),
-        "Float" => CsdlAnnotationExpression::Float(
-            value
+        "Float" => {
+            let number: f64 = value
                 .parse()
-                .map_err(|_| Error::Csdl(format!("invalid Float constant: {value}")))?,
-        ),
+                .map_err(|_| Error::Csdl(format!("invalid Float constant: {value}")))?;
+            if !number.is_finite() && !matches!(value.as_str(), "INF" | "-INF" | "NaN") {
+                return Err(Error::Csdl(format!("invalid Float constant: {value}")));
+            }
+            CsdlAnnotationExpression::Float(number)
+        }
         "Guid" => CsdlAnnotationExpression::Guid(value),
         "Int" => CsdlAnnotationExpression::Int(
             value
