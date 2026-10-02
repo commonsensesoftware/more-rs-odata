@@ -3,6 +3,64 @@
 use csdl_edm::{conformance::ValidationProfile as P, parser, resolver::Resolver, validator};
 
 #[test]
+fn term_casts_validate_qualifiers_and_implicit_media_targets() {
+    for media_entity in [false, true] {
+        let mut cases = vec![
+            ("@N.Label".to_owned(), true),
+            ("@N.Label#View".to_owned(), true),
+            ("@N.Label#日本語".to_owned(), true),
+            ("@Label".to_owned(), false),
+            ("@N.Missing".to_owned(), false),
+            ("@N.Label#".to_owned(), false),
+            ("@N.Label#bad-name".to_owned(), false),
+            ("@N.Label#1View".to_owned(), false),
+            ("@N.Label#View#Other".to_owned(), false),
+        ];
+        for media in [
+            "mediaReadLink",
+            "mediaEditLink",
+            "mediaContentType",
+            "mediaEtag",
+        ] {
+            cases.push((format!("@odata.{media}"), media_entity));
+            cases.push((format!("Stream/@odata.{media}"), true));
+            cases.push((format!("Name/@odata.{media}"), false));
+            cases.push((format!("Stream/@odata.{media}#View"), false));
+        }
+        cases.push(("Stream/@odata.unknown".into(), false));
+        for (path, valid) in cases {
+            let xml = format!(
+                r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><Term Name="Value" Type="Edm.String"/><Term Name="Label" Type="Edm.String"/><EntityType Name="Owner" Abstract="true" HasStream="{media_entity}"><Property Name="Name" Type="Edm.String"/><Property Name="Stream" Type="Edm.Stream"/><Annotation Term="N.Value"><Path>{path}</Path></Annotation></EntityType></Schema></edmx:DataServices></edmx:Edmx>"#
+            );
+            let json = format!(
+                r#"{{"$Version":"4.01","N":{{"Value":{{"$Kind":"Term","$Nullable":true}},"Label":{{"$Kind":"Term"}},"Owner":{{"$Kind":"EntityType","$Abstract":true,"$HasStream":{media_entity},"Name":{{"$Nullable":true}},"Stream":{{"$Type":"Edm.Stream","$Nullable":true}},"@N.Value":{{"$Path":"{path}"}}}}}}}}"#
+            );
+            for parsed in [
+                parser::from_xml_reader_with_profile(xml.as_bytes(), P::Strict),
+                parser::from_json_reader_with_profile(json.as_bytes(), P::Strict),
+            ] {
+                let model = Resolver::resolve_document(parsed.unwrap().edmx.unwrap()).unwrap();
+                validator::validate_document(&model).unwrap();
+                assert_eq!(model.schemas[0].annotations.get().unwrap().len(), 1);
+                let diagnostics = validator::validate_annotations(&model);
+                assert_eq!(
+                    diagnostics.is_empty(),
+                    valid,
+                    "media={media_entity}, {path}: {diagnostics:?}"
+                );
+                assert_eq!(
+                    diagnostics
+                        .iter()
+                        .any(|d| d.issue == validator::AnnotationIssue::InvalidExpressionPath),
+                    !valid,
+                    "{diagnostics:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn instance_paths_limit_unselected_collections_and_require_ordered_indexes() {
     use csdl_edm::edm::AnnotationTarget as T;
     for (path, valid, collection) in [
