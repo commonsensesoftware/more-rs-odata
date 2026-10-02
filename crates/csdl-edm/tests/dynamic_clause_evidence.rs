@@ -697,7 +697,7 @@ fn logical_operators_require_boolean_operands_and_exact_arity() {
 #[test]
 fn conditional_requires_boolean_condition_and_collection_context_for_two_operands() {
     for collection in [false, true] {
-        for count in 1..=4 {
+        for count in 0..=4 {
             let xml = format!("<If>{}</If>", "<Bool>true</Bool>".repeat(count));
             let json = format!(r#"{{"$If":[{}]}}"#, vec!["true"; count].join(","));
             let xml = if collection {
@@ -730,4 +730,62 @@ fn conditional_requires_boolean_condition_and_collection_context_for_two_operand
         false,
         false,
     );
+    let source = r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><Annotation Term="N.Value"><If Bool="true"><Bool>true</Bool><Bool>false</Bool></If></Annotation></Schema></edmx:DataServices></edmx:Edmx>"#;
+    assert!(parser::from_xml_reader_with_profile(source.as_bytes(), P::Strict).is_err());
+}
+
+#[test]
+fn conditional_record_branches_require_compatible_structured_types() {
+    for condition in ["true", "false"] {
+        for (ty, valid) in [("N.Base", true), ("N.Derived", true), ("N.Other", false), ("N.Missing", false)] {
+            for then_branch in [false, true] {
+                let (left, right) = if then_branch { (ty, "N.Base") } else { ("N.Base", ty) };
+                let xml = format!(r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><ComplexType Name="Base"/><ComplexType Name="Derived" BaseType="N.Base"/><ComplexType Name="Other"/><Term Name="Value" Type="N.Base"/><Annotation Term="N.Value"><If><Bool>{condition}</Bool><Record Type="{left}"/><Record Type="{right}"/></If></Annotation></Schema></edmx:DataServices></edmx:Edmx>"#);
+                let json = format!(r#"{{"$Version":"4.01","N":{{"Base":{{"$Kind":"ComplexType"}},"Derived":{{"$Kind":"ComplexType","$BaseType":"N.Base"}},"Other":{{"$Kind":"ComplexType"}},"Value":{{"$Kind":"Term","$Type":"N.Base"}},"@N.Value":{{"$If":[{condition},{{"@type":"{left}"}},{{"@type":"{right}"}}]}}}}}}"#);
+                for parsed in [
+                    parser::from_xml_reader_with_profile(xml.as_bytes(), P::Strict),
+                    parser::from_json_reader_with_profile(json.as_bytes(), P::Strict),
+                ] {
+                    let model = Resolver::resolve_document(parsed.unwrap().edmx.unwrap()).unwrap();
+                    validator::validate_document(&model).unwrap();
+                    let diagnostics = validator::validate_annotations(&model);
+                    assert_eq!(diagnostics.is_empty(), valid, "{condition}, {left}, {right}: {diagnostics:?}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn conditional_branches_both_match_the_surrounding_type() {
+    for condition in ["true", "false"] {
+        for (left_xml, left_json, right_xml, right_json, ty, collection, valid) in [
+            ("<Int>1</Int>", "1", "<Float>2.5</Float>", "2.5", "Edm.Double", false, true),
+            ("<String>a</String>", r#""a""#, "<String>b</String>", r#""b""#, "Edm.String", false, true),
+            ("<String>a</String>", r#""a""#, "<Int>1</Int>", "1", "Edm.String", false, false),
+            ("<Int>1</Int>", "1", "<String>a</String>", r#""a""#, "Edm.String", false, false),
+            ("<Collection><Int>1</Int></Collection>", "[1]", "<Collection/>", "[]", "Edm.Int64", true, true),
+            ("<Collection><Int>1</Int></Collection>", "[1]", "<Int>2</Int>", "2", "Edm.Int64", true, false),
+            ("<Int>1</Int>", "1", "<Collection><Int>2</Int></Collection>", "[2]", "Edm.Int64", false, false),
+            ("<Collection><Int>1</Int></Collection>", "[1]", "<Collection><String>a</String></Collection>", r#"["a"]"#, "Edm.Int64", true, false),
+        ] {
+            check_type(
+                &format!("<If><Bool>{condition}</Bool>{left_xml}{right_xml}</If>"),
+                &format!(r#"{{"$If":[{condition},{left_json},{right_json}]}}"#),
+                ty, collection, valid,
+            );
+        }
+        for nullable in [false, true] {
+            for (left_xml, left_json, right_xml, right_json) in [
+                ("<Null/>", "null", "<String>a</String>", r#""a""#),
+                ("<String>a</String>", r#""a""#, "<Null/>", "null"),
+            ] {
+                check_type_nullable(
+                    &format!("<If><Bool>{condition}</Bool>{left_xml}{right_xml}</If>"),
+                    &format!(r#"{{"$If":[{condition},{left_json},{right_json}]}}"#),
+                    "Edm.String", false, nullable, nullable,
+                );
+            }
+        }
+    }
 }
