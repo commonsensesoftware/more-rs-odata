@@ -11,6 +11,58 @@ fn json(reference: &str) -> String {
 }
 
 #[test]
+fn reference_uri_attributes_and_json_member_names_preserve_identity() {
+    for uri in [
+        "types",
+        "../types",
+        "https://example.test/types?x=1&y=2",
+        "urn:example:types",
+        "types%20v1",
+    ] {
+        let escaped = uri.replace('&', "&amp;");
+        let source_xml = xml(&format!(
+            r#"<edmx:Reference Uri="{escaped}"><edmx:Include Namespace="Types"/></edmx:Reference>"#
+        ));
+        let source_json = format!(
+            r#"{{"$Version":"4.01","$Reference":{{"{uri}":{{"$Include":[{{"$Namespace":"Types"}}]}}}},"Local":{{}}}}"#
+        );
+        for document in [
+            parser::from_xml_reader_with_profile(source_xml.as_bytes(), P::Strict).unwrap(),
+            parser::from_json_reader_with_profile(source_json.as_bytes(), P::Strict).unwrap(),
+        ] {
+            let references = &document.edmx.as_ref().unwrap().references;
+            assert_eq!(references.len(), 1);
+            assert_eq!(references[0].uri, uri);
+            assert_eq!(
+                document.to_json_value()["$Reference"]
+                    .as_object()
+                    .unwrap()
+                    .keys()
+                    .collect::<Vec<_>>(),
+                vec![uri]
+            );
+        }
+    }
+    assert!(
+        parser::from_xml_reader_with_profile(
+            xml(r#"<edmx:Reference><edmx:Include Namespace="Types"/></edmx:Reference>"#).as_bytes(),
+            P::Strict
+        )
+        .is_err()
+    );
+    // JSON references are keyed by their URI, not an array of URI-less objects.
+    for reference in [
+        r#"[{"$Include":[{"$Namespace":"Types"}]}]"#,
+        "null",
+        "true",
+        "1",
+    ] {
+        let source = format!(r#"{{"$Version":"4.01","$Reference":{reference},"Local":{{}}}}"#);
+        assert!(parser::from_json_reader_with_profile(source.as_bytes(), P::Strict).is_err());
+    }
+}
+
+#[test]
 fn document_versions_require_supported_strings_and_survive_output() {
     for version in [
         "4.0", "4.01", "4", "4.00", "4.1", "3.0", "5.0", "", " 4.01 ",
