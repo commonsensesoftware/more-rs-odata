@@ -759,6 +759,17 @@ pub(crate) fn expression_version(
 
 fn walk(node: &RawElement, parent: Option<&str>, json: bool) -> io::Result<()> {
     let name = node.name.as_str();
+    if !json
+        && name == "Annotations"
+        && raw_attr(node, "Qualifier").is_some()
+        && node.children.iter().any(|child| {
+            child.name == "Annotation" && raw_attr(child, "Qualifier").is_some()
+        })
+    {
+        return Err(invalid(
+            "Annotation must not specify Qualifier when its Annotations group specifies Qualifier",
+        ));
+    }
     let required: &[&str] = match name {
         "Edmx" => &["Version"],
         "Schema" | "Include" => &["Namespace"],
