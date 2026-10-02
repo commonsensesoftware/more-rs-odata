@@ -71,6 +71,69 @@ fn validate(document: CsdlDocument) {
 }
 
 #[test]
+fn navigation_declarations_require_fields_and_retain_optional_attributes() {
+    for member in [
+        "<NavigationProperty/>",
+        r#"<NavigationProperty Name="Related"/>"#,
+        r#"<NavigationProperty Type="N.Target"/>"#,
+    ] {
+        assert!(
+            xml(&format!(
+                r#"<EntityType Name="Owner">{member}</EntityType>"#
+            ))
+            .is_err()
+        );
+    }
+    for member in [
+        r#"{"$Kind":"NavigationProperty"}"#,
+        r#"{"$Kind":null,"$Type":"N.Target"}"#,
+        r#"{"$Kind":"navigationproperty","$Type":"N.Target"}"#,
+    ] {
+        assert!(
+            json(&format!(
+                r#""Owner":{{"$Kind":"EntityType","Related":{member}}}"#
+            ))
+            .is_err()
+        );
+    }
+    for (xml_attributes, json_attributes, nullable, contains, partner) in [
+        ("", "", None, None, None),
+        (
+            r#" Nullable="false" ContainsTarget="false" Partner="Back""#,
+            r#", "$Nullable":false,"$ContainsTarget":false,"$Partner":"Back""#,
+            Some(false),
+            Some(false),
+            Some("Back"),
+        ),
+        (
+            r#" Nullable="true" ContainsTarget="true""#,
+            r#", "$Nullable":true,"$ContainsTarget":true"#,
+            Some(true),
+            Some(true),
+            None,
+        ),
+    ] {
+        for (format_index, document) in [
+            xml(&format!(r#"<EntityType Name="Target"><NavigationProperty Name="Back" Type="N.Owner" Nullable="false"/></EntityType><EntityType Name="Owner"><NavigationProperty Name="Related" Type="N.Target"{xml_attributes}/></EntityType>"#)).unwrap(),
+            json(&format!(r#""Target":{{"$Kind":"EntityType","Back":{{"$Kind":"NavigationProperty","$Type":"N.Owner","$Nullable":false}}}},"Owner":{{"$Kind":"EntityType","Related":{{"$Kind":"NavigationProperty","$Type":"N.Target"{json_attributes}}}}}"#)).unwrap(),
+        ].into_iter().enumerate() {
+            let owner = document.edmx.as_ref().unwrap().schemas[0].elements.iter().find_map(|e| match e {
+                csdl_edm::csdl::SchemaElement::EntityType(t) if t.name == "Owner" => Some(t),
+                _ => None,
+            }).unwrap();
+            assert_eq!(owner.navigation_properties.len(), 1);
+            let property = &owner.navigation_properties[0];
+            assert_eq!(property.name, "Related");
+            assert_eq!(property.type_name.as_deref(), Some("N.Target"));
+            assert_eq!(property.nullable, if format_index == 1 { nullable.or(Some(false)) } else { nullable });
+            assert_eq!(property.contains_target, contains);
+            assert_eq!(property.partner.as_deref(), partner);
+            validate(document);
+        }
+    }
+}
+
+#[test]
 fn complex_declarations_require_name_or_kind_and_retain_optional_content() {
     assert!(xml("<ComplexType/>").is_err());
     assert!(xml(r#"<ComplexType Abstract="true" OpenType="true"/>"#).is_err());
