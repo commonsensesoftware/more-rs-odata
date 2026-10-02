@@ -601,9 +601,11 @@ impl Catalog {
                 }
                 for p in properties {
                     if let Some(e) = &p.value {
+                        let inferred = self.expression_type(e, ns);
                         let expected = ty
                             .as_ref()
-                            .and_then(|t| self.property_type(t, &p.property, 0));
+                            .and_then(|t| self.property_type(t, &p.property, 0))
+                            .or_else(|| inferred.as_ref().map(|(ty, _)| ty.clone()));
                         map.insert(
                             p.property.clone(),
                             self.expression(e, expected.as_deref(), ns, options)?,
@@ -612,7 +614,8 @@ impl Catalog {
                             &mut map,
                             &p.property,
                             expected.as_deref(),
-                            matches!(e, E::Collection(_)),
+                            matches!(e, E::Collection(_))
+                                || inferred.as_ref().is_some_and(|(_, collection)| *collection),
                             options,
                         );
                         self.annotations(&mut map, &p.annotations, ns, options, &p.property)?;
@@ -701,6 +704,36 @@ impl Catalog {
             _ => {}
         }
         Ok(value)
+    }
+    fn expression_type(&self, expression: &E, ns: &str) -> Option<(String, bool)> {
+        let primitive = match expression {
+            E::Binary(_) => "Edm.Binary",
+            E::Bool(_) => "Edm.Boolean",
+            E::Date(_) => "Edm.Date",
+            E::DateTimeOffset(_) => "Edm.DateTimeOffset",
+            E::Decimal(_) => "Edm.Decimal",
+            E::Duration(_) => "Edm.Duration",
+            E::Float(_) => "Edm.Double",
+            E::Guid(_) => "Edm.Guid",
+            E::Int(_) => "Edm.Int64",
+            E::String(_) => "Edm.String",
+            E::TimeOfDay(_) => "Edm.TimeOfDay",
+            E::Cast { type_, .. } | E::Record { type_: Some(type_), .. } => {
+                let item = type_.strip_prefix("Collection(").and_then(|t| t.strip_suffix(')'));
+                return Some((self.canonical(item.unwrap_or(type_), ns), item.is_some()));
+            }
+            E::Annotated { expression, .. } | E::Faceted { expression, .. }
+                | E::LabeledElement { expr: expression, .. } => return self.expression_type(expression, ns),
+            E::Collection(items) => {
+                let (ty, collection) = self.expression_type(items.first()?, ns)?;
+                if collection || !items.iter().all(|item| self.expression_type(item, ns) == Some((ty.clone(), false))) {
+                    return None;
+                }
+                return Some((ty, true));
+            }
+            _ => return None,
+        };
+        Some((primitive.into(), false))
     }
     fn control(
         &self,
