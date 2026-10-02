@@ -347,13 +347,14 @@ impl<R: BufRead> CsdlReader<R> {
             match self.inner.read_event_into(&mut self.buf)? {
                 Event::Text(t) => {
                     let decoded = t
-                        .decode()
+                        .xml10_content()
                         .map_err(|e| Error::Csdl(format!("text decode error: {e}")))?;
                     let unescaped = quick_xml::escape::unescape(&decoded)
                         .map_err(|e| Error::Csdl(format!("text unescape error: {e}")))?;
                     out.push_str(&unescaped);
                 }
-                Event::CData(t) => out.push_str(std::str::from_utf8(&t)?),
+                Event::CData(t) => out.push_str(&t.xml10_content()
+                    .map_err(|e| Error::Csdl(format!("CDATA decode error: {e}")))?),
                 Event::GeneralRef(reference) => {
                     let reference = reference
                         .decode()

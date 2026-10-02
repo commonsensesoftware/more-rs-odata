@@ -7,6 +7,31 @@ fn xml(expression: &str) -> String {
 }
 
 #[test]
+fn xml_string_line_endings_normalize_without_changing_character_references() {
+    use csdl_edm::expr::CsdlAnnotationExpression as E;
+    for (expression, expected) in [
+        ("<String>one\r\ntwo\rthree</String>", "one\ntwo\nthree"),
+        (
+            "<String><![CDATA[one\r\ntwo\rthree]]></String>",
+            "one\ntwo\nthree",
+        ),
+        ("<String>one&#13;two&#10;three</String>", "one\rtwo\nthree"),
+    ] {
+        let source = xml(expression);
+        for profile in [P::Strict, P::Tolerant] {
+            let report = parser::from_xml_reader_with_report(source.as_bytes(), profile).unwrap();
+            assert!(report.diagnostics.is_empty());
+            let schema = &report.document.edmx.unwrap().schemas[0];
+            assert!(
+                matches!(&schema.annotations[0].expression, Some(E::String(value)) if value == expected),
+                "{profile:?}: {:?}",
+                schema.annotations[0].expression
+            );
+        }
+    }
+}
+
+#[test]
 fn xml_namespace_scope_is_restored_after_skipped_extensions() {
     for (markup, valid) in [
         (
