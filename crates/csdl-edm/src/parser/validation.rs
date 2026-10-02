@@ -131,8 +131,15 @@ pub(super) fn xml_source_with_diagnostics<R: io::BufRead>(
         let event = reader
             .read_event_into(&mut buffer)
             .map_err(io::Error::other)?;
-        if matches!(event, Event::Decl(_)) && !at_document_start {
-            return Err(invalid("XML declaration is allowed only at the document start"));
+        if let Event::Decl(declaration) = &event {
+            if !at_document_start {
+                return Err(invalid("XML declaration is allowed only at the document start"));
+            }
+            let raw = reader
+                .decoder()
+                .decode(declaration.as_ref())
+                .map_err(io::Error::other)?;
+            validate_xml_declaration(&raw)?;
         }
         at_document_start = false;
         if depth == 0 {
@@ -368,6 +375,39 @@ pub(super) fn xml_source_with_diagnostics<R: io::BufRead>(
         return Err(invalid("CSDL requires one complete root element"));
     }
     Ok(writer.into_inner())
+}
+
+fn validate_xml_declaration(raw: &str) -> io::Result<()> {
+    let start = BytesStart::from_content(raw, 3);
+    let mut previous = 0;
+    for attribute in start.attributes() {
+        let attribute = attribute.map_err(io::Error::other)?;
+        let value = attribute.value.as_ref();
+        let (position, valid) = match attribute.key.as_ref() {
+            b"version" => (
+                1,
+                value.starts_with(b"1.") && value.len() > 2
+                    && value[2..].iter().all(u8::is_ascii_digit),
+            ),
+            b"encoding" => (
+                2,
+                value.first().is_some_and(u8::is_ascii_alphabetic)
+                    && value.iter().all(|b| {
+                        b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-')
+                    }),
+            ),
+            b"standalone" => (3, matches!(value, b"yes" | b"no")),
+            _ => return Err(invalid("Unknown XML declaration pseudo-attribute")),
+        };
+        if !valid || position <= previous || previous == 0 && position != 1 {
+            return Err(invalid("Invalid XML declaration pseudo-attributes"));
+        }
+        previous = position;
+    }
+    if previous == 0 {
+        return Err(invalid("XML declaration requires version"));
+    }
+    Ok(())
 }
 
 fn annotation_problem(source: &[u8]) -> Option<String> {

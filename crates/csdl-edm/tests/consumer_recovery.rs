@@ -7,6 +7,32 @@ fn xml(expression: &str) -> String {
 }
 
 #[test]
+fn xml_declaration_pseudo_attributes_follow_required_grammar() {
+    for (attributes, valid) in [
+        (r#"version="1.0""#, true),
+        ("version='1.0' standalone='yes'", true),
+        (r#"version="1.0" encoding="UTF-8" standalone="no""#, true),
+        (r#"encoding="UTF-8""#, false),
+        (r#"version="1.0" version="1.0""#, false),
+        (r#"version="1.0" unknown="value""#, false),
+        (r#"version="1.0" standalone="true""#, false),
+        (r#"version="1.0" standalone="yes" encoding="UTF-8""#, false),
+        (r#"version="invalid""#, false),
+        (r#"version="1.0" encoding="8UTF""#, false),
+    ] {
+        let source = format!("<?xml {attributes}?>{}", xml("<Int>1</Int>"));
+        for profile in [P::Strict, P::Tolerant] {
+            let result = parser::from_xml_reader_with_report(source.as_bytes(), profile);
+            assert_eq!(
+                result.is_ok(),
+                valid,
+                "{profile:?}: {attributes}: {result:?}"
+            );
+        }
+    }
+}
+
+#[test]
 fn xml_declarations_are_allowed_only_at_the_start_of_the_document() {
     let declaration = r#"<?xml version="1.0" encoding="UTF-8"?>"#;
     let document = xml("<Int>1</Int>");
