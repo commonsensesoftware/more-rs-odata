@@ -931,6 +931,7 @@ fn emit_callable(
         end(out, "ReturnType");
     }
 
+    emit_inline_annotations(out, obj)?;
     end(out, element);
     Ok(())
 }

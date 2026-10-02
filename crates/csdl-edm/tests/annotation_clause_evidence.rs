@@ -1,5 +1,21 @@
 use csdl_edm::{conformance::ValidationProfile as P, parser};
 
+#[test]
+fn json_operation_annotations_survive_parsing_without_resolving() {
+    for kind in ["Action", "Function"] {
+        let source = format!(
+            r#"{{"$Version":"4.01","N":{{"F":[{{"$Kind":"{kind}","$ReturnType":{{}},"@N.Label":"kept","@N.Path":{{"$Path":"$ReturnType"}}}}]}}}}"#
+        );
+        for profile in [P::Strict, P::Tolerant] {
+            let document =
+                parser::from_json_reader_with_profile(source.as_bytes(), profile).unwrap();
+            let output = document.to_json_value();
+            assert_eq!(output["N"]["F"][0]["@N.Label"], "kept");
+            assert_eq!(output["N"]["F"][0]["@N.Path"]["$Path"], "$ReturnType");
+        }
+    }
+}
+
 fn xml(body: &str) -> String {
     format!(
         r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><Term Name="Value" Type="Edm.String"/><ComplexType Name="Owner"/>{body}</Schema></edmx:DataServices></edmx:Edmx>"#

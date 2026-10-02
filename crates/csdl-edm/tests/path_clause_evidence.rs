@@ -3,6 +3,81 @@
 use csdl_edm::{conformance::ValidationProfile as P, parser, resolver::Resolver, validator};
 
 #[test]
+fn operation_paths_start_with_a_parameter_or_return_type() {
+    for operation in ["Action", "Function"] {
+        for location in ["operation", "parameter", "return", "import"] {
+            for external in [false, true] {
+                for (path, valid) in [
+                    ("p/Name", true),
+                    ("$ReturnType/Name", true),
+                    ("Name", false),
+                    ("missing/Name", false),
+                    ("", false),
+                ] {
+                    let ax =
+                        format!(r#"<Annotation Term="N.Value"><Path>{path}</Path></Annotation>"#);
+                    let aj = format!(r#", "@N.Value":{{"$Path":"{path}"}}"#);
+                    let inline = |place: &str| {
+                        if !external && location == place {
+                            (ax.as_str(), aj.as_str())
+                        } else {
+                            ("", "")
+                        }
+                    };
+                    let (ox, oj) = inline("operation");
+                    let (px, pj) = inline("parameter");
+                    let (rx, rj) = inline("return");
+                    let (ix, ij) = inline("import");
+                    let target = match location {
+                        "operation" => "N.F",
+                        "parameter" => "N.F/p",
+                        "return" => "N.F/$ReturnType",
+                        _ => "N.C/Call",
+                    };
+                    let gx = if external {
+                        format!(r#"<Annotations Target="{target}">{ax}</Annotations>"#)
+                    } else {
+                        String::new()
+                    };
+                    let gj = if external {
+                        format!(
+                            r#", "$Annotations":{{"{target}":{{"@N.Value":{{"$Path":"{path}"}}}}}}"#
+                        )
+                    } else {
+                        String::new()
+                    };
+                    let xml = format!(
+                        r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><Term Name="Value" Type="Edm.String"/><ComplexType Name="Data"><Property Name="Name" Type="Edm.String"/></ComplexType><{operation} Name="F"><Parameter Name="p" Type="N.Data">{px}</Parameter><ReturnType Type="N.Data">{rx}</ReturnType>{ox}</{operation}><EntityContainer Name="C"><{operation}Import Name="Call" {operation}="N.F">{ix}</{operation}Import></EntityContainer>{gx}</Schema></edmx:DataServices></edmx:Edmx>"#
+                    );
+                    let json = format!(
+                        r#"{{"$Version":"4.01","N":{{"Value":{{"$Kind":"Term"}},"Data":{{"$Kind":"ComplexType","Name":{{"$Nullable":true}}}},"F":[{{"$Kind":"{operation}","$Parameter":[{{"$Name":"p","$Type":"N.Data","$Nullable":true{pj}}}],"$ReturnType":{{"$Type":"N.Data","$Nullable":true{rj}}}{oj}}}],"C":{{"$Kind":"EntityContainer","Call":{{"${operation}":"N.F"{ij}}}}}{gj}}}}}"#
+                    );
+                    for parsed in [
+                        parser::from_xml_reader_with_profile(xml.as_bytes(), P::Strict),
+                        parser::from_json_reader_with_profile(json.as_bytes(), P::Strict),
+                    ] {
+                        let model =
+                            Resolver::resolve_document(parsed.unwrap().edmx.unwrap()).unwrap();
+                        validator::validate_document(&model).unwrap();
+                        assert_eq!(
+                            model.schemas[0].annotations.get().unwrap().len(),
+                            1,
+                            "{model:?}"
+                        );
+                        let diagnostics = validator::validate_annotations(&model);
+                        assert_eq!(
+                            diagnostics.is_empty(),
+                            valid,
+                            "{operation} {location} external={external}, {path}: {diagnostics:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn property_path_context_depends_on_embedded_or_external_annotation() {
     for entity in [false, true] {
         for navigation in [false, true] {
@@ -110,6 +185,11 @@ fn property_path_context_depends_on_embedded_or_external_annotation() {
                         let model =
                             Resolver::resolve_document(parsed.unwrap().edmx.unwrap()).unwrap();
                         validator::validate_document(&model).unwrap();
+                        assert_eq!(
+                            model.schemas[0].annotations.get().unwrap().len(),
+                            1,
+                            "{model:?}"
+                        );
                         let diagnostics = validator::validate_annotations(&model);
                         assert_eq!(
                             diagnostics.is_empty(),
