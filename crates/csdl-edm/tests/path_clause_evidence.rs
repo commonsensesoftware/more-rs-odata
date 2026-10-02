@@ -3,6 +3,106 @@
 use csdl_edm::{conformance::ValidationProfile as P, parser, resolver::Resolver, validator};
 
 #[test]
+fn structured_type_paths_start_at_the_annotated_type() {
+    use csdl_edm::edm::{AnnotationTarget as T, SchemaElement as S};
+    for entity in [false, true] {
+        let kind = if entity { "EntityType" } else { "ComplexType" };
+        let abstract_xml = if entity { r#" Abstract="true""# } else { "" };
+        let abstract_json = if entity { r#", "$Abstract":true"# } else { "" };
+        for external in [false, true] {
+            for expression in [
+                "Path",
+                "PropertyPath",
+                "NavigationPropertyPath",
+                "AnnotationPath",
+                "ModelElementPath",
+            ] {
+                for (path, resolves, property_endpoint, navigation_endpoint, annotation_endpoint) in [
+                    ("", true, !entity, entity, false),
+                    ("Name", true, true, false, false),
+                    ("Nav", true, false, true, false),
+                    ("Nav/Name", true, true, false, false),
+                    ("N.Derived/Extra", true, true, false, false),
+                    ("@N.Text", true, true, false, true),
+                    ("Missing", false, false, false, false),
+                    ("N.Missing/Extra", false, false, false, false),
+                    ("@N.Missing", false, false, false, false),
+                ] {
+                    let ax = format!(
+                        r#"<Annotation Term="N.Value"><{expression}>{path}</{expression}></Annotation>"#
+                    );
+                    let aj = format!(r#", "@N.Value":{{"${expression}":"{path}"}}"#);
+                    let (ix, ij, gx, gj) = if external {
+                        (
+                            String::new(),
+                            String::new(),
+                            format!(r#"<Annotations Target="N.Owner">{ax}</Annotations>"#),
+                            format!(
+                                r#", "$Annotations":{{"N.Owner":{{"@N.Value":{{"${expression}":"{path}"}}}}}}"#
+                            ),
+                        )
+                    } else {
+                        (ax, aj, String::new(), String::new())
+                    };
+                    let term_type = if expression == "Path" {
+                        "Edm.Untyped".into()
+                    } else {
+                        format!("Edm.{expression}")
+                    };
+                    let xml = format!(
+                        r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><Term Name="Value" Type="{term_type}"/><Term Name="Text" Type="Edm.String"/><EntityType Name="Target" Abstract="true"><Property Name="Name" Type="Edm.String"/></EntityType><{kind} Name="Owner"{abstract_xml}><Property Name="Name" Type="Edm.String"/><NavigationProperty Name="Nav" Type="N.Target"/>{ix}</{kind}><{kind} Name="Derived" BaseType="N.Owner"{abstract_xml}><Property Name="Extra" Type="Edm.String"/></{kind}>{gx}</Schema></edmx:DataServices></edmx:Edmx>"#
+                    );
+                    let json = format!(
+                        r#"{{"$Version":"4.01","N":{{"Value":{{"$Kind":"Term","$Type":"{term_type}"}},"Text":{{"$Kind":"Term"}},"Target":{{"$Kind":"EntityType","$Abstract":true,"Name":{{"$Nullable":true}}}},"Owner":{{"$Kind":"{kind}"{abstract_json},"Name":{{"$Nullable":true}},"Nav":{{"$Kind":"NavigationProperty","$Type":"N.Target","$Nullable":true}}{ij}}},"Derived":{{"$Kind":"{kind}"{abstract_json},"$BaseType":"N.Owner","Extra":{{"$Nullable":true}}}}{gj}}}}}"#
+                    );
+                    for parsed in [
+                        parser::from_xml_reader_with_profile(xml.as_bytes(), P::Strict),
+                        parser::from_json_reader_with_profile(json.as_bytes(), P::Strict),
+                    ] {
+                        let model =
+                            Resolver::resolve_document(parsed.unwrap().edmx.unwrap()).unwrap();
+                        validator::validate_document(&model).unwrap();
+                        let annotations = model.schemas[0].annotations.get().unwrap();
+                        assert_eq!(annotations.len(), 1);
+                        assert_eq!(annotations[0].expression_paths.len(), 1);
+                        let resolved = &annotations[0].expression_paths[0];
+                        assert_eq!(
+                            !resolved
+                                .segments
+                                .iter()
+                                .any(|s| matches!(s, T::Unresolved(_))),
+                            resolves,
+                            "{expression} {path}: {resolved:?}"
+                        );
+                        if path.is_empty() {
+                            assert!(
+                                matches!(resolved.segments.last(), Some(T::Element(e)) if match e.as_ref() { S::EntityType(t) => entity && t.name == "Owner", S::ComplexType(t) => !entity && t.name == "Owner", _ => false })
+                            );
+                        }
+                        let valid = resolves
+                            && match expression {
+                                "PropertyPath" => property_endpoint,
+                                "NavigationPropertyPath" => navigation_endpoint,
+                                "AnnotationPath" => annotation_endpoint,
+                                _ => true,
+                            };
+                        let diagnostics = validator::validate_annotations(&model);
+                        assert_eq!(
+                            diagnostics
+                                .iter()
+                                .any(|d| d.issue
+                                    == validator::AnnotationIssue::InvalidExpressionPath),
+                            !valid,
+                            "{kind} {expression} {path}: {diagnostics:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn container_and_resource_paths_use_their_declared_starting_context() {
     use csdl_edm::edm::{AnnotationTarget as T, EntityContainerElement as C};
     for expression in [
