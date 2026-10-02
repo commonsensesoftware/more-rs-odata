@@ -1,6 +1,26 @@
 use csdl_edm::{conformance::ValidationProfile, parser};
 
 #[test]
+fn cast_and_isof_precision_require_nonnegative_integer_syntax() {
+    for operator in ["Cast", "IsOf"] {
+        for (precision, json_precision, valid) in [
+            ("0", "0", true), ("12", "12", true), ("+12", "12", true), (" -0 ", "0", true),
+            ("-1", "-1", false), ("1.5", "1.5", false),
+            ("invalid", r#""invalid""#, false), ("", r#""""#, false),
+        ] {
+            let xml = format!(r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><Annotation Term="N.Value"><{operator} Type="Edm.Decimal" Precision="{precision}"><Decimal>1</Decimal></{operator}></Annotation></Schema></edmx:DataServices></edmx:Edmx>"#);
+            let json = format!(r#"{{"$Version":"4.01","N":{{"@N.Value":{{"${operator}":1,"$Type":"Edm.Decimal","$Precision":{json_precision}}}}}}}"#);
+            for result in [
+                parser::from_xml_reader_with_profile(xml.as_bytes(), ValidationProfile::Strict),
+                parser::from_json_reader_with_profile(json.as_bytes(), ValidationProfile::Strict),
+            ] {
+                assert_eq!(result.is_ok(), valid, "{operator}, {precision:?}: {result:?}");
+            }
+        }
+    }
+}
+
+#[test]
 fn strict_xml_limits_inline_url_references_to_expression_value_locations() {
     for (body, valid) in [
         (r#"<Annotation Term="N.Value"><Collection UrlRef="value"/></Annotation>"#, false),

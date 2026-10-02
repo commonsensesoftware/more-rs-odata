@@ -150,7 +150,16 @@ impl ExpressionFacets {
                     MaxLengthFacet::parse(s).ok_or_else(|| Error::Csdl("Invalid MaxLength".into()))
                 })
                 .transpose()?,
-            precision: get("Precision").map(str::to_owned),
+            precision: get("Precision").map(|value| {
+                let value = value.trim_matches([' ', '\t', '\r', '\n']);
+                let digits = value.strip_prefix(['+', '-']).unwrap_or(value);
+                if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit())
+                    || value.starts_with('-') && digits.bytes().any(|b| b != b'0')
+                {
+                    return Err(Error::Csdl("Precision must be a nonnegative integer".into()));
+                }
+                Ok(digits.to_owned())
+            }).transpose()?,
             scale: get("Scale")
                 .map(|s| ScaleFacet::parse(s).ok_or_else(|| Error::Csdl("Invalid Scale".into())))
                 .transpose()?,
