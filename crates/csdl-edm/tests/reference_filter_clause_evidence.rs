@@ -12,6 +12,95 @@ fn xml(references: &str, schemas: &str) -> String {
 }
 
 #[test]
+fn schema_namespaces_cannot_be_split_across_reference_documents() {
+    for split in [false, true] {
+        for json_format in [false, true] {
+            let parse = |source: String| {
+                if json_format {
+                    parser::from_json_reader_with_profile(source.as_bytes(), P::Strict).unwrap()
+                } else {
+                    parser::from_xml_reader_with_profile(source.as_bytes(), P::Strict).unwrap()
+                }
+            };
+            let root = parse(if json_format {
+                r#"{"$Version":"4.01","$Reference":{"left":{"$Include":[{"$Namespace":"Left"}]},"right":{"$Include":[{"$Namespace":"Right"}]}},"Root":{}}"#.into()
+            } else {
+                xml(
+                    r#"<edmx:Reference Uri="left"><edmx:Include Namespace="Left"/></edmx:Reference><edmx:Reference Uri="right"><edmx:Include Namespace="Right"/></edmx:Reference>"#,
+                    r#"<Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Root"/>"#,
+                )
+            });
+            let branch = |namespace: &str, reference: &str, member: &str| {
+                parse(if json_format {
+                    format!(
+                        r#"{{"$Version":"4.01","$Reference":{{"{reference}":{{"$Include":[{{"$Namespace":"Shared"}}]}}}},"{namespace}":{{"Owner":{{"$Kind":"ComplexType","Value":{{"$Type":"Shared.{member}"}}}}}}}}"#
+                    )
+                } else {
+                    xml(
+                        &format!(
+                            r#"<edmx:Reference Uri="{reference}"><edmx:Include Namespace="Shared"/></edmx:Reference>"#
+                        ),
+                        &format!(
+                            r#"<Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="{namespace}"><ComplexType Name="Owner"><Property Name="Value" Type="Shared.{member}"/></ComplexType></Schema>"#
+                        ),
+                    )
+                })
+            };
+            let shared = |member: &str| {
+                parse(if json_format {
+                    format!(
+                        r#"{{"$Version":"4.01","Shared":{{"{member}":{{"$Kind":"ComplexType"}}}}}}"#
+                    )
+                } else {
+                    xml(
+                        "",
+                        &format!(
+                            r#"<Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Shared"><ComplexType Name="{member}"/></Schema>"#
+                        ),
+                    )
+                })
+            };
+            let left = branch("Left", "shared", "First");
+            let right = branch(
+                "Right",
+                if split { "other" } else { "shared" },
+                if split { "Second" } else { "First" },
+            );
+            let first = shared("First");
+            let second = shared("Second");
+            let result = Resolver::resolve_with_loader(
+                root,
+                "https://example.test/root",
+                &mut |uri: &str| {
+                    Ok(match uri {
+                        "https://example.test/left" => left.clone(),
+                        "https://example.test/right" => right.clone(),
+                        "https://example.test/shared" => first.clone(),
+                        "https://example.test/other" => second.clone(),
+                        _ => panic!("unexpected reference {uri}"),
+                    })
+                },
+            );
+            if split {
+                assert!(
+                    format!("{:?}", result.unwrap_err()).contains("defined by multiple documents")
+                );
+            } else {
+                let model = result.unwrap();
+                csdl_edm::validator::validate_document(&model).unwrap();
+                assert_eq!(
+                    model
+                        .all_schemas()
+                        .filter(|s| s.namespace == "Shared")
+                        .count(),
+                    1
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn annotation_import_filters_apply_independently_and_in_combination() {
     let mut groups_xml = String::new();
     let mut groups_json = Vec::new();
