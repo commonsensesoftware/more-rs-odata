@@ -16,6 +16,56 @@ fn check(xml: &str, json: &str, valid: bool) {
 }
 
 #[test]
+fn schema_type_names_are_simple_and_unique_across_type_kinds() {
+    fn declaration(kind: &str, name: &str) -> (String, String) {
+        match kind {
+            "EntityContainer" => (
+                format!(r#"<Action Name="Helper"/><EntityContainer Name="{name}"><ActionImport Name="Run" Action="N.Helper"/></EntityContainer>"#),
+                format!(r#""Helper":[{{"$Kind":"Action"}}],"{name}":{{"$Kind":"EntityContainer","Run":{{"$Action":"N.Helper"}}}}"#),
+            ),
+            "Term" => (
+                format!(r#"<Term Name="{name}" Type="Edm.String"/>"#),
+                format!(r#""{name}":{{"$Kind":"Term","$Type":"Edm.String"}}"#),
+            ),
+            "Function" => (
+                format!(r#"<Function Name="{name}"><ReturnType Type="Edm.String"/></Function>"#),
+                format!(r#""{name}":[{{"$Kind":"Function","$ReturnType":{{"$Type":"Edm.String"}}}}]"#),
+            ),
+            "Action" => (
+                format!(r#"<Action Name="{name}"/>"#),
+                format!(r#""{name}":[{{"$Kind":"Action"}}]"#),
+            ),
+            "EnumType" => (
+                format!(r#"<EnumType Name="{name}"><Member Name="One"/></EnumType>"#),
+                format!(r#""{name}":{{"$Kind":"EnumType","One":0}}"#),
+            ),
+            "TypeDefinition" => (
+                format!(r#"<TypeDefinition Name="{name}" UnderlyingType="Edm.String"/>"#),
+                format!(r#""{name}":{{"$Kind":"TypeDefinition","$UnderlyingType":"Edm.String"}}"#),
+            ),
+            _ => (
+                format!(r#"<{kind} Name="{name}"/>"#),
+                format!(r#""{name}":{{"$Kind":"{kind}"}}"#),
+            ),
+        }
+    }
+    let kinds = ["EntityType", "ComplexType", "EnumType", "TypeDefinition"];
+    for kind in kinds {
+        for (name, expected) in [("Value", true), ("_Value", true), ("Été", true), ("", false), ("1Value", false), ("N.Value", false), ("Bad Name", false)] {
+            let (xml, json) = declaration(kind, name);
+            check(&xml, &json, expected);
+        }
+        for other_kind in ["EntityType", "ComplexType", "EnumType", "TypeDefinition", "Term", "Function", "Action", "EntityContainer"] {
+            for (other_name, expected) in [("Value", false), ("value", true), ("Other", true)] {
+                let (first_xml, first_json) = declaration(kind, "Value");
+                let (second_xml, second_json) = declaration(other_kind, other_name);
+                check(&format!("{first_xml}{second_xml}"), &format!("{first_json},{second_json}"), expected);
+            }
+        }
+    }
+}
+
+#[test]
 fn enum_member_values_must_fit_the_underlying_integer_type() {
     for (ty, min, max, below, above) in [
         ("Byte", "0", "255", "-1", "256"),
