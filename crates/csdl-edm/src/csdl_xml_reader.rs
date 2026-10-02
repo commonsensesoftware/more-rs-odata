@@ -423,7 +423,8 @@ impl<R: BufRead> CsdlReader<R> {
                     }
                     return Err(self.csdl_err(format!("unexpected </{n}> in <{parent}>")));
                 }
-                Event::Text(_) | Event::CData(_) | Event::Comment(_) | Event::PI(_) => continue,
+                event @ (Event::Text(_) | Event::CData(_) | Event::GeneralRef(_)) => require_expression_whitespace(event)?,
+                Event::Comment(_) | Event::PI(_) => continue,
                 Event::Eof => return Err(self.csdl_err(format!("unexpected EOF in <{parent}>"))),
                 _ => continue,
             }
@@ -491,7 +492,8 @@ impl<R: BufRead> CsdlReader<R> {
                     }
                     return Err(self.csdl_err(format!("unexpected </{n}> in <{parent}>")));
                 }
-                Event::Text(_) | Event::CData(_) | Event::Comment(_) | Event::PI(_) => continue,
+                event @ (Event::Text(_) | Event::CData(_) | Event::GeneralRef(_)) => require_expression_whitespace(event)?,
+                Event::Comment(_) | Event::PI(_) => continue,
                 Event::Eof => return Err(self.csdl_err(format!("unexpected EOF in <{parent}>"))),
                 _ => continue,
             }
@@ -546,7 +548,8 @@ impl<R: BufRead> CsdlReader<R> {
                     }
                     return Err(self.csdl_err(format!("unexpected </{n}> in <PropertyValue>")));
                 }
-                Event::Text(_) | Event::CData(_) | Event::Comment(_) | Event::PI(_) => continue,
+                event @ (Event::Text(_) | Event::CData(_) | Event::GeneralRef(_)) => require_expression_whitespace(event)?,
+                Event::Comment(_) | Event::PI(_) => continue,
                 Event::Eof => return Err(self.csdl_err("unexpected EOF in <PropertyValue>")),
                 _ => continue,
             }
@@ -691,6 +694,23 @@ fn build_expr_from_empty(
         }
         _ => return Err(Error::Csdl(format!("Empty {name} expression is invalid"))),
     })
+}
+
+fn require_expression_whitespace(event: Event<'_>) -> Result<()> {
+    let value = match event {
+        Event::Text(text) => text.decode().map_err(|e| Error::Csdl(e.to_string()))?.into_owned(),
+        Event::CData(text) => text.decode().map_err(|e| Error::Csdl(e.to_string()))?.into_owned(),
+        Event::GeneralRef(reference) => {
+            let name = reference.decode().map_err(|e| Error::Csdl(e.to_string()))?;
+            quick_xml::escape::unescape(&format!("&{name};"))
+                .map_err(|e| Error::Csdl(e.to_string()))?.into_owned()
+        }
+        _ => unreachable!("Only character-data events are checked"),
+    };
+    if !value.bytes().all(|b| matches!(b, b' ' | b'\t' | b'\r' | b'\n')) {
+        return Err(Error::Csdl("Non-whitespace text is not allowed between expression children".into()));
+    }
+    Ok(())
 }
 
 fn attr_value(attrs: &[(String, String)], key: &str) -> Option<String> {

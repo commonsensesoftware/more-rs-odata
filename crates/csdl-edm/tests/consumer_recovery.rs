@@ -7,6 +7,45 @@ fn xml(expression: &str) -> String {
 }
 
 #[test]
+fn stray_text_in_expression_containers_is_not_silently_ignored() {
+    for body in ["junk", "&#65;", "<![CDATA[junk]]>"] {
+        for expression in [
+            format!("<Collection>{body}<Int>1</Int></Collection>"),
+            format!("<Add><Int>1</Int>{body}<Int>2</Int></Add>"),
+            format!("<Record>{body}<PropertyValue Property=\"Value\" Int=\"1\"/></Record>"),
+            format!(
+                "<Record><PropertyValue Property=\"Value\">{body}<Int>1</Int></PropertyValue></Record>"
+            ),
+        ] {
+            let source = xml(&expression);
+            assert!(
+                parser::from_xml_reader_with_report(source.as_bytes(), P::Strict).is_err(),
+                "{expression}"
+            );
+            let report =
+                parser::from_xml_reader_with_report(source.as_bytes(), P::Tolerant).unwrap();
+            assert_eq!(report.diagnostics.len(), 1, "{expression}");
+            assert!(
+                report.document.edmx.unwrap().schemas[0]
+                    .annotations
+                    .is_empty()
+            );
+        }
+    }
+    for body in [" \t\n", "&#32;&#10;"] {
+        let source = xml(&format!("<Collection>{body}<Int>1</Int></Collection>"));
+        for profile in [P::Strict, P::Tolerant] {
+            let report = parser::from_xml_reader_with_report(source.as_bytes(), profile).unwrap();
+            assert!(report.diagnostics.is_empty());
+            assert_eq!(
+                report.document.edmx.unwrap().schemas[0].annotations.len(),
+                1
+            );
+        }
+    }
+}
+
+#[test]
 fn xml_processing_instructions_do_not_change_annotation_values() {
     for expression in [
         "<String>left<?extension data?> right</String>",
