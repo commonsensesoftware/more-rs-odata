@@ -5,106 +5,139 @@ use csdl_edm::{conformance::ValidationProfile as P, parser, resolver::Resolver, 
 #[test]
 fn container_and_resource_paths_use_their_declared_starting_context() {
     use csdl_edm::edm::{AnnotationTarget as T, EntityContainerElement as C};
-    for location in ["container", "set", "singleton"] {
-        for external in [false, true] {
-            let paths = if location == "container" {
-                vec![
-                    ("", true),
-                    ("Items/Name", true),
-                    ("Items(1)/Name", true),
-                    ("One/Name", true),
-                    ("Call/p/Name", true),
-                    ("Do/$ReturnType/Name", true),
-                    ("Name", false),
-                    ("Missing/Name", false),
-                    ("@N.Text", false),
-                    ("N.E", false),
-                ]
-            } else {
-                vec![
-                    ("", true),
-                    ("Name", true),
-                    ("Nav/Name", true),
-                    ("N.Derived/Extra", true),
-                    ("@N.Text", true),
-                    ("Items/Name", false),
-                    ("Missing", false),
-                ]
-            };
-            for (path, valid) in paths {
-                let ax = format!(r#"<Annotation Term="N.Value"><Path>{path}</Path></Annotation>"#);
-                let aj = format!(r#", "@N.Value":{{"$Path":"{path}"}}"#);
-                let inline = |place: &str| {
-                    if !external && location == place {
-                        (ax.as_str(), aj.as_str())
-                    } else {
-                        ("", "")
-                    }
-                };
-                let (cx, cj) = inline("container");
-                let (sx, sj) = inline("set");
-                let (ox, oj) = inline("singleton");
-                let target = match location {
-                    "container" => "N.C",
-                    "set" => "N.C/Items",
-                    _ => "N.C/One",
-                };
-                let gx = if external {
-                    format!(r#"<Annotations Target="{target}">{ax}</Annotations>"#)
+    for expression in [
+        "Path",
+        "PropertyPath",
+        "NavigationPropertyPath",
+        "AnnotationPath",
+        "ModelElementPath",
+    ] {
+        for location in ["container", "set", "singleton"] {
+            for external in [false, true] {
+                let paths = if location == "container" {
+                    vec![
+                        ("", true),
+                        ("Items/Name", true),
+                        ("Items/Nav", true),
+                        ("Items/@N.Text", true),
+                        ("Items(1)/Name", true),
+                        ("One/Name", true),
+                        ("Call/p/Name", true),
+                        ("Do/$ReturnType/Name", true),
+                        ("Name", false),
+                        ("Missing/Name", false),
+                        ("@N.Text", false),
+                        ("N.E", false),
+                    ]
                 } else {
-                    String::new()
+                    vec![
+                        ("", true),
+                        ("Name", true),
+                        ("Nav/Name", true),
+                        ("Nav", true),
+                        ("N.Derived/Extra", true),
+                        ("@N.Text", true),
+                        ("Items/Name", false),
+                        ("Missing", false),
+                    ]
                 };
-                let gj = if external {
-                    format!(
-                        r#", "$Annotations":{{"{target}":{{"@N.Value":{{"$Path":"{path}"}}}}}}"#
-                    )
-                } else {
-                    String::new()
-                };
-                let xml = format!(
-                    r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><Term Name="Value" Type="Edm.Untyped"/><Term Name="Text" Type="Edm.String"/><EntityType Name="E"><Key><PropertyRef Name="ID"/></Key><Property Name="ID" Type="Edm.Int32" Nullable="false"/><Property Name="Name" Type="Edm.String"/><NavigationProperty Name="Nav" Type="N.E"/></EntityType><EntityType Name="Derived" BaseType="N.E"><Property Name="Extra" Type="Edm.String"/></EntityType><Function Name="F"><Parameter Name="p" Type="N.E"/><ReturnType Type="N.E"/></Function><Action Name="A"><ReturnType Type="N.E"/></Action><EntityContainer Name="C"><EntitySet Name="Items" EntityType="N.E">{sx}</EntitySet><Singleton Name="One" Type="N.E">{ox}</Singleton><FunctionImport Name="Call" Function="N.F"/><ActionImport Name="Do" Action="N.A"/>{cx}</EntityContainer>{gx}</Schema></edmx:DataServices></edmx:Edmx>"#
-                );
-                let json = format!(
-                    r#"{{"$Version":"4.01","N":{{"Value":{{"$Kind":"Term","$Type":"Edm.Untyped"}},"Text":{{"$Kind":"Term"}},"E":{{"$Kind":"EntityType","$Key":["ID"],"ID":{{"$Type":"Edm.Int32"}},"Name":{{"$Nullable":true}},"Nav":{{"$Kind":"NavigationProperty","$Type":"N.E","$Nullable":true}}}},"Derived":{{"$Kind":"EntityType","$BaseType":"N.E","Extra":{{"$Nullable":true}}}},"F":[{{"$Kind":"Function","$Parameter":[{{"$Name":"p","$Type":"N.E","$Nullable":true}}],"$ReturnType":{{"$Type":"N.E","$Nullable":true}}}}],"A":[{{"$Kind":"Action","$ReturnType":{{"$Type":"N.E","$Nullable":true}}}}],"C":{{"$Kind":"EntityContainer","Items":{{"$Type":"N.E","$Collection":true{sj}}},"One":{{"$Type":"N.E"{oj}}},"Call":{{"$Function":"N.F"}},"Do":{{"$Action":"N.A"}}{cj}}}{gj}}}}}"#
-                );
-                for parsed in [
-                    parser::from_xml_reader_with_profile(xml.as_bytes(), P::Strict),
-                    parser::from_json_reader_with_profile(json.as_bytes(), P::Strict),
-                ] {
-                    let model = Resolver::resolve_document(parsed.unwrap().edmx.unwrap()).unwrap();
-                    validator::validate_document(&model).unwrap();
-                    let annotations = model.schemas[0].annotations.get().unwrap();
-                    assert_eq!(annotations.len(), 1);
-                    let paths = &annotations[0].expression_paths;
-                    assert_eq!(paths.len(), 1);
-                    let resolved = &paths[0];
-                    assert_eq!(
-                        !resolved
-                            .segments
-                            .iter()
-                            .any(|s| matches!(s, T::Unresolved(_))),
-                        valid,
-                        "{location}, external={external}, {path}: {resolved:?}"
+                for (path, valid) in paths {
+                    let valid = valid && (expression == "Path" || !path.contains('('));
+                    let endpoint_valid = match expression {
+                        "PropertyPath" => {
+                            path.ends_with("Name")
+                                || path.ends_with("Extra")
+                                || path.ends_with("@N.Text")
+                        }
+                        "NavigationPropertyPath" => {
+                            path.ends_with("Nav") || path.is_empty() && location != "container"
+                        }
+                        "AnnotationPath" => path.ends_with("@N.Text"),
+                        _ => true,
+                    };
+                    let ax = format!(
+                        r#"<Annotation Term="N.Value"><{expression}>{path}</{expression}></Annotation>"#
                     );
-                    if path.is_empty() {
-                        let last = resolved.segments.last().unwrap();
-                        assert!(
-                            match location {
-                                "container" => matches!(last, T::Container(_)),
-                                "set" =>
-                                    matches!(last, T::Resource(r) if matches!(r.as_ref(), C::EntitySet(_))),
-                                _ =>
-                                    matches!(last, T::Resource(r) if matches!(r.as_ref(), C::Singleton(_))),
-                            },
-                            "{last:?}"
+                    let aj = format!(r#", "@N.Value":{{"${expression}":"{path}"}}"#);
+                    let inline = |place: &str| {
+                        if !external && location == place {
+                            (ax.as_str(), aj.as_str())
+                        } else {
+                            ("", "")
+                        }
+                    };
+                    let (cx, cj) = inline("container");
+                    let (sx, sj) = inline("set");
+                    let (ox, oj) = inline("singleton");
+                    let target = match location {
+                        "container" => "N.C",
+                        "set" => "N.C/Items",
+                        _ => "N.C/One",
+                    };
+                    let gx = if external {
+                        format!(r#"<Annotations Target="{target}">{ax}</Annotations>"#)
+                    } else {
+                        String::new()
+                    };
+                    let gj = if external {
+                        format!(
+                            r#", "$Annotations":{{"{target}":{{"@N.Value":{{"${expression}":"{path}"}}}}}}"#
+                        )
+                    } else {
+                        String::new()
+                    };
+                    let term_type = if expression == "Path" {
+                        "Edm.Untyped".to_owned()
+                    } else {
+                        format!("Edm.{expression}")
+                    };
+                    let xml = format!(
+                        r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><Term Name="Value" Type="{term_type}"/><Term Name="Text" Type="Edm.String"/><EntityType Name="E"><Key><PropertyRef Name="ID"/></Key><Property Name="ID" Type="Edm.Int32" Nullable="false"/><Property Name="Name" Type="Edm.String"/><NavigationProperty Name="Nav" Type="N.E"/></EntityType><EntityType Name="Derived" BaseType="N.E"><Property Name="Extra" Type="Edm.String"/></EntityType><Function Name="F"><Parameter Name="p" Type="N.E"/><ReturnType Type="N.E"/></Function><Action Name="A"><ReturnType Type="N.E"/></Action><EntityContainer Name="C"><EntitySet Name="Items" EntityType="N.E">{sx}</EntitySet><Singleton Name="One" Type="N.E">{ox}</Singleton><FunctionImport Name="Call" Function="N.F"/><ActionImport Name="Do" Action="N.A"/>{cx}</EntityContainer>{gx}</Schema></edmx:DataServices></edmx:Edmx>"#
+                    );
+                    let json = format!(
+                        r#"{{"$Version":"4.01","N":{{"Value":{{"$Kind":"Term","$Type":"{term_type}"}},"Text":{{"$Kind":"Term"}},"E":{{"$Kind":"EntityType","$Key":["ID"],"ID":{{"$Type":"Edm.Int32"}},"Name":{{"$Nullable":true}},"Nav":{{"$Kind":"NavigationProperty","$Type":"N.E","$Nullable":true}}}},"Derived":{{"$Kind":"EntityType","$BaseType":"N.E","Extra":{{"$Nullable":true}}}},"F":[{{"$Kind":"Function","$Parameter":[{{"$Name":"p","$Type":"N.E","$Nullable":true}}],"$ReturnType":{{"$Type":"N.E","$Nullable":true}}}}],"A":[{{"$Kind":"Action","$ReturnType":{{"$Type":"N.E","$Nullable":true}}}}],"C":{{"$Kind":"EntityContainer","Items":{{"$Type":"N.E","$Collection":true{sj}}},"One":{{"$Type":"N.E"{oj}}},"Call":{{"$Function":"N.F"}},"Do":{{"$Action":"N.A"}}{cj}}}{gj}}}}}"#
+                    );
+                    for parsed in [
+                        parser::from_xml_reader_with_profile(xml.as_bytes(), P::Strict),
+                        parser::from_json_reader_with_profile(json.as_bytes(), P::Strict),
+                    ] {
+                        let model =
+                            Resolver::resolve_document(parsed.unwrap().edmx.unwrap()).unwrap();
+                        validator::validate_document(&model).unwrap();
+                        let annotations = model.schemas[0].annotations.get().unwrap();
+                        assert_eq!(annotations.len(), 1);
+                        let paths = &annotations[0].expression_paths;
+                        assert_eq!(paths.len(), 1);
+                        let resolved = &paths[0];
+                        assert_eq!(
+                            !resolved
+                                .segments
+                                .iter()
+                                .any(|s| matches!(s, T::Unresolved(_))),
+                            valid,
+                            "{location}, external={external}, {path}: {resolved:?}"
+                        );
+                        if path.is_empty() {
+                            let last = resolved.segments.last().unwrap();
+                            assert!(
+                                match location {
+                                    "container" => matches!(last, T::Container(_)),
+                                    "set" =>
+                                        matches!(last, T::Resource(r) if matches!(r.as_ref(), C::EntitySet(_))),
+                                    _ =>
+                                        matches!(last, T::Resource(r) if matches!(r.as_ref(), C::Singleton(_))),
+                                },
+                                "{last:?}"
+                            );
+                        }
+                        assert_eq!(
+                            validator::validate_annotations(&model)
+                                .iter()
+                                .any(|d| d.issue
+                                    == validator::AnnotationIssue::InvalidExpressionPath),
+                            !(valid && endpoint_valid)
                         );
                     }
-                    assert_eq!(
-                        validator::validate_annotations(&model)
-                            .iter()
-                            .any(|d| d.issue == validator::AnnotationIssue::InvalidExpressionPath),
-                        !valid
-                    );
                 }
             }
         }

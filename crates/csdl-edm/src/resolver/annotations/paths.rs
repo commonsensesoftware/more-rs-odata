@@ -127,7 +127,7 @@ impl Scope<'_> {
                     } else { AnnotationTarget::Unresolved((*part).into()) }
                 } else if part.is_empty() { AnnotationTarget::Unresolved(String::new()) }
                 else { self.child(&parent, part, ns) };
-                if container_start && kind == AnnotationPathKind::Value
+                if container_start
                     && !matches!(&next, AnnotationTarget::Resource(_))
                     && !matches!(&next, AnnotationTarget::SelectedItem { collection, .. }
                         if matches!(collection.as_ref(), AnnotationTarget::Resource(_)))
