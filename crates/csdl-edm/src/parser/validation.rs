@@ -337,9 +337,13 @@ pub(super) fn xml_source_with_diagnostics<R: io::BufRead>(
             Event::DocType(_) => {
                 return Err(invalid("CSDL does not allow document type declarations"));
             }
-            Event::Text(ref text) if skipped == 0 && profile == ValidationProfile::Strict => {
+            Event::Text(_) | Event::GeneralRef(_)
+                if skipped == 0 && profile == ValidationProfile::Strict =>
+            {
                 if names.last().is_none_or(|name| declaration(name))
-                    && !text.as_ref().iter().all(u8::is_ascii_whitespace)
+                    && character_data.as_deref().is_some_and(|text| {
+                        !text.bytes().all(|b| matches!(b, b' ' | b'\t' | b'\r' | b'\n'))
+                    })
                 {
                     return Err(invalid("Text is not allowed in a CSDL declaration"));
                 }

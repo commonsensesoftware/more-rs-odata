@@ -1,5 +1,28 @@
 use csdl_edm::{conformance::ValidationProfile, parser};
 
+#[test]
+fn xml_declaration_text_rules_apply_to_decoded_references() {
+    for (text, valid) in [
+        (" \t\n", true),
+        ("&#32;&#9;&#10;&#13;", true),
+        ("unexpected", false),
+        ("&#65;", false),
+        ("&amp;", false),
+        ("&#xA0;", false),
+    ] {
+        for nested in [false, true] {
+            let body = if nested {
+                format!("<ComplexType Name=\"Owner\">{text}</ComplexType>")
+            } else {
+                text.to_owned()
+            };
+            let xml = format!(r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N">{body}</Schema></edmx:DataServices></edmx:Edmx>"#);
+            let result = parser::from_xml_reader_with_profile(xml.as_bytes(), ValidationProfile::Strict);
+            assert_eq!(result.is_ok(), valid, "nested={nested}: {text:?}: {result:?}");
+        }
+    }
+}
+
 fn strict(json: &str) -> bool {
     parser::from_json_reader_with_profile(json.as_bytes(), ValidationProfile::Strict).is_ok()
 }
