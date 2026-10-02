@@ -7,6 +7,38 @@ fn xml(expression: &str) -> String {
 }
 
 #[test]
+fn xml_reserved_namespace_bindings_are_enforced_in_skipped_extensions() {
+    for (attributes, valid) in [
+        (
+            r#"xmlns:xml="http://www.w3.org/XML/1998/namespace" xml:lang="en""#,
+            true,
+        ),
+        (r#"xmlns="""#, true),
+        (r#"xmlns:x="urn:extension""#, true),
+        (r#"xmlns:xml="urn:wrong""#, false),
+        (r#"xmlns:xmlns="urn:wrong""#, false),
+        (r#"xmlns:x="http://www.w3.org/XML/1998/namespace""#, false),
+        (r#"xmlns="http://www.w3.org/XML/1998/namespace""#, false),
+        (r#"xmlns:x="http://www.w3.org/2000/xmlns/""#, false),
+        (r#"xmlns="http://www.w3.org/2000/xmlns/""#, false),
+        (r#"xmlns:x="""#, false),
+    ] {
+        let source = xml("<Int>1</Int>").replace(
+            "<ComplexType Name=\"Kept\"/>",
+            &format!("<Future><Nested {attributes}/></Future><ComplexType Name=\"Kept\"/>"),
+        );
+        for profile in [P::Strict, P::Tolerant] {
+            let result = parser::from_xml_reader_with_report(source.as_bytes(), profile);
+            assert_eq!(
+                result.is_ok(),
+                valid,
+                "{profile:?}: {attributes}: {result:?}"
+            );
+        }
+    }
+}
+
+#[test]
 fn xml_namespace_bindings_and_expanded_attribute_names_are_checked_before_skipping() {
     for (markup, valid) in [
         ("<Future><missing:Element/></Future>", false),

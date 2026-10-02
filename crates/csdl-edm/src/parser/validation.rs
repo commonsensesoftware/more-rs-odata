@@ -234,6 +234,17 @@ pub(super) fn xml_source_with_diagnostics<R: io::BufRead>(
                     if !crate::csdl_xml_reader::valid_xml_characters(&value) {
                         return Err(invalid("invalid XML character in attribute value"));
                     }
+                    if key == "xmlns" || key.starts_with("xmlns:") {
+                        let xml_namespace = "http://www.w3.org/XML/1998/namespace";
+                        let xmlns_namespace = "http://www.w3.org/2000/xmlns/";
+                        if key == "xmlns:xmlns"
+                            || value == xmlns_namespace
+                            || (key == "xmlns:xml") != (value == xml_namespace)
+                            || key.starts_with("xmlns:") && value.is_empty()
+                        {
+                            return Err(invalid("Invalid reserved XML namespace binding"));
+                        }
+                    }
                 }
                 let empty = matches!(event, Event::Empty(_));
                 if depth == 0 {
