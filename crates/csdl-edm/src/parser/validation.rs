@@ -329,6 +329,12 @@ pub(super) fn xml_source_with_diagnostics<R: io::BufRead>(
                         && !attr.key.as_ref().starts_with(b"xmlns")
                     {
                         let key = std::str::from_utf8(local.as_ref()).map_err(io::Error::other)?;
+                        if profile == ValidationProfile::Strict
+                            && expression(name)
+                            && !attribute_allowed(name, key, false)
+                        {
+                            return Err(invalid(format!("Attribute {key} is not allowed on {name}")));
+                        }
                         let value = attr
                             .decoded_and_normalized_value(
                                 quick_xml::XmlVersion::Implicit1_0,
@@ -985,7 +991,8 @@ pub(super) fn attribute_allowed(name: &str, key: &str, json: bool) -> bool {
         ),
         "DefaultValue" => matches!(name, "Property" | "Term"),
         "ContainsTarget" | "Partner" => name == "NavigationProperty",
-        "Property" | "ReferencedProperty" => name == "ReferentialConstraint",
+        "Property" => matches!(name, "ReferentialConstraint" | "PropertyValue"),
+        "ReferencedProperty" => name == "ReferentialConstraint",
         "IsBound" | "EntitySetPath" => matches!(name, "Action" | "Function"),
         "IsComposable" => name == "Function",
         "Extends" => name == "EntityContainer",
@@ -1000,7 +1007,7 @@ pub(super) fn attribute_allowed(name: &str, key: &str, json: bool) -> bool {
             matches!(name, "Annotations" | "NavigationPropertyBinding")
                 || (json && name == "Annotation")
         }
-        "Path" => matches!(name, "NavigationPropertyBinding" | "Annotation"),
+        "Path" => matches!(name, "NavigationPropertyBinding" | "Annotation" | "PropertyValue" | "LabeledElement"),
         "TermNamespace" | "TargetNamespace" => name == "IncludeAnnotations",
         "Value" => name == "Member",
         "Collection" => {

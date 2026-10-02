@@ -1,6 +1,24 @@
 use csdl_edm::{conformance::ValidationProfile, parser};
 
 #[test]
+fn strict_xml_checks_known_attributes_on_expression_elements() {
+    for (expression, valid) in [
+        (r#"<Collection Name="Wrong"><Int>1</Int></Collection>"#, false),
+        (r#"<Record Function="N.Wrong"/>"#, false),
+        (r#"<String Nullable="true">value</String>"#, false),
+        (r#"<Apply Function="odata.concat" Type="Edm.String"><String>a</String><String>b</String></Apply>"#, false),
+        (r#"<Cast Type="Edm.String" Nullable="true"><String>a</String></Cast>"#, true),
+        (r#"<Record Type="N.R"><PropertyValue Property="P" String="value"/></Record>"#, true),
+        (r#"<LabeledElement Name="Label" Path="P"/>"#, true),
+        (r#"<String FutureAttribute="ignored">value</String>"#, true),
+    ] {
+        let xml = format!(r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><Annotation Term="N.Value">{expression}</Annotation></Schema></edmx:DataServices></edmx:Edmx>"#);
+        let result = parser::from_xml_reader_with_profile(xml.as_bytes(), ValidationProfile::Strict);
+        assert_eq!(result.is_ok(), valid, "{expression}: {result:?}");
+    }
+}
+
+#[test]
 fn xml_declaration_text_rules_apply_to_decoded_references() {
     for (text, valid) in [
         (" \t\n", true),
