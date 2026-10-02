@@ -167,13 +167,17 @@ pub(super) fn xml_source_with_diagnostics<R: io::BufRead>(
                 Some(text.decode().map_err(io::Error::other)?.into_owned())
             }
             Event::CData(text) => Some(text.decode().map_err(io::Error::other)?.into_owned()),
-            Event::PI(instruction) => Some(
-                reader
+            Event::PI(instruction) => {
+                let target = reader.decoder().decode(instruction.target()).map_err(io::Error::other)?;
+                if target.eq_ignore_ascii_case("xml") || !xml_name(&target) {
+                    return Err(invalid("Invalid XML processing instruction target"));
+                }
+                Some(reader
                     .decoder()
                     .decode(instruction.as_ref())
                     .map_err(io::Error::other)?
-                    .into_owned(),
-            ),
+                    .into_owned())
+            }
             Event::GeneralRef(reference) => {
                 let name = reference.decode().map_err(io::Error::other)?;
                 Some(
@@ -383,6 +387,22 @@ pub(super) fn xml_source_with_diagnostics<R: io::BufRead>(
         return Err(invalid("CSDL requires one complete root element"));
     }
     Ok(writer.into_inner())
+}
+
+// XML 1.0 Name productions differ from CSDL simple identifiers: colons,
+// hyphens, wider Unicode ranges and unrestricted lengths are allowed.
+fn xml_name(value: &str) -> bool {
+    fn start(c: char) -> bool {
+        matches!(c, ':' | '_' | 'A'..='Z' | 'a'..='z'
+            | '\u{C0}'..='\u{D6}' | '\u{D8}'..='\u{F6}' | '\u{F8}'..='\u{2FF}'
+            | '\u{370}'..='\u{37D}' | '\u{37F}'..='\u{1FFF}' | '\u{200C}'..='\u{200D}'
+            | '\u{2070}'..='\u{218F}' | '\u{2C00}'..='\u{2FEF}' | '\u{3001}'..='\u{D7FF}'
+            | '\u{F900}'..='\u{FDCF}' | '\u{FDF0}'..='\u{FFFD}' | '\u{10000}'..='\u{EFFFF}')
+    }
+    let mut chars = value.chars();
+    chars.next().is_some_and(start) && chars.all(|c| {
+        start(c) || matches!(c, '-' | '.' | '0'..='9' | '\u{B7}' | '\u{300}'..='\u{36F}' | '\u{203F}'..='\u{2040}')
+    })
 }
 
 fn validate_xml_declaration(raw: &str) -> io::Result<()> {

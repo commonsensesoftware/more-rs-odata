@@ -7,6 +7,43 @@ fn xml(expression: &str) -> String {
 }
 
 #[test]
+fn xml_processing_instruction_targets_require_nonreserved_xml_names() {
+    for (target, valid) in [
+        ("extension", true),
+        ("xml-stylesheet", true),
+        ("ns:extension", true),
+        ("日本語", true),
+        ("_name-1.0", true),
+        ("XML", false),
+        ("Xml", false),
+        ("xMl", false),
+        ("1extension", false),
+        ("extension?", false),
+    ] {
+        for skipped in [false, true] {
+            let instruction = format!("<?{target} data?>");
+            let markup = if skipped {
+                format!("<Future>{instruction}</Future>")
+            } else {
+                instruction
+            };
+            let source = xml("<Int>1</Int>").replace(
+                "<ComplexType Name=\"Kept\"/>",
+                &format!("{markup}<ComplexType Name=\"Kept\"/>"),
+            );
+            for profile in [P::Strict, P::Tolerant] {
+                let result = parser::from_xml_reader_with_report(source.as_bytes(), profile);
+                assert_eq!(
+                    result.is_ok(),
+                    valid,
+                    "{profile:?}, skipped={skipped}: {target}: {result:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn xml_forbidden_delimiters_fail_even_in_skipped_extensions() {
     for (markup, valid) in [
         (r#"<Annotation Term="N.T" String="a<b"/>"#, false),
