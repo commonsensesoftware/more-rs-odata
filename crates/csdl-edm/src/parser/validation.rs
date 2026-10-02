@@ -142,6 +142,11 @@ pub(super) fn xml_source_with_diagnostics<R: io::BufRead>(
             validate_xml_declaration(&raw)?;
         }
         at_document_start = false;
+        if let Event::Text(text) = &event {
+            if text.as_ref().windows(3).any(|bytes| bytes == b"]]>") {
+                return Err(invalid("The sequence ]]> is not allowed in XML text"));
+            }
+        }
         if depth == 0 {
             match &event {
                 Event::Text(text)
@@ -191,6 +196,9 @@ pub(super) fn xml_source_with_diagnostics<R: io::BufRead>(
                 // annotation or skipping an unknown extension subtree.
                 for attr in e.attributes() {
                     let attr = attr.map_err(io::Error::other)?;
+                    if attr.value.contains(&b'<') {
+                        return Err(invalid("Literal < is not allowed in XML attribute values"));
+                    }
                     let value = attr.decoded_and_normalized_value(
                         quick_xml::XmlVersion::Implicit1_0,
                         reader.decoder(),

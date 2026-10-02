@@ -7,6 +7,46 @@ fn xml(expression: &str) -> String {
 }
 
 #[test]
+fn xml_forbidden_delimiters_fail_even_in_skipped_extensions() {
+    for (markup, valid) in [
+        (r#"<Annotation Term="N.T" String="a<b"/>"#, false),
+        (r#"<Annotation Term="N.T" String="a&lt;b"/>"#, true),
+        (
+            "<Annotation Term=\"N.T\"><String>]]></String></Annotation>",
+            false,
+        ),
+        (
+            "<Annotation Term=\"N.T\"><String>]]&gt;</String></Annotation>",
+            true,
+        ),
+        (
+            "<Annotation Term=\"N.T\"><String><![CDATA[<tag>]]></String></Annotation>",
+            true,
+        ),
+    ] {
+        for skipped in [false, true] {
+            let markup = if skipped {
+                format!("<Future>{markup}</Future>")
+            } else {
+                markup.into()
+            };
+            let source = xml("<Int>1</Int>").replace(
+                "<ComplexType Name=\"Kept\"/>",
+                &format!("{markup}<ComplexType Name=\"Kept\"/>"),
+            );
+            for profile in [P::Strict, P::Tolerant] {
+                let result = parser::from_xml_reader_with_report(source.as_bytes(), profile);
+                assert_eq!(
+                    result.is_ok(),
+                    valid,
+                    "{profile:?}, skipped={skipped}: {markup}: {result:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn xml_declaration_pseudo_attributes_follow_required_grammar() {
     for (attributes, valid) in [
         (r#"version="1.0""#, true),
