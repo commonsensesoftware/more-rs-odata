@@ -1,6 +1,96 @@
 use csdl_edm::{CsdlFormat, conformance::ValidationProfile as P, csdl::MaxLengthFacet, parser};
 
 #[test]
+fn property_srid_source_values_are_nonnegative_integers_or_variable() {
+    use csdl_edm::csdl::SridFacet;
+    for (xml_value, json_value, expected) in [
+        ("0", "0", Some(SridFacet::Number(0))),
+        ("4326", "4326", Some(SridFacet::Number(4326))),
+        ("variable", r#""variable""#, Some(SridFacet::Variable)),
+        ("-1", "-1", None),
+        ("1.5", "1.5", None),
+        ("Variable", r#""Variable""#, None),
+        ("unknown", r#""unknown""#, None),
+        ("", "null", None),
+        ("true", "true", None),
+    ] {
+        let xml = format!(
+            r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><ComplexType Name="Owner"><Property Name="Value" Type="Edm.GeometryPoint" SRID="{xml_value}"/></ComplexType></Schema></edmx:DataServices></edmx:Edmx>"#
+        );
+        let json = format!(
+            r#"{{"$Version":"4.01","N":{{"Owner":{{"$Kind":"ComplexType","Value":{{"$Type":"Edm.GeometryPoint","$SRID":{json_value}}}}}}}}}"#
+        );
+        for result in [
+            parser::from_xml_reader_with_profile(xml.as_bytes(), P::Strict),
+            parser::from_json_reader_with_profile(json.as_bytes(), P::Strict),
+        ] {
+            assert_eq!(
+                result.is_ok(),
+                expected.is_some(),
+                "{xml_value}: {result:?}"
+            );
+            if let Ok(document) = result {
+                let csdl_edm::csdl::SchemaElement::ComplexType(owner) =
+                    &document.edmx.unwrap().schemas[0].elements[0]
+                else {
+                    panic!("missing owner")
+                };
+                assert_eq!(owner.properties[0].srid, expected);
+            }
+        }
+    }
+}
+
+#[cfg(all(feature = "resolver", feature = "validator"))]
+#[test]
+fn property_srid_defaults_and_overrides_constrain_spatial_values() {
+    for (ty, default_srid) in [("GeometryPoint", 0), ("GeographyPoint", 4326)] {
+        for facet in [
+            None,
+            Some("0"),
+            Some("4326"),
+            Some("3857"),
+            Some("variable"),
+        ] {
+            for srid in [0, 4326, 3857] {
+                let xml_facet = facet.map(|s| format!(r#" SRID="{s}""#)).unwrap_or_default();
+                let json_facet = facet
+                    .map(|s| {
+                        if s == "variable" {
+                            r#", "$SRID":"variable""#.to_owned()
+                        } else {
+                            format!(r#", "$SRID":{s}"#)
+                        }
+                    })
+                    .unwrap_or_default();
+                let xml = format!(
+                    r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><ComplexType Name="Owner"><Property Name="Value" Type="Edm.{ty}"{xml_facet} DefaultValue="SRID={srid};Point(1 2)"/></ComplexType></Schema></edmx:DataServices></edmx:Edmx>"#
+                );
+                let json = format!(
+                    r#"{{"$Version":"4.01","N":{{"Owner":{{"$Kind":"ComplexType","Value":{{"$Type":"Edm.{ty}"{json_facet},"$DefaultValue":{{"type":"Point","coordinates":[1,2],"crs":{{"type":"name","properties":{{"name":"EPSG:{srid}"}}}}}}}}}}}}}}"#
+                );
+                let expected = facet == Some("variable")
+                    || srid == facet.map(|s| s.parse().unwrap()).unwrap_or(default_srid);
+                for document in [
+                    parser::from_xml_reader_with_profile(xml.as_bytes(), P::Strict).unwrap(),
+                    parser::from_json_reader_with_profile(json.as_bytes(), P::Strict).unwrap(),
+                ] {
+                    let model =
+                        csdl_edm::resolver::Resolver::resolve_document(document.edmx.unwrap())
+                            .unwrap();
+                    let result = csdl_edm::validator::validate_document(&model);
+                    assert_eq!(
+                        result.is_ok(),
+                        expected,
+                        "{ty} {facet:?} {srid}: {result:?}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn symbolic_property_scales_accept_case_variants_and_emit_lowercase() {
     use csdl_edm::csdl::ScaleFacet;
     for (symbol, expected) in [
