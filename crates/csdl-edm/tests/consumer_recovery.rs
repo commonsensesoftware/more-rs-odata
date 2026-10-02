@@ -7,6 +7,51 @@ fn xml(expression: &str) -> String {
 }
 
 #[test]
+fn xml_namespace_scope_is_restored_after_skipped_extensions() {
+    for (markup, valid) in [
+        (
+            r#"<Future xmlns:a="urn:one"><a:Child/></Future><a:Sibling/>"#,
+            false,
+        ),
+        (r#"<Future xmlns:a="urn:one"/><a:Sibling/>"#, false),
+        (
+            r#"<Future xmlns:a="urn:one"><Nested xmlns:a="urn:two"/><a:Child/></Future>"#,
+            true,
+        ),
+        (
+            r#"<Future xmlns:a="urn:one" xmlns:b="urn:two"><Nested xmlns:b="urn:one"/><Child a:value="1" b:value="2"/></Future>"#,
+            true,
+        ),
+        (
+            r#"<Future xmlns:a="urn:one" xmlns:b="urn:one"><Nested xmlns:b="urn:two"/><Child a:value="1" b:value="2"/></Future>"#,
+            false,
+        ),
+        (
+            r#"<Future xmlns="urn:extension"><Nested xmlns=""/></Future>"#,
+            true,
+        ),
+    ] {
+        let source = xml("<Int>1</Int>").replace(
+            "<ComplexType Name=\"Kept\"/>",
+            &format!("{markup}<ComplexType Name=\"Kept\"/>"),
+        );
+        for profile in [P::Strict, P::Tolerant] {
+            let result = parser::from_xml_reader_with_report(source.as_bytes(), profile);
+            assert_eq!(result.is_ok(), valid, "{profile:?}: {markup}: {result:?}");
+            if let Ok(report) = result {
+                assert!(report.diagnostics.is_empty());
+                let schema = &report.document.edmx.unwrap().schemas[0];
+                assert_eq!(schema.annotations.len(), 1);
+                assert_eq!(schema.elements.len(), 2);
+                assert!(
+                    matches!(&schema.elements[1], csdl_edm::csdl::SchemaElement::ComplexType(t) if t.name == "Kept")
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn xml_namespace_identity_uses_decoded_attribute_values() {
     let source = xml("<Int>1</Int>")
         .replace("/ns/edmx", "/ns/edm&#120;")
