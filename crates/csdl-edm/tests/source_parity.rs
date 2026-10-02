@@ -1,6 +1,22 @@
 use csdl_edm::{conformance::ValidationProfile, parser};
 
 #[test]
+fn cast_and_isof_symbolic_scale_values_are_case_sensitive() {
+    for operator in ["Cast", "IsOf"] {
+        for (scale, valid) in [("variable", true), ("floating", true), ("Variable", false), ("VARIABLE", false), ("Floating", false), ("FLOATING", false)] {
+            let xml = format!(r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><Annotation Term="N.Value"><{operator} Type="Edm.Decimal" Scale="{scale}"><Decimal>1</Decimal></{operator}></Annotation></Schema></edmx:DataServices></edmx:Edmx>"#);
+            let json = format!(r#"{{"$Version":"4.01","N":{{"@N.Value":{{"${operator}":1,"$Type":"Edm.Decimal","$Scale":"{scale}"}}}}}}"#);
+            for result in [
+                parser::from_xml_reader_with_profile(xml.as_bytes(), ValidationProfile::Strict),
+                parser::from_json_reader_with_profile(json.as_bytes(), ValidationProfile::Strict),
+            ] {
+                assert_eq!(result.is_ok(), valid, "{operator}, {scale}: {result:?}");
+            }
+        }
+    }
+}
+
+#[test]
 fn cast_and_isof_precision_require_nonnegative_integer_syntax() {
     for operator in ["Cast", "IsOf"] {
         for (precision, json_precision, valid) in [

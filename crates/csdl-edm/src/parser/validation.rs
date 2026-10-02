@@ -341,6 +341,14 @@ pub(super) fn xml_source_with_diagnostics<R: io::BufRead>(
                                 reader.decoder(),
                             )
                             .map_err(io::Error::other)?;
+                        if profile == ValidationProfile::Strict
+                            && expression(name)
+                            && key == "Scale"
+                            && (value.eq_ignore_ascii_case("variable") || value.eq_ignore_ascii_case("floating"))
+                            && !matches!(value.as_ref(), "variable" | "floating")
+                        {
+                            return Err(invalid("Symbolic Scale values are case-sensitive"));
+                        }
                         start.push_attribute((key, value.as_ref()));
                     }
                 }
@@ -1158,6 +1166,25 @@ impl<'de> serde::Deserialize<'de> for UniqueValue {
     }
 }
 
+fn json_expression_scale(value: &serde_json::Value) -> io::Result<()> {
+    use serde_json::Value as V;
+    match value {
+        V::Object(map) => {
+            if map.contains_key("$Cast") || map.contains_key("$IsOf") {
+                if let Some(V::String(scale)) = map.get("$Scale") {
+                    if !matches!(scale.as_str(), "variable" | "floating") {
+                        return Err(invalid("Invalid symbolic expression Scale"));
+                    }
+                }
+            }
+            for value in map.values() { json_expression_scale(value)?; }
+        }
+        V::Array(values) => for value in values { json_expression_scale(value)?; },
+        _ => {}
+    }
+    Ok(())
+}
+
 fn json_shapes(value: &serde_json::Value) -> io::Result<()> {
     use serde_json::Value as V;
     match value {
@@ -1165,6 +1192,7 @@ fn json_shapes(value: &serde_json::Value) -> io::Result<()> {
             for (key, value) in map {
                 // Annotation values follow expression grammar, handled separately.
                 if key.contains('@') {
+                    json_expression_scale(value)?;
                     continue;
                 }
                 if let (Some(kind), Some(attribute)) =
