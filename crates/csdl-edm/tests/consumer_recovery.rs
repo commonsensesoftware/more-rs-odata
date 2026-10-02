@@ -7,6 +7,34 @@ fn xml(expression: &str) -> String {
 }
 
 #[test]
+fn xml_processing_instructions_do_not_change_annotation_values() {
+    for expression in [
+        "<String>left<?extension data?> right</String>",
+        "<?extension data?><String>left right</String>",
+        "<Collection><?extension data?><String>left right</String></Collection>",
+        "<Record><?extension data?><PropertyValue Property=\"Text\"><String>left right</String></PropertyValue></Record>",
+        "<Record><PropertyValue Property=\"Text\"><?extension data?><String>left right</String></PropertyValue></Record>",
+    ] {
+        let expected = xml(&expression.replace("<?extension data?>", ""));
+        let source = xml(expression);
+        for profile in [P::Strict, P::Tolerant] {
+            let expected =
+                parser::from_xml_reader_with_report(expected.as_bytes(), profile).unwrap();
+            let actual = parser::from_xml_reader_with_report(source.as_bytes(), profile).unwrap();
+            assert!(
+                actual.diagnostics.is_empty(),
+                "{expression}: {:?}",
+                actual.diagnostics
+            );
+            assert_eq!(
+                actual.document, expected.document,
+                "{profile:?}: {expression}"
+            );
+        }
+    }
+}
+
+#[test]
 fn xml_attribute_whitespace_normalization_preserves_character_references() {
     use csdl_edm::expr::CsdlAnnotationExpression as E;
     for (value, expected) in [

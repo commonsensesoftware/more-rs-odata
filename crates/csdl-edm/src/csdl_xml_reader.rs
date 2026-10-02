@@ -378,7 +378,7 @@ impl<R: BufRead> CsdlReader<R> {
                         self.csdl_err(format!("unexpected </{n}> in text body of <{name}>"))
                     );
                 }
-                Event::Comment(_) => continue,
+                Event::Comment(_) | Event::PI(_) => continue,
                 Event::Eof => {
                     return Err(self.csdl_err(format!("unexpected EOF in text body of <{name}>")));
                 }
@@ -423,7 +423,7 @@ impl<R: BufRead> CsdlReader<R> {
                     }
                     return Err(self.csdl_err(format!("unexpected </{n}> in <{parent}>")));
                 }
-                Event::Text(_) | Event::CData(_) | Event::Comment(_) => continue,
+                Event::Text(_) | Event::CData(_) | Event::Comment(_) | Event::PI(_) => continue,
                 Event::Eof => return Err(self.csdl_err(format!("unexpected EOF in <{parent}>"))),
                 _ => continue,
             }
@@ -491,7 +491,7 @@ impl<R: BufRead> CsdlReader<R> {
                     }
                     return Err(self.csdl_err(format!("unexpected </{n}> in <{parent}>")));
                 }
-                Event::Text(_) | Event::CData(_) | Event::Comment(_) => continue,
+                Event::Text(_) | Event::CData(_) | Event::Comment(_) | Event::PI(_) => continue,
                 Event::Eof => return Err(self.csdl_err(format!("unexpected EOF in <{parent}>"))),
                 _ => continue,
             }
@@ -546,7 +546,7 @@ impl<R: BufRead> CsdlReader<R> {
                     }
                     return Err(self.csdl_err(format!("unexpected </{n}> in <PropertyValue>")));
                 }
-                Event::Text(_) | Event::CData(_) | Event::Comment(_) => continue,
+                Event::Text(_) | Event::CData(_) | Event::Comment(_) | Event::PI(_) => continue,
                 Event::Eof => return Err(self.csdl_err("unexpected EOF in <PropertyValue>")),
                 _ => continue,
             }
