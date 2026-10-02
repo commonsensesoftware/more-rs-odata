@@ -112,3 +112,79 @@ fn xml_properties_require_name_and_type_and_retain_optional_facets() {
         validate(document);
     }
 }
+
+#[cfg(all(feature = "resolver", feature = "validator"))]
+#[test]
+fn structural_properties_resolve_only_supported_scalar_and_collection_types() {
+    let xml_types = r#"<ComplexType Name="Detail"/><EntityType Name="Entity"/><EnumType Name="Choice"><Member Name="One"/></EnumType><TypeDefinition Name="Code" UnderlyingType="Edm.String"/>"#;
+    let json_types = r#""Detail":{"$Kind":"ComplexType"},"Entity":{"$Kind":"EntityType"},"Choice":{"$Kind":"EnumType","One":0},"Code":{"$Kind":"TypeDefinition","$UnderlyingType":"Edm.String"}"#;
+    for owner in ["EntityType", "ComplexType"] {
+        for (ty, expected) in [
+            ("Edm.String", true),
+            ("N.Detail", true),
+            ("N.Choice", true),
+            ("N.Code", true),
+            ("N.Entity", false),
+            ("N.Missing", false),
+            ("Missing.Detail", false),
+        ] {
+            for collection in [false, true] {
+                let xml_type = if collection {
+                    format!("Collection({ty})")
+                } else {
+                    ty.into()
+                };
+                for document in [
+                    xml(&format!(r#"{xml_types}<{owner} Name="Owner"><Property Name="Value" Type="{xml_type}" Nullable="false"/></{owner}>"#)).unwrap(),
+                    json(&format!(r#"{json_types},"Owner":{{"$Kind":"{owner}","Value":{{"$Type":"{ty}","$Collection":{collection},"$Nullable":false}}}}"#)).unwrap(),
+                ] {
+                    let result = csdl_edm::resolver::Resolver::resolve_document(document.edmx.unwrap())
+                        .map_err(|e| format!("{e:?}"))
+                        .and_then(|model| {
+                            csdl_edm::validator::validate_document(&model).map_err(|e| format!("{e:?}"))?;
+                            let properties = model.schemas[0].elements.iter().find_map(|element| match element.as_ref() {
+                                csdl_edm::edm::SchemaElement::EntityType(t) if t.name == "Owner" => Some(t.properties.get().unwrap()),
+                                csdl_edm::edm::SchemaElement::ComplexType(t) if t.name == "Owner" => Some(t.properties.get().unwrap()),
+                                _ => None,
+                            }).unwrap();
+                            assert_eq!(properties[0].is_collection, collection);
+                            Ok(())
+                        });
+                    assert_eq!(result.is_ok(), expected, "{owner} {xml_type}: {result:?}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn json_property_collections_require_boolean_control_and_item_type() {
+    for (control, collection) in [
+        ("", false),
+        (r#", "$Collection":false"#, false),
+        (r#", "$Collection":true"#, true),
+    ] {
+        let document = json(&format!(
+            r#""Owner":{{"$Kind":"ComplexType","Value":{{"$Type":"Edm.Int32"{control}}}}}"#
+        ))
+        .unwrap();
+        let csdl_edm::csdl::SchemaElement::ComplexType(owner) =
+            &document.edmx.as_ref().unwrap().schemas[0].elements[0]
+        else {
+            panic!("owner kind changed")
+        };
+        assert_eq!(owner.properties[0].type_name.as_deref(), Some("Edm.Int32"));
+        assert_eq!(owner.properties[0].is_collection, collection);
+        validate(document);
+    }
+    for (ty, control) in [
+        ("Collection(Edm.Int32)", "true"),
+        ("Collection(Edm.Int32)", "false"),
+        ("Edm.Int32", r#""true""#),
+        ("Edm.Int32", "1"),
+        ("Edm.Int32", "null"),
+        ("Edm.Int32", "[]"),
+    ] {
+        assert!(json(&format!(r#""Owner":{{"$Kind":"ComplexType","Value":{{"$Type":"{ty}","$Collection":{control}}}}}"#)).is_err(), "{ty} {control}");
+    }
+}
