@@ -7,6 +7,27 @@ fn xml(expression: &str) -> String {
 }
 
 #[test]
+fn xml_declarations_are_allowed_only_at_the_start_of_the_document() {
+    let declaration = r#"<?xml version="1.0" encoding="UTF-8"?>"#;
+    let document = xml("<Int>1</Int>");
+    for (source, valid) in [
+        (format!("{declaration}{document}"), true),
+        (format!("\u{feff}{declaration}{document}"), true),
+        (format!(" {declaration}{document}"), false),
+        (format!("<!--comment-->{declaration}{document}"), false),
+        (format!("{declaration}{declaration}{document}"), false),
+        (format!("{document}{declaration}"), false),
+        (xml(&format!("{declaration}<Int>1</Int>")), false),
+        (xml(&format!("<Future>{declaration}</Future>")), false),
+    ] {
+        for profile in [P::Strict, P::Tolerant] {
+            let result = parser::from_xml_reader_with_report(source.as_bytes(), profile);
+            assert_eq!(result.is_ok(), valid, "{profile:?}: {source}: {result:?}");
+        }
+    }
+}
+
+#[test]
 fn xml_document_boundaries_allow_only_whitespace_comments_and_instructions() {
     for (extra, valid) in [
         (" \t\r\n", true),

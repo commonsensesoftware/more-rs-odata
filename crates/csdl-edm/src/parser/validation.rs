@@ -121,6 +121,7 @@ pub(super) fn xml_source_with_diagnostics<R: io::BufRead>(
     let mut skipped = 0usize;
     let mut depth = 0usize;
     let mut roots = 0usize;
+    let mut at_document_start = true;
     let mut names = Vec::new();
     // Start depth, output offset, name-stack length, term. Dropping the complete
     // outer annotation avoids changing operator arity or inventing a default.
@@ -130,6 +131,10 @@ pub(super) fn xml_source_with_diagnostics<R: io::BufRead>(
         let event = reader
             .read_event_into(&mut buffer)
             .map_err(io::Error::other)?;
+        if matches!(event, Event::Decl(_)) && !at_document_start {
+            return Err(invalid("XML declaration is allowed only at the document start"));
+        }
+        at_document_start = false;
         if depth == 0 {
             match &event {
                 Event::Text(text)
