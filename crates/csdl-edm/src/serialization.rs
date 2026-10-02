@@ -1217,7 +1217,8 @@ fn write_start<W: io::Write>(
 ) -> io::Result<()> {
     let mut start = BytesStart::new(name);
     for (key, value) in attrs {
-        start.push_attribute((key.as_str(), value.as_str()));
+        let escaped = escape_xml_attribute(value);
+        start.push_attribute((key.as_bytes(), escaped.as_bytes()));
     }
     xml.write_event(Event::Start(start))
 }
@@ -1229,9 +1230,17 @@ fn write_empty<W: io::Write>(
 ) -> io::Result<()> {
     let mut start = BytesStart::new(name);
     for (key, value) in attrs {
-        start.push_attribute((key.as_str(), value.as_str()));
+        let escaped = escape_xml_attribute(value);
+        start.push_attribute((key.as_bytes(), escaped.as_bytes()));
     }
     xml.write_event(Event::Empty(start))
+}
+
+fn escape_xml_attribute(value: &str) -> String {
+    quick_xml::escape::escape(value)
+        .replace('\t', "&#9;")
+        .replace('\n', "&#10;")
+        .replace('\r', "&#13;")
 }
 
 fn write_end<W: io::Write>(xml: &mut quick_xml::Writer<W>, name: &str) -> io::Result<()> {
@@ -1244,7 +1253,8 @@ fn write_text<W: io::Write>(
     value: &str,
 ) -> io::Result<()> {
     write_start(xml, name, &[])?;
-    xml.write_event(Event::Text(BytesText::new(value)))?;
+    let escaped = quick_xml::escape::escape(value).replace('\r', "&#13;");
+    xml.write_event(Event::Text(BytesText::from_escaped(escaped)))?;
     write_end(xml, name)
 }
 

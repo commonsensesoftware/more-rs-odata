@@ -120,7 +120,9 @@ pub struct CsdlReader<R: BufRead> {
 impl<R: BufRead> CsdlReader<R> {
     pub fn from_reader(r: R) -> Self {
         let mut inner = quick_xml::Reader::from_reader(LocationBufRead::new(r));
-        inner.config_mut().trim_text(true);
+        // Literal whitespace, including text following a character reference,
+        // belongs to constant values. Structural readers ignore formatting text.
+        inner.config_mut().trim_text(false);
         Self {
             inner,
             buf: Vec::new(),

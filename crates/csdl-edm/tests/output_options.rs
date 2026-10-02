@@ -12,6 +12,37 @@ fn output(source: &str, options: &SerializationOptions) -> serde_json::Value {
 }
 
 #[test]
+fn xml_output_preserves_explicit_string_carriage_returns() {
+    for value in [
+        "one\rtwo",
+        "one\r\ntwo",
+        "one\ttwo\nthree",
+        "<&>\r",
+        "  padded  ",
+        "\t \n\r",
+    ] {
+        let source = serde_json::json!({"$Version":"4.01", "N": {"T":{"$Kind":"Term","$Type":"Edm.String"}, "@N.T":value,"U":{"$Kind":"Term","$Type":"Edm.String","$Collection":true},"@N.U":[value]}}).to_string();
+        let document = parser::from_json_reader(source.as_bytes()).unwrap();
+        for format in [CsdlFormat::Xml, CsdlFormat::Json] {
+            let mut output = Vec::new();
+            document
+                .write_as_with_options(&mut output, format, &SerializationOptions::default())
+                .unwrap();
+            let parsed = match format {
+                CsdlFormat::Xml => parser::from_xml_reader_with_profile(
+                    output.as_slice(),
+                    csdl_edm::conformance::ValidationProfile::Strict,
+                ),
+                CsdlFormat::Json => parser::from_json_reader(output.as_slice()),
+            }
+            .unwrap();
+            assert_eq!(parsed.to_json_value()["N"]["@N.T"], value, "{format:?}");
+            assert_eq!(parsed.to_json_value()["N"]["@N.U"][0], value, "{format:?}");
+        }
+    }
+}
+
+#[test]
 fn arbitrary_decimal_text_survives_numeric_and_ieee754_output() {
     let literal = "123456789012345678901234567890.1234567890123456789";
     let source = format!(
