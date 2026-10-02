@@ -1,6 +1,22 @@
 use csdl_edm::{conformance::ValidationProfile, parser};
 
 #[test]
+fn strict_xml_limits_inline_constants_to_expression_value_locations() {
+    for (body, valid) in [
+        (r#"<Annotation Term="N.Value"><Collection String="ignored"><String>kept</String></Collection></Annotation>"#, false),
+        (r#"<Annotation Term="N.Value"><Not Bool="true"><Bool>false</Bool></Not></Annotation>"#, false),
+        (r#"<ComplexType Name="Owner"><Property Name="P" Type="Edm.Int32" Int="1"/></ComplexType>"#, false),
+        (r#"<Annotation Term="N.Value" String="value"/>"#, true),
+        (r#"<Annotation Term="N.Value"><LabeledElement Name="Label" String="value"/></Annotation>"#, true),
+        (r#"<Annotation Term="N.Value"><Record><PropertyValue Property="P" String="value"/></Record></Annotation>"#, true),
+    ] {
+        let xml = format!(r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N">{body}</Schema></edmx:DataServices></edmx:Edmx>"#);
+        let result = parser::from_xml_reader_with_profile(xml.as_bytes(), ValidationProfile::Strict);
+        assert_eq!(result.is_ok(), valid, "{body}: {result:?}");
+    }
+}
+
+#[test]
 fn strict_xml_checks_known_attributes_on_expression_elements() {
     for (expression, valid) in [
         (r#"<Collection Name="Wrong"><Int>1</Int></Collection>"#, false),

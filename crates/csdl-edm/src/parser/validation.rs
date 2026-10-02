@@ -908,6 +908,10 @@ fn walk(node: &RawElement, parent: Option<&str>, json: bool) -> io::Result<()> {
 
 pub(super) fn attribute_allowed(name: &str, key: &str, json: bool) -> bool {
     match key {
+        "Binary" | "Bool" | "Date" | "DateTimeOffset" | "Decimal" | "Duration"
+        | "EnumMember" | "Float" | "Guid" | "Int" | "String" | "TimeOfDay" if !json => {
+            matches!(name, "Annotation" | "PropertyValue" | "LabeledElement")
+        }
         // Null has element notation only; it is not an unknown future attribute.
         "Null" => false,
         "Kind" if json => matches!(
