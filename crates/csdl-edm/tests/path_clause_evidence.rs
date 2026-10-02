@@ -3,6 +3,69 @@
 use csdl_edm::{conformance::ValidationProfile as P, parser, resolver::Resolver, validator};
 
 #[test]
+fn model_path_endpoints_match_the_declared_path_kind() {
+    for collection in [false, true] {
+        let xml_type = |ty: &str| {
+            if collection {
+                format!("Collection({ty})")
+            } else {
+                ty.to_owned()
+            }
+        };
+        for expression in ["PropertyPath", "NavigationPropertyPath", "AnnotationPath"] {
+            for (path, property, navigation, annotation) in [
+                ("Text", true, false, false),
+                ("Detail", true, false, false),
+                ("Choice", true, false, false),
+                ("Code", true, false, false),
+                ("Nav", false, true, false),
+                ("@N.Label", true, false, true),
+                ("@N.Related", false, true, true),
+                ("Missing", false, false, false),
+            ] {
+                let text_type = xml_type("Edm.String");
+                let detail_type = xml_type("N.DetailType");
+                let choice_type = xml_type("N.ChoiceType");
+                let code_type = xml_type("N.CodeType");
+                let entity_type = xml_type("N.Entity");
+                let xml = format!(
+                    r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><ComplexType Name="DetailType"/><EnumType Name="ChoiceType"><Member Name="One"/></EnumType><TypeDefinition Name="CodeType" UnderlyingType="Edm.String"/><EntityType Name="Entity" Abstract="true"/><Term Name="Value" Type="Edm.{expression}"/><Term Name="Label" Type="{text_type}" Nullable="false"/><Term Name="Related" Type="{entity_type}"/><ComplexType Name="Owner"><Property Name="Text" Type="{text_type}" Nullable="false"/><Property Name="Detail" Type="{detail_type}" Nullable="false"/><Property Name="Choice" Type="{choice_type}" Nullable="false"/><Property Name="Code" Type="{code_type}" Nullable="false"/><NavigationProperty Name="Nav" Type="{entity_type}"/><Annotation Term="N.Value"><{expression}>{path}</{expression}></Annotation></ComplexType></Schema></edmx:DataServices></edmx:Edmx>"#
+                );
+                let json = format!(
+                    r#"{{"$Version":"4.01","N":{{"DetailType":{{"$Kind":"ComplexType"}},"ChoiceType":{{"$Kind":"EnumType","One":0}},"CodeType":{{"$Kind":"TypeDefinition","$UnderlyingType":"Edm.String"}},"Entity":{{"$Kind":"EntityType","$Abstract":true}},"Value":{{"$Kind":"Term","$Type":"Edm.{expression}"}},"Label":{{"$Kind":"Term","$Collection":{collection}}},"Related":{{"$Kind":"Term","$Type":"N.Entity","$Collection":{collection}}},"Owner":{{"$Kind":"ComplexType","Text":{{"$Collection":{collection}}},"Detail":{{"$Type":"N.DetailType","$Collection":{collection}}},"Choice":{{"$Type":"N.ChoiceType","$Collection":{collection}}},"Code":{{"$Type":"N.CodeType","$Collection":{collection}}},"Nav":{{"$Kind":"NavigationProperty","$Type":"N.Entity","$Collection":{collection}}},"@N.Value":{{"${expression}":"{path}"}}}}}}}}"#
+                );
+                for parsed in [
+                    parser::from_xml_reader_with_profile(xml.as_bytes(), P::Strict),
+                    parser::from_json_reader_with_profile(json.as_bytes(), P::Strict),
+                ] {
+                    let model = Resolver::resolve_document(parsed.unwrap().edmx.unwrap()).unwrap();
+                    validator::validate_document(&model).unwrap();
+                    assert_eq!(model.schemas[0].annotations.get().unwrap().len(), 1);
+                    let diagnostics = validator::validate_annotations(&model);
+                    let valid = match expression {
+                        "PropertyPath" => property,
+                        "NavigationPropertyPath" => navigation,
+                        _ => annotation,
+                    };
+                    assert_eq!(
+                        diagnostics.is_empty(),
+                        valid,
+                        "{expression} {path} collection={collection}: {diagnostics:?}"
+                    );
+                    assert_eq!(
+                        diagnostics
+                            .iter()
+                            .any(|d| d.issue == validator::AnnotationIssue::InvalidExpressionPath),
+                        !valid,
+                        "{diagnostics:?}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn structured_type_paths_start_at_the_annotated_type() {
     use csdl_edm::edm::{AnnotationTarget as T, SchemaElement as S};
     for entity in [false, true] {
