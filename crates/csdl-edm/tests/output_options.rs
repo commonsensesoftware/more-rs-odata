@@ -12,6 +12,46 @@ fn output(source: &str, options: &SerializationOptions) -> serde_json::Value {
 }
 
 #[test]
+fn nested_annotations_and_defaults_preserve_xml_whitespace_values() {
+    let source = r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><Term Name="Note" Type="Edm.String"/><ComplexType Name="R"><Property Name="Text" Type="Edm.String" DefaultValue="  default&#9;&#13;&#10;  "/></ComplexType><Term Name="Value" Type="N.R"/><Annotation Term="N.Value"><Record><PropertyValue Property="Text" String="  value&#9;&#13;&#10;  "><Annotation Term="N.Note" String="  note&#9;&#13;&#10;  "/></PropertyValue></Record></Annotation></Schema></edmx:DataServices></edmx:Edmx>"#;
+    let document = parser::from_xml_reader_with_profile(
+        source.as_bytes(),
+        csdl_edm::conformance::ValidationProfile::Strict,
+    )
+    .unwrap();
+    for format in [CsdlFormat::Xml, CsdlFormat::Json] {
+        let mut bytes = Vec::new();
+        document
+            .write_as_with_options(&mut bytes, format, &SerializationOptions::default())
+            .unwrap();
+        let parsed = match format {
+            CsdlFormat::Xml => parser::from_xml_reader_with_profile(
+                bytes.as_slice(),
+                csdl_edm::conformance::ValidationProfile::Strict,
+            ),
+            CsdlFormat::Json => parser::from_json_reader_with_profile(
+                bytes.as_slice(),
+                csdl_edm::conformance::ValidationProfile::Strict,
+            ),
+        }
+        .unwrap();
+        let value = parsed.to_json_value();
+        assert_eq!(
+            value["N"]["R"]["Text"]["$DefaultValue"], "  default\t\r\n  ",
+            "{format:?}"
+        );
+        assert_eq!(
+            value["N"]["@N.Value"]["Text"], "  value\t\r\n  ",
+            "{format:?}"
+        );
+        assert_eq!(
+            value["N"]["@N.Value"]["Text@N.Note"], "  note\t\r\n  ",
+            "{format:?}"
+        );
+    }
+}
+
+#[test]
 fn xml_output_preserves_explicit_string_carriage_returns() {
     for value in [
         "one\rtwo",
