@@ -23,6 +23,57 @@ fn validate(document: CsdlDocument) {
 }
 
 #[test]
+fn complex_declarations_require_name_or_kind_and_retain_optional_content() {
+    assert!(xml("<ComplexType/>").is_err());
+    assert!(xml(r#"<ComplexType Abstract="true" OpenType="true"/>"#).is_err());
+    assert!(json(r#""Owner":{}"#).is_err());
+    for kind in ["null", "true", "1", "[]", r#""complextype""#] {
+        assert!(json(&format!(r#""Owner":{{"$Kind":{kind}}}"#)).is_err());
+    }
+    for document in [
+        xml(r#"<ComplexType Name="Owner"/>"#).unwrap(),
+        json(r#""Owner":{"$Kind":"ComplexType"}"#).unwrap(),
+    ] {
+        let csdl_edm::csdl::SchemaElement::ComplexType(owner) =
+            &document.edmx.as_ref().unwrap().schemas[0].elements[0]
+        else {
+            panic!("missing complex type")
+        };
+        assert_eq!(owner.name, "Owner");
+        assert_eq!(
+            (&owner.base_type, owner.abstract_, owner.open_type),
+            (&None, None, None)
+        );
+        assert!(
+            owner.properties.is_empty()
+                && owner.navigation_properties.is_empty()
+                && owner.annotations.is_empty()
+        );
+        validate(document);
+    }
+    for enabled in [false, true] {
+        for document in [
+            xml(&format!(r#"<Term Name="Note" Type="Edm.String"/><EntityType Name="Target"/><ComplexType Name="Base" Abstract="true"/><ComplexType Name="Owner" BaseType="N.Base" Abstract="{enabled}" OpenType="{enabled}"><Property Name="Text" Type="Edm.String"/><NavigationProperty Name="Related" Type="N.Target"/><Annotation Term="N.Note" String="retained"/></ComplexType>"#)).unwrap(),
+            json(&format!(r#""Note":{{"$Kind":"Term","$Type":"Edm.String"}},"Target":{{"$Kind":"EntityType"}},"Base":{{"$Kind":"ComplexType","$Abstract":true}},"Owner":{{"$Kind":"ComplexType","$BaseType":"N.Base","$Abstract":{enabled},"$OpenType":{enabled},"Text":{{"$Type":"Edm.String"}},"Related":{{"$Kind":"NavigationProperty","$Type":"N.Target"}},"@N.Note":"retained"}}"#)).unwrap(),
+        ] {
+            let owner = document.edmx.as_ref().unwrap().schemas[0].elements.iter().find_map(|e| match e {
+                csdl_edm::csdl::SchemaElement::ComplexType(t) if t.name == "Owner" => Some(t),
+                _ => None,
+            }).unwrap();
+            assert_eq!(owner.base_type.as_deref(), Some("N.Base"));
+            assert_eq!((owner.abstract_, owner.open_type), (Some(enabled), Some(enabled)));
+            assert_eq!(owner.properties.len(), 1);
+            assert_eq!(owner.properties[0].name, "Text");
+            assert_eq!(owner.navigation_properties.len(), 1);
+            assert_eq!(owner.navigation_properties[0].name, "Related");
+            assert_eq!(owner.annotations.len(), 1);
+            assert_eq!(document.to_json_value()["N"]["Owner"]["@N.Note"], "retained");
+            validate(document);
+        }
+    }
+}
+
+#[test]
 fn entity_declarations_require_xml_name_and_json_entity_kind() {
     assert!(xml("<EntityType/>").is_err());
     assert!(xml(r#"<EntityType Abstract="true" OpenType="true" HasStream="true"/>"#).is_err());
