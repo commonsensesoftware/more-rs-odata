@@ -130,6 +130,19 @@ pub(super) fn xml_source_with_diagnostics<R: io::BufRead>(
         let event = reader
             .read_event_into(&mut buffer)
             .map_err(io::Error::other)?;
+        if depth == 0 {
+            match &event {
+                Event::Text(text)
+                    if !text.as_ref().iter().all(|b| matches!(b, b' ' | b'\t' | b'\r' | b'\n')) =>
+                {
+                    return Err(invalid("Text is not allowed outside the XML document element"));
+                }
+                Event::CData(_) | Event::GeneralRef(_) => {
+                    return Err(invalid("Character data is not allowed outside the XML document element"));
+                }
+                _ => {}
+            }
+        }
         // Check character data before recovery can discard an annotation or
         // unknown subtree. Those policies cannot make malformed XML valid.
         let character_data = match &event {

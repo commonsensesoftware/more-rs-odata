@@ -7,6 +7,36 @@ fn xml(expression: &str) -> String {
 }
 
 #[test]
+fn xml_document_boundaries_allow_only_whitespace_comments_and_instructions() {
+    for (extra, valid) in [
+        (" \t\r\n", true),
+        ("<!--comment-->", true),
+        ("<?extension data?>", true),
+        ("unexpected", false),
+        ("&#32;", false),
+        ("&amp;", false),
+        ("<![CDATA[ ]]>", false),
+    ] {
+        for before in [false, true] {
+            let document = xml("<Int>1</Int>");
+            let source = if before {
+                format!("{extra}{document}")
+            } else {
+                format!("{document}{extra}")
+            };
+            for profile in [P::Strict, P::Tolerant] {
+                let result = parser::from_xml_reader_with_report(source.as_bytes(), profile);
+                assert_eq!(
+                    result.is_ok(),
+                    valid,
+                    "{profile:?}, before={before}: {extra:?}: {result:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn malformed_xml_comments_and_processing_instructions_cannot_be_skipped() {
     for (markup, valid) in [
         ("<!--ordinary comment-->", true),
