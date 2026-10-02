@@ -295,6 +295,16 @@ fn entity_sets_and_containment_collections_require_keys() {
                 true,
             ),
             (
+                r#"<ComplexType Name="Source"><NavigationProperty Name="Items" Type="Collection(N.E)" ContainsTarget="true"/></ComplexType>"#,
+                r#""Source":{"$Kind":"ComplexType","Items":{"$Kind":"NavigationProperty","$Type":"N.E","$Collection":true,"$ContainsTarget":true}}"#,
+                true,
+            ),
+            (
+                r#"<EntityType Name="Source"><NavigationProperty Name="Items" Type="Collection(N.E)" ContainsTarget="false"/></EntityType>"#,
+                r#""Source":{"$Kind":"EntityType","Items":{"$Kind":"NavigationProperty","$Type":"N.E","$Collection":true,"$ContainsTarget":false}}"#,
+                false,
+            ),
+            (
                 r#"<EntityContainer Name="C"><Singleton Name="Item" Type="N.E"/></EntityContainer>"#,
                 r#""C":{"$Kind":"EntityContainer","Item":{"$Type":"N.E"}}"#,
                 false,
