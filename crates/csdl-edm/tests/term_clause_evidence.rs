@@ -83,6 +83,234 @@ fn check(xml: &str, json: &str, valid: bool) {
 }
 
 #[test]
+fn spatial_term_defaults_require_matching_shape_and_srid() {
+    for family in ["Geography", "Geometry"] {
+        let srid = if family == "Geography" { 4326 } else { 0 };
+        for (shape, wkt, geojson) in [
+            (
+                "Point",
+                "Point(1 2)",
+                r#"{"type":"Point","coordinates":[1,2]}"#,
+            ),
+            (
+                "LineString",
+                "LineString(1 2,3 4)",
+                r#"{"type":"LineString","coordinates":[[1,2],[3,4]]}"#,
+            ),
+            (
+                "Polygon",
+                "Polygon((0 0,1 0,1 1,0 0))",
+                r#"{"type":"Polygon","coordinates":[[[0,0],[1,0],[1,1],[0,0]]]}"#,
+            ),
+            (
+                "MultiPoint",
+                "MultiPoint((1 2),(3 4))",
+                r#"{"type":"MultiPoint","coordinates":[[1,2],[3,4]]}"#,
+            ),
+            (
+                "MultiLineString",
+                "MultiLineString((1 2,3 4))",
+                r#"{"type":"MultiLineString","coordinates":[[[1,2],[3,4]]]}"#,
+            ),
+            (
+                "MultiPolygon",
+                "MultiPolygon(((0 0,1 0,1 1,0 0)))",
+                r#"{"type":"MultiPolygon","coordinates":[[[[0,0],[1,0],[1,1],[0,0]]]]}"#,
+            ),
+            (
+                "Collection",
+                "GeometryCollection(Point(1 2))",
+                r#"{"type":"GeometryCollection","geometries":[{"type":"Point","coordinates":[1,2]}]}"#,
+            ),
+        ] {
+            for (target, valid) in [
+                (shape, true),
+                ("", true),
+                (if shape == "Point" { "Polygon" } else { "Point" }, false),
+            ] {
+                check(
+                    &format!(
+                        r#"<Term Name="Value" Type="Edm.{family}{target}" DefaultValue="SRID={srid};{wkt}"/>"#
+                    ),
+                    &format!(
+                        r#""Value":{{"$Kind":"Term","$Type":"Edm.{family}{target}","$DefaultValue":{geojson}}}"#
+                    ),
+                    valid,
+                );
+            }
+        }
+        for (facet_xml, facet_json, valid) in [
+            ("", "", false),
+            (r#" SRID="3857""#, r#", "$SRID":3857"#, true),
+            (r#" SRID="variable""#, r#", "$SRID":"variable""#, true),
+        ] {
+            check(
+                &format!(
+                    r#"<Term Name="Value" Type="Edm.{family}Point" DefaultValue="SRID=3857;Point(1 2)"{facet_xml}/>"#
+                ),
+                &format!(
+                    r#""Value":{{"$Kind":"Term","$Type":"Edm.{family}Point","$DefaultValue":{{"type":"Point","coordinates":[1,2],"crs":{{"type":"name","properties":{{"name":"EPSG:3857"}}}}}}{facet_json}}}"#
+                ),
+                valid,
+            );
+        }
+        for (wkt, geojson) in [
+            ("Point(1)", r#"{"type":"Point","coordinates":[1]}"#),
+            (
+                "Polygon((0 0,1 0,1 1,2 2))",
+                r#"{"type":"Polygon","coordinates":[[[0,0],[1,0],[1,1],[2,2]]]}"#,
+            ),
+        ] {
+            check(
+                &format!(
+                    r#"<Term Name="Value" Type="Edm.{family}" DefaultValue="SRID={srid};{wkt}"/>"#
+                ),
+                &format!(
+                    r#""Value":{{"$Kind":"Term","$Type":"Edm.{family}","$DefaultValue":{geojson}}}"#
+                ),
+                false,
+            );
+        }
+    }
+}
+
+#[test]
+fn term_defaults_obey_direct_and_type_definition_facets() {
+    for (ty, value, xml_facets, json_facets, valid) in [
+        ("String", "é", r#"MaxLength="1""#, r#""$MaxLength":1"#, true),
+        (
+            "String",
+            "éa",
+            r#"MaxLength="1""#,
+            r#""$MaxLength":1"#,
+            false,
+        ),
+        (
+            "String",
+            "a",
+            r#"Unicode="false""#,
+            r#""$Unicode":false"#,
+            true,
+        ),
+        (
+            "String",
+            "é",
+            r#"Unicode="false""#,
+            r#""$Unicode":false"#,
+            false,
+        ),
+        (
+            "Binary",
+            "AA==",
+            r#"MaxLength="1""#,
+            r#""$MaxLength":1"#,
+            true,
+        ),
+        (
+            "Binary",
+            "AAA=",
+            r#"MaxLength="1""#,
+            r#""$MaxLength":1"#,
+            false,
+        ),
+        (
+            "Decimal",
+            "12.34",
+            r#"Precision="4" Scale="2""#,
+            r#""$Precision":4,"$Scale":2"#,
+            true,
+        ),
+        (
+            "Decimal",
+            "123.45",
+            r#"Precision="4" Scale="2""#,
+            r#""$Precision":4,"$Scale":2"#,
+            false,
+        ),
+        (
+            "Decimal",
+            "1.234",
+            r#"Precision="4" Scale="2""#,
+            r#""$Precision":4,"$Scale":2"#,
+            false,
+        ),
+        (
+            "Decimal",
+            "1.234",
+            r#"Scale="variable""#,
+            r#""$Scale":"variable""#,
+            true,
+        ),
+        (
+            "Decimal",
+            "1.2e3",
+            r#"Scale="floating""#,
+            r#""$Scale":"floating""#,
+            true,
+        ),
+        (
+            "TimeOfDay",
+            "12:30:00.12",
+            r#"Precision="2""#,
+            r#""$Precision":2"#,
+            true,
+        ),
+        (
+            "TimeOfDay",
+            "12:30:00.123",
+            r#"Precision="2""#,
+            r#""$Precision":2"#,
+            false,
+        ),
+        (
+            "DateTimeOffset",
+            "2024-01-01T12:30:00.12Z",
+            r#"Precision="2""#,
+            r#""$Precision":2"#,
+            true,
+        ),
+        (
+            "DateTimeOffset",
+            "2024-01-01T12:30:00.123Z",
+            r#"Precision="2""#,
+            r#""$Precision":2"#,
+            false,
+        ),
+        (
+            "Duration",
+            "PT1.12S",
+            r#"Precision="2""#,
+            r#""$Precision":2"#,
+            true,
+        ),
+        (
+            "Duration",
+            "PT1.123S",
+            r#"Precision="2""#,
+            r#""$Precision":2"#,
+            false,
+        ),
+    ] {
+        check(
+            &format!(r#"<Term Name="Value" Type="Edm.{ty}" DefaultValue="{value}" {xml_facets}/>"#),
+            &format!(
+                r#""Value":{{"$Kind":"Term","$Type":"Edm.{ty}","$DefaultValue":"{value}",{json_facets}}}"#
+            ),
+            valid,
+        );
+        check(
+            &format!(
+                r#"<TypeDefinition Name="Defined" UnderlyingType="Edm.{ty}" {xml_facets}/><Term Name="Value" Type="N.Defined" DefaultValue="{value}"/>"#
+            ),
+            &format!(
+                r#""Defined":{{"$Kind":"TypeDefinition","$UnderlyingType":"Edm.{ty}",{json_facets}}},"Value":{{"$Kind":"Term","$Type":"N.Defined","$DefaultValue":"{value}"}}"#
+            ),
+            valid,
+        );
+    }
+}
+
+#[test]
 fn term_names_are_simple_identifiers_unique_in_the_schema() {
     for (name, valid) in [
         ("Value", true),
