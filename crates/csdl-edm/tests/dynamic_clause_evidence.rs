@@ -2,6 +2,46 @@
 use csdl_edm::{conformance::ValidationProfile as P, parser, resolver::Resolver, validator};
 
 #[test]
+fn dynamic_collection_items_must_match_the_element_type() {
+    for (xml, json, valid) in [
+        ("<Add><Int>1</Int><Int>2</Int></Add>", r#"{"$Add":[1,2]}"#, true),
+        ("<Eq><Int>1</Int><Int>2</Int></Eq>", r#"{"$Eq":[1,2]}"#, false),
+        (r#"<Cast Type="Edm.Int64"><Int>1</Int></Cast>"#, r#"{"$Cast":1,"$Type":"Edm.Int64"}"#, true),
+        (r#"<IsOf Type="Edm.Int64"><Int>1</Int></IsOf>"#, r#"{"$IsOf":1,"$Type":"Edm.Int64"}"#, false),
+        (r#"<Apply Function="odata.length"><String>abc</String></Apply>"#, r#"{"$Apply":["abc"],"$Function":"odata.length"}"#, true),
+        ("<If><Bool>true</Bool><Int>1</Int></If>", r#"{"$If":[true,1]}"#, true),
+        ("<If><Bool>false</Bool><Bool>true</Bool></If>", r#"{"$If":[false,true]}"#, false),
+        (r#"<LabeledElement Name="Count"><Int>2</Int></LabeledElement><LabeledElementReference>N.Count</LabeledElementReference>"#, r#"{"$Name":"Count","$LabeledElement":2},{"$LabeledElementReference":"N.Count"}"#, true),
+        (r#"<LabeledElement Name="Count"><Bool>true</Bool></LabeledElement><LabeledElementReference>N.Count</LabeledElementReference>"#, r#"{"$Name":"Count","$LabeledElement":true},{"$LabeledElementReference":"N.Count"}"#, false),
+        (r#"<LabeledElement Name="Count"><If><Bool>true</Bool><Int>2</Int></If></LabeledElement>"#, r#"{"$Name":"Count","$LabeledElement":{"$If":[true,2]}}"#, false),
+    ] {
+        check_type(&format!("<Collection><Int>1</Int>{xml}</Collection>"), &format!("[1,{json}]"), "Edm.Int64", true, valid);
+    }
+}
+
+#[test]
+fn enum_and_type_definition_collection_items_use_resolved_types() {
+    for (ty, xml_value, json_value, valid) in [
+        ("N.Choice", "<EnumMember>N.Choice/One</EnumMember>", r#""One""#, true),
+        ("N.Choice", "<EnumMember>N.Choice/Missing</EnumMember>", r#""Missing""#, false),
+        ("N.Choice", "<Bool>true</Bool>", "true", false),
+        ("N.Code", "<String>ok</String>", r#""ok""#, true),
+        ("N.Code", "<String>long</String>", r#""long""#, false),
+        ("N.Code", "<Bool>true</Bool>", "true", false),
+    ] {
+        let xml = format!(r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><EnumType Name="Choice"><Member Name="One"/></EnumType><TypeDefinition Name="Code" UnderlyingType="Edm.String" MaxLength="2"/><Term Name="Value" Type="Collection({ty})"/><Annotation Term="N.Value"><Collection>{xml_value}</Collection></Annotation></Schema></edmx:DataServices></edmx:Edmx>"#);
+        let json = format!(r#"{{"$Version":"4.01","N":{{"Choice":{{"$Kind":"EnumType","One":0}},"Code":{{"$Kind":"TypeDefinition","$UnderlyingType":"Edm.String","$MaxLength":2}},"Value":{{"$Kind":"Term","$Type":"{ty}","$Collection":true}},"@N.Value":[{json_value}]}}}}"#);
+        for parsed in [parser::from_xml_reader_with_profile(xml.as_bytes(), P::Strict), parser::from_json_reader_with_profile(json.as_bytes(), P::Strict)] {
+            let model = Resolver::resolve_document(parsed.unwrap().edmx.unwrap()).unwrap();
+            validator::validate_document(&model).unwrap();
+            assert_eq!(model.schemas[0].annotations.get().unwrap().len(), 1);
+            let diagnostics = validator::validate_annotations(&model);
+            assert_eq!(diagnostics.is_empty(), valid, "{ty}, {xml_value}: {diagnostics:?}");
+        }
+    }
+}
+
+#[test]
 fn null_values_require_nullable_scalar_contexts() {
     for nullable in [false, true] {
         for collection in [false, true] {
