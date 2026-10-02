@@ -331,6 +331,7 @@ fn structured_type_paths_start_at_the_annotated_type() {
                     ("Nav", true, false, true, false),
                     ("Nav/Name", true, true, false, false),
                     ("N.Derived/Extra", true, true, false, false),
+                    ("Derived/Extra", false, false, false, false),
                     ("@N.Text", true, true, false, true),
                     ("Missing", false, false, false, false),
                     ("N.Missing/Extra", false, false, false, false),

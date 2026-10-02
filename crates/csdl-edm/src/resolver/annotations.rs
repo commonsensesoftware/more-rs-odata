@@ -737,7 +737,9 @@ impl Scope<'_> {
             if let Some(n) = t.navigation_properties().iter().find(|n| n.name == name) {
                 return T::NavigationProperty(n.clone());
             }
-            if let Some(casts) = self.roots.get(&self.canonical(name, ns)) {
+            if let Some(casts) = self.roots.get(&self.canonical(name, ns))
+                .filter(|_| crate::conformance::is_qualified_name(name))
+            {
                 for cast in casts {
                     if let T::Element(e) = cast {
                         if let SchemaElement::EntityType(_) = e.as_ref() {
@@ -758,7 +760,9 @@ impl Scope<'_> {
             if let Some(n) = t.navigation_properties().iter().find(|n| n.name == name) {
                 return T::NavigationProperty(n.clone());
             }
-            if let Some(casts) = self.roots.get(&self.canonical(name, ns)) {
+            if let Some(casts) = self.roots.get(&self.canonical(name, ns))
+                .filter(|_| crate::conformance::is_qualified_name(name))
+            {
                 for cast in casts {
                     if let T::Element(e) = cast {
                         if let SchemaElement::ComplexType(_) = e.as_ref() {
