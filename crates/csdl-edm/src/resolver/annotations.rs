@@ -215,10 +215,17 @@ pub(super) fn resolve(
                 .and_then(|s| s.get(&schema.namespace))
                 .is_none_or(|namespaces| {
                     let root = key.split('(').next().unwrap_or(key);
-                    namespaces.contains(root)
+                    let root_visible = namespaces.contains(root)
                         || root
                             .rsplit_once('.')
-                            .is_some_and(|(ns, _)| namespaces.contains(ns))
+                            .is_some_and(|(ns, _)| namespaces.contains(ns));
+                    // Signature parameter types are explicit qualified names in
+                    // the target too, even when the operation itself is visible.
+                    root_visible && key.split(['(', ')', ',']).skip(1).all(|part| {
+                        part.rsplit_once('.').is_none_or(|(ns, _)| {
+                            ns == "Edm" || namespaces.contains(ns)
+                        })
+                    })
                 })
         };
         let scope = Scope {

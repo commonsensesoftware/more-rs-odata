@@ -63,8 +63,8 @@ fn annotation_terms_and_targets_respect_reference_include_scope() {
         resolver::Resolver,
         validator::{self, AnnotationIssue},
     };
-    let external_xml = r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Public"><Term Name="Value" Type="Edm.String"/><ComplexType Name="Owner"><Property Name="Detail" Type="Hidden.Detail"/></ComplexType></Schema><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Hidden"><Term Name="Value" Type="Edm.String"/><ComplexType Name="Detail"/></Schema></edmx:DataServices></edmx:Edmx>"#;
-    let external_json = r#"{"$Version":"4.01","Public":{"Value":{"$Kind":"Term"},"Owner":{"$Kind":"ComplexType","Detail":{"$Type":"Hidden.Detail"}}},"Hidden":{"Value":{"$Kind":"Term"},"Detail":{"$Kind":"ComplexType"}}}"#;
+    let external_xml = r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Public"><Term Name="Value" Type="Edm.String"/><ComplexType Name="Owner"><Property Name="Detail" Type="Hidden.Detail"/><Annotation Term="Public.Value" String="value"/></ComplexType><ComplexType Name="Derived" BaseType="Public.Owner"/><Function Name="F"><Parameter Name="arg" Type="Public.Owner"/><ReturnType Type="Edm.String"/></Function><Function Name="F"><Parameter Name="arg" Type="Hidden.Detail"/><ReturnType Type="Edm.String"/></Function><Function Name="G"><Parameter Name="arg" Type="Collection(Public.Owner)"/><ReturnType Type="Edm.String"/></Function><Function Name="G"><Parameter Name="arg" Type="Collection(Hidden.Detail)"/><ReturnType Type="Edm.String"/></Function><Function Name="H"><Parameter Name="arg" Type="Edm.String"/><ReturnType Type="Edm.String"/></Function></Schema><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Hidden"><Term Name="Value" Type="Edm.String"/><ComplexType Name="Detail"/><ComplexType Name="Derived" BaseType="Public.Owner"/></Schema></edmx:DataServices></edmx:Edmx>"#;
+    let external_json = r#"{"$Version":"4.01","Public":{"Value":{"$Kind":"Term"},"Owner":{"$Kind":"ComplexType","Detail":{"$Type":"Hidden.Detail"},"@Public.Value":"value"},"Derived":{"$Kind":"ComplexType","$BaseType":"Public.Owner"},"F":[{"$Kind":"Function","$Parameter":[{"$Name":"arg","$Type":"Public.Owner"}],"$ReturnType":{}},{"$Kind":"Function","$Parameter":[{"$Name":"arg","$Type":"Hidden.Detail"}],"$ReturnType":{}}],"G":[{"$Kind":"Function","$Parameter":[{"$Name":"arg","$Type":"Public.Owner","$Collection":true}],"$ReturnType":{}},{"$Kind":"Function","$Parameter":[{"$Name":"arg","$Type":"Hidden.Detail","$Collection":true}],"$ReturnType":{}}],"H":[{"$Kind":"Function","$Parameter":[{"$Name":"arg","$Type":"Edm.String"}],"$ReturnType":{}}]},"Hidden":{"Value":{"$Kind":"Term"},"Detail":{"$Kind":"ComplexType"},"Derived":{"$Kind":"ComplexType","$BaseType":"Public.Owner"}}}"#;
     for (term, term_known) in [
         ("Public.Value", true),
         ("P.Value", true),
@@ -77,15 +77,27 @@ fn annotation_terms_and_targets_respect_reference_include_scope() {
             ("P.Owner", true),
             ("Hidden.Detail", false),
             ("Missing.Owner", false),
+            ("P.Owner/P.Derived", true),
+            ("P.Owner/Hidden.Derived", false),
+            ("P.Owner/Missing.Derived", false),
+            ("P.Owner/@P.Value", true),
+            ("P.Owner/@Hidden.Value", false),
+            ("P.Owner/@Missing.Value", false),
+            ("P.F(P.Owner)/arg", true),
+            ("P.F(Hidden.Detail)/arg", false),
+            ("P.F(Missing.Detail)/arg", false),
+            ("P.G(Collection(P.Owner))/arg", true),
+            ("P.G(Collection(Hidden.Detail))/arg", false),
+            ("P.H(Edm.String)/arg", true),
         ] {
             let root_xml = format!(
-                r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:Reference Uri="types"><edmx:Include Namespace="Public" Alias="P"/></edmx:Reference><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><ComplexType Name="Owner"/><Annotations Target="{target}"><Annotation Term="{term}" String="value"/></Annotations></Schema></edmx:DataServices></edmx:Edmx>"#
+                r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:Reference Uri="types"><edmx:Include Namespace="Public" Alias="P"/></edmx:Reference><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><ComplexType Name="Owner"/><Annotations Target="{target}"><Annotation Term="{term}" Qualifier="Test" String="value"/></Annotations></Schema></edmx:DataServices></edmx:Edmx>"#
             );
             // JSON references use the declared alias; XML permits either spelling.
             let json_target = target.replace("Public.", "P.");
             let json_term = term.replace("Public.", "P.");
             let root_json = format!(
-                r#"{{"$Version":"4.01","$Reference":{{"types":{{"$Include":[{{"$Namespace":"Public","$Alias":"P"}}]}}}},"N":{{"Owner":{{"$Kind":"ComplexType"}},"$Annotations":{{"{json_target}":{{"@{json_term}":"value"}}}}}}}}"#
+                r#"{{"$Version":"4.01","$Reference":{{"types":{{"$Include":[{{"$Namespace":"Public","$Alias":"P"}}]}}}},"N":{{"Owner":{{"$Kind":"ComplexType"}},"$Annotations":{{"{json_target}":{{"@{json_term}#Test":"value"}}}}}}}}"#
             );
             for (root, external) in [
                 (
