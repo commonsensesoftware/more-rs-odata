@@ -7,6 +7,32 @@ fn xml(expression: &str) -> String {
 }
 
 #[test]
+fn xml_attribute_whitespace_normalization_preserves_character_references() {
+    use csdl_edm::expr::CsdlAnnotationExpression as E;
+    for (value, expected) in [
+        ("one\ttwo\nthree\rfour\r\nfive", "one two three four five"),
+        ("  one   two  ", "  one   two  "),
+        ("one&#9;two&#10;three&#13;four", "one\ttwo\nthree\rfour"),
+        ("&lt;&amp;&quot;&apos;&gt;", "<&\"'>"),
+    ] {
+        let source = xml("<Int>1</Int>").replace(
+            "<Annotation Term=\"N.T\"><Int>1</Int></Annotation>",
+            &format!("<Annotation Term=\"N.T\" String=\"{value}\"/>"),
+        );
+        for profile in [P::Strict, P::Tolerant] {
+            let report = parser::from_xml_reader_with_report(source.as_bytes(), profile).unwrap();
+            assert!(report.diagnostics.is_empty());
+            let schema = &report.document.edmx.unwrap().schemas[0];
+            assert!(
+                matches!(&schema.annotations[0].expression, Some(E::String(actual)) if actual == expected),
+                "{profile:?}: {:?}",
+                schema.annotations[0].expression
+            );
+        }
+    }
+}
+
+#[test]
 fn xml_string_line_endings_normalize_without_changing_character_references() {
     use csdl_edm::expr::CsdlAnnotationExpression as E;
     for (expression, expected) in [
