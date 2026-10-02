@@ -1,6 +1,23 @@
 use csdl_edm::{conformance::ValidationProfile, parser};
 
 #[test]
+fn strict_xml_limits_inline_paths_to_expression_value_locations() {
+    for attribute in ["Path", "PropertyPath", "NavigationPropertyPath", "AnnotationPath", "ModelElementPath"] {
+        for (body, valid) in [
+            (format!(r#"<Annotation Term="N.Value"><Collection {attribute}="P"/></Annotation>"#), false),
+            (format!(r#"<ComplexType Name="Owner"><Property Name="P" {attribute}="P"/></ComplexType>"#), false),
+            (format!(r#"<Annotation Term="N.Value" {attribute}="P"/>"#), true),
+            (format!(r#"<Annotation Term="N.Value"><LabeledElement Name="Label" {attribute}="P"/></Annotation>"#), true),
+            (format!(r#"<Annotation Term="N.Value"><Record><PropertyValue Property="P" {attribute}="P"/></Record></Annotation>"#), true),
+        ] {
+            let xml = format!(r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N">{body}</Schema></edmx:DataServices></edmx:Edmx>"#);
+            let result = parser::from_xml_reader_with_profile(xml.as_bytes(), ValidationProfile::Strict);
+            assert_eq!(result.is_ok(), valid, "{body}: {result:?}");
+        }
+    }
+}
+
+#[test]
 fn strict_xml_limits_inline_constants_to_expression_value_locations() {
     for (body, valid) in [
         (r#"<Annotation Term="N.Value"><Collection String="ignored"><String>kept</String></Collection></Annotation>"#, false),
