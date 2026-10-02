@@ -76,6 +76,10 @@ impl Scope<'_> {
         let mut starts = vec![context.to_vec()];
         if absolute {
             let root = parts.remove(0);
+            let name = root.split('(').next().unwrap_or(root);
+            if !crate::conformance::is_qualified_name(name) {
+                return invalid();
+            }
             let canonical = self.canonical(root, ns);
             let Some(roots) = self.roots.get(&canonical).or_else(|| self.roots.get(root)) else {
                 return invalid();
