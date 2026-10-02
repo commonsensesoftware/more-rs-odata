@@ -713,6 +713,17 @@ impl Catalog {
         if options.metadata != MetadataLevel::Full {
             return;
         }
+        // A record may specify a derived type. Its property/annotation control
+        // must agree with the record control instead of restating the base type.
+        if let Some(actual) = map
+            .get(key)
+            .and_then(Value::as_object)
+            .and_then(|record| record.get("@type"))
+            .cloned()
+        {
+            map.insert(format!("{key}@type"), actual);
+            return;
+        }
         if let Some(ty) = ty.filter(|t| {
             collection
                 || !matches!(
