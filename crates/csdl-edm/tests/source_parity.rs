@@ -1,6 +1,19 @@
 use csdl_edm::{conformance::ValidationProfile, parser};
 
 #[test]
+fn json_cast_and_isof_numeric_facets_require_numbers() {
+    for operator in ["Cast", "IsOf"] {
+        for facet in ["MaxLength", "Precision", "Scale", "SRID"] {
+            for (value, valid) in [("12", true), (r#""12""#, false), ("-1", false), ("1.5", false), ("null", false), ("true", false)] {
+                let json = format!(r#"{{"$Version":"4.01","N":{{"@N.Value":{{"${operator}":1,"$Type":"Edm.Decimal","${facet}":{value}}}}}}}"#);
+                let result = parser::from_json_reader_with_profile(json.as_bytes(), ValidationProfile::Strict);
+                assert_eq!(result.is_ok(), valid, "{operator}, {facet}={value}: {result:?}");
+            }
+        }
+    }
+}
+
+#[test]
 fn cast_and_isof_symbolic_scale_values_are_case_sensitive() {
     for operator in ["Cast", "IsOf"] {
         for (scale, valid) in [("variable", true), ("floating", true), ("Variable", false), ("VARIABLE", false), ("Floating", false), ("FLOATING", false)] {

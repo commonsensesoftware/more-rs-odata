@@ -1166,20 +1166,29 @@ impl<'de> serde::Deserialize<'de> for UniqueValue {
     }
 }
 
-fn json_expression_scale(value: &serde_json::Value) -> io::Result<()> {
+fn json_expression_facets(value: &serde_json::Value) -> io::Result<()> {
     use serde_json::Value as V;
     match value {
         V::Object(map) => {
             if map.contains_key("$Cast") || map.contains_key("$IsOf") {
-                if let Some(V::String(scale)) = map.get("$Scale") {
-                    if !matches!(scale.as_str(), "variable" | "floating") {
-                        return Err(invalid("Invalid symbolic expression Scale"));
+                for key in ["$MaxLength", "$Precision", "$Scale", "$SRID"] {
+                    if let Some(value) = map.get(key) {
+                        let valid = match key {
+                            "$MaxLength" => value.as_u64().is_some_and(|n| n > 0),
+                            "$Precision" => value.is_u64(),
+                            "$Scale" => value.is_u64() || matches!(value.as_str(), Some("variable" | "floating")),
+                            "$SRID" => value.is_u64() || value.as_str() == Some("variable"),
+                            _ => unreachable!(),
+                        };
+                        if !valid {
+                            return Err(invalid(format!("Invalid JSON expression facet {key}")));
+                        }
                     }
                 }
             }
-            for value in map.values() { json_expression_scale(value)?; }
+            for value in map.values() { json_expression_facets(value)?; }
         }
-        V::Array(values) => for value in values { json_expression_scale(value)?; },
+        V::Array(values) => for value in values { json_expression_facets(value)?; },
         _ => {}
     }
     Ok(())
@@ -1192,7 +1201,7 @@ fn json_shapes(value: &serde_json::Value) -> io::Result<()> {
             for (key, value) in map {
                 // Annotation values follow expression grammar, handled separately.
                 if key.contains('@') {
-                    json_expression_scale(value)?;
+                    json_expression_facets(value)?;
                     continue;
                 }
                 if let (Some(kind), Some(attribute)) =
