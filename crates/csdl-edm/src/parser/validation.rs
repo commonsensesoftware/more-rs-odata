@@ -1171,6 +1171,11 @@ fn json_expression_facets(value: &serde_json::Value) -> io::Result<()> {
     match value {
         V::Object(map) => {
             if map.contains_key("$Cast") || map.contains_key("$IsOf") {
+                for key in ["$Nullable", "$Unicode", "$Collection"] {
+                    if map.get(key).is_some_and(|value| !value.is_boolean()) {
+                        return Err(invalid(format!("JSON expression control {key} must be boolean")));
+                    }
+                }
                 for key in ["$MaxLength", "$Precision", "$Scale", "$SRID"] {
                     if let Some(value) = map.get(key) {
                         let valid = match key {

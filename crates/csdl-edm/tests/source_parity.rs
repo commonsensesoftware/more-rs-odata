@@ -1,6 +1,19 @@
 use csdl_edm::{conformance::ValidationProfile, parser};
 
 #[test]
+fn json_cast_and_isof_boolean_controls_require_booleans() {
+    for operator in ["Cast", "IsOf"] {
+        for control in ["Nullable", "Unicode", "Collection"] {
+            for (value, valid) in [("true", true), ("false", true), (r#""true""#, false), (r#""false""#, false), ("1", false), ("null", false)] {
+                let json = format!(r#"{{"$Version":"4.01","N":{{"@N.Value":{{"${operator}":"value","$Type":"Edm.String","${control}":{value}}}}}}}"#);
+                let result = parser::from_json_reader_with_profile(json.as_bytes(), ValidationProfile::Strict);
+                assert_eq!(result.is_ok(), valid, "{operator}, {control}={value}: {result:?}");
+            }
+        }
+    }
+}
+
+#[test]
 fn json_cast_and_isof_numeric_facets_require_numbers() {
     for operator in ["Cast", "IsOf"] {
         for facet in ["MaxLength", "Precision", "Scale", "SRID"] {
