@@ -1,6 +1,74 @@
 use csdl_edm::{CsdlFormat, conformance::ValidationProfile as P, csdl::MaxLengthFacet, parser};
 
 #[test]
+fn symbolic_property_scales_accept_case_variants_and_emit_lowercase() {
+    use csdl_edm::csdl::ScaleFacet;
+    for (symbol, expected) in [
+        ("variable", ScaleFacet::Variable),
+        ("floating", ScaleFacet::Floating),
+    ] {
+        for spelling in [
+            symbol.to_owned(),
+            symbol.to_uppercase(),
+            format!("{}{}", symbol[..1].to_uppercase(), &symbol[1..]),
+        ] {
+            let xml = format!(
+                r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><ComplexType Name="Owner"><Property Name="Value" Type="Edm.Decimal" Scale="{spelling}"/></ComplexType></Schema></edmx:DataServices></edmx:Edmx>"#
+            );
+            let json = format!(
+                r#"{{"$Version":"4.01","N":{{"Owner":{{"$Kind":"ComplexType","Value":{{"$Type":"Edm.Decimal","$Scale":"{spelling}"}}}}}}}}"#
+            );
+            for profile in [P::Strict, P::Tolerant] {
+                for document in [
+                    parser::from_xml_reader_with_profile(xml.as_bytes(), profile).unwrap(),
+                    parser::from_json_reader_with_profile(json.as_bytes(), profile).unwrap(),
+                ] {
+                    let csdl_edm::csdl::SchemaElement::ComplexType(owner) =
+                        &document.edmx.as_ref().unwrap().schemas[0].elements[0]
+                    else {
+                        panic!("missing owner")
+                    };
+                    assert_eq!(owner.properties[0].scale, Some(expected));
+                    for format in [CsdlFormat::Xml, CsdlFormat::Json] {
+                        let mut bytes = Vec::new();
+                        document
+                            .write_as_with_profile(&mut bytes, format, P::Strict)
+                            .unwrap();
+                        let text = std::str::from_utf8(&bytes).unwrap();
+                        match format {
+                            CsdlFormat::Xml => {
+                                assert!(text.contains(&format!(r#"Scale="{symbol}""#)), "{text}")
+                            }
+                            CsdlFormat::Json => {
+                                let value: serde_json::Value =
+                                    serde_json::from_slice(&bytes).unwrap();
+                                assert_eq!(value["N"]["Owner"]["Value"]["$Scale"], symbol);
+                            }
+                        }
+                    }
+                    #[cfg(all(feature = "resolver", feature = "validator"))]
+                    {
+                        let model =
+                            csdl_edm::resolver::Resolver::resolve_document(document.edmx.unwrap())
+                                .unwrap();
+                        csdl_edm::validator::validate_document(&model).unwrap();
+                        let csdl_edm::edm::SchemaElement::ComplexType(owner) =
+                            model.schemas[0].elements[0].as_ref()
+                        else {
+                            panic!("missing resolved owner")
+                        };
+                        assert_eq!(
+                            owner.properties.get().unwrap()[0].facets.scale,
+                            Some(expected)
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn legacy_xml_max_length_is_consumable_but_not_emitted_by_strict_401_authors() {
     for version in ["4.0", "4.01"] {
         for ty in ["Edm.String", "Edm.Binary"] {
