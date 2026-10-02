@@ -3,6 +3,56 @@ use csdl_edm::{
 };
 
 #[test]
+fn ieee754_options_leave_other_numeric_types_and_literal_strings_unchanged() {
+    for (ty, value, expression) in [
+        ("Byte", "255", "Int"),
+        ("SByte", "-128", "Int"),
+        ("Int16", "32767", "Int"),
+        ("Int32", "2147483647", "Int"),
+        ("Single", "1.25", "Float"),
+        ("Double", "-1.25", "Float"),
+    ] {
+        let xml = format!(
+            r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><Term Name="Number" Type="Edm.{ty}" DefaultValue="{value}"/><Term Name="Text" Type="Edm.String" DefaultValue="{value}"/><Annotation Term="N.Number"><{expression}>{value}</{expression}></Annotation><Annotation Term="N.Text" String="{value}"/></Schema></edmx:DataServices></edmx:Edmx>"#
+        );
+        let json = format!(
+            r#"{{"$Version":"4.01","N":{{"Number":{{"$Kind":"Term","$Type":"Edm.{ty}","$DefaultValue":{value}}},"Text":{{"$Kind":"Term","$DefaultValue":"{value}"}},"@N.Number":{value},"@N.Text":"{value}"}}}}"#
+        );
+        for document in [
+            parser::from_xml_reader_with_profile(xml.as_bytes(), P::Strict).unwrap(),
+            parser::from_json_reader_with_profile(json.as_bytes(), P::Strict).unwrap(),
+        ] {
+            for options in [
+                SerializationOptions::default(),
+                SerializationOptions {
+                    ieee754_compatible: false,
+                    ..Default::default()
+                },
+                SerializationOptions {
+                    ieee754_compatible: true,
+                    ..Default::default()
+                },
+            ] {
+                let mut bytes = Vec::new();
+                document
+                    .write_as_with_options(&mut bytes, CsdlFormat::Json, &options)
+                    .unwrap();
+                let output: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+                for actual in [
+                    &output["N"]["Number"]["$DefaultValue"],
+                    &output["N"]["@N.Number"],
+                ] {
+                    assert!(actual.is_number(), "{ty}: {actual}");
+                    assert_eq!(actual.as_f64(), Some(value.parse().unwrap()));
+                }
+                assert_eq!(output["N"]["Text"]["$DefaultValue"], value);
+                assert_eq!(output["N"]["@N.Text"], value);
+            }
+        }
+    }
+}
+
+#[test]
 fn ieee754_output_preserves_typed_numbers_in_defaults_collections_and_records() {
     for (ty, value, expression) in [
         ("Edm.Int64", "9223372036854775807", "Int"),
