@@ -101,7 +101,8 @@ impl Scope<'_> {
                         }
                     }
                 }
-                let next = if *part == "$count" {
+                let container_start = index == 0 && matches!(parent, AnnotationTarget::Container(_));
+                let mut next = if *part == "$count" {
                     if kind == AnnotationPathKind::Value && collection(&parent) && unselected == 1 && index + 1 == parts.len() {
                         unselected = unselected.saturating_sub(1);
                         AnnotationTarget::Count
@@ -126,6 +127,13 @@ impl Scope<'_> {
                     } else { AnnotationTarget::Unresolved((*part).into()) }
                 } else if part.is_empty() { AnnotationTarget::Unresolved(String::new()) }
                 else { self.child(&parent, part, ns) };
+                if container_start && kind == AnnotationPathKind::Value
+                    && !matches!(&next, AnnotationTarget::Resource(_))
+                    && !matches!(&next, AnnotationTarget::SelectedItem { collection, .. }
+                        if matches!(collection.as_ref(), AnnotationTarget::Resource(_)))
+                {
+                    next = AnnotationTarget::Unresolved((*part).into());
+                }
                 if collection(&next) { unselected += 1; ordered = matches!(&next, AnnotationTarget::Property(p) if self.ordered.contains(&(Arc::as_ptr(p) as usize))); }
                 segments.push(next);
             }
