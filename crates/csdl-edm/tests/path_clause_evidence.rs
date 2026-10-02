@@ -3,6 +3,82 @@
 use csdl_edm::{conformance::ValidationProfile as P, parser, resolver::Resolver, validator};
 
 #[test]
+fn instance_paths_limit_unselected_collections_and_require_ordered_indexes() {
+    use csdl_edm::edm::AnnotationTarget as T;
+    for (path, valid, collection) in [
+        ("Addresses/Name", true, true),
+        ("Addresses/Tags", false, true),
+        ("Addresses/0/Name", true, false),
+        ("Addresses/-1/Name", true, false),
+        ("Addresses/0/Tags", true, true),
+        ("Addresses/Tags/0", true, true),
+        ("Addresses/0/Tags/0", true, false),
+        ("Addresses/1.5/Name", false, false),
+        ("Unordered/0", false, false),
+        ("Name/0", false, false),
+        ("Nav/Nav/Name", false, true),
+        ("Nav(1)/Nav/Name", true, true),
+        ("Nav/Nav(1)/Name", true, true),
+        ("Nav(1)/Nav(1)/Name", true, false),
+    ] {
+        let xml = format!(
+            r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Org.OData.Core.V1"><Term Name="Ordered" Type="Edm.Boolean"/></Schema><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><Term Name="Value" Type="Edm.String"/><ComplexType Name="Address"><Property Name="Name" Type="Edm.String"/><Property Name="Tags" Type="Collection(Edm.String)" Nullable="false"><Annotation Term="Org.OData.Core.V1.Ordered" Bool="true"/></Property></ComplexType><EntityType Name="E"><Key><PropertyRef Name="ID"/></Key><Property Name="ID" Type="Edm.Int32" Nullable="false"/><Property Name="Name" Type="Edm.String"/><Property Name="Addresses" Type="Collection(N.Address)" Nullable="false"><Annotation Term="Org.OData.Core.V1.Ordered" Bool="true"/></Property><Property Name="Unordered" Type="Collection(Edm.String)" Nullable="false"/><NavigationProperty Name="Nav" Type="Collection(N.E)"/><Annotation Term="N.Value"><Path>{path}</Path></Annotation></EntityType></Schema></edmx:DataServices></edmx:Edmx>"#
+        );
+        let json = format!(
+            r#"{{"$Version":"4.01","Org.OData.Core.V1":{{"Ordered":{{"$Kind":"Term","$Type":"Edm.Boolean"}}}},"N":{{"Value":{{"$Kind":"Term"}},"Address":{{"$Kind":"ComplexType","Name":{{}},"Tags":{{"$Collection":true,"@Org.OData.Core.V1.Ordered":true}}}},"E":{{"$Kind":"EntityType","$Key":["ID"],"ID":{{"$Type":"Edm.Int32"}},"Name":{{}},"Addresses":{{"$Type":"N.Address","$Collection":true,"@Org.OData.Core.V1.Ordered":true}},"Unordered":{{"$Collection":true}},"Nav":{{"$Kind":"NavigationProperty","$Type":"N.E","$Collection":true}},"@N.Value":{{"$Path":"{path}"}}}}}}}}"#
+        );
+        for parsed in [
+            parser::from_xml_reader_with_profile(xml.as_bytes(), P::Strict),
+            parser::from_json_reader_with_profile(json.as_bytes(), P::Strict),
+        ] {
+            let model = Resolver::resolve_document(parsed.unwrap().edmx.unwrap()).unwrap();
+            validator::validate_document(&model).unwrap();
+            let annotation = model
+                .all_schemas()
+                .flat_map(|s| s.annotations.get().unwrap())
+                .find(|a| a.term_name == "N.Value")
+                .unwrap();
+            assert_eq!(annotation.expression_paths.len(), 1);
+            let resolved = &annotation.expression_paths[0];
+            assert_eq!(
+                !resolved
+                    .segments
+                    .iter()
+                    .any(|s| matches!(s, T::Unresolved(_))),
+                valid,
+                "{path}: {resolved:?}"
+            );
+            if valid {
+                assert_eq!(resolved.is_collection, collection, "{path}: {resolved:?}");
+                let indexes = resolved
+                    .segments
+                    .iter()
+                    .filter_map(|segment| match segment {
+                        T::SelectedItem {
+                            selector: csdl_edm::edm::PathSelector::Index(index),
+                            ..
+                        } => Some(*index),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>();
+                let expected = path
+                    .split('/')
+                    .filter_map(|segment| segment.parse::<i64>().ok())
+                    .collect::<Vec<_>>();
+                assert_eq!(indexes, expected, "{path}");
+            }
+            assert_eq!(
+                validator::validate_annotations(&model)
+                    .iter()
+                    .any(|d| d.issue == validator::AnnotationIssue::InvalidExpressionPath),
+                !valid,
+                "{path}"
+            );
+        }
+    }
+}
+
+#[test]
 fn model_path_endpoints_match_the_declared_path_kind() {
     for collection in [false, true] {
         let xml_type = |ty: &str| {
