@@ -69,6 +69,70 @@ fn specialized_terms_require_each_ancestor_on_the_same_target_and_qualifier() {
 }
 
 #[test]
+fn applicability_restricts_authoring_without_breaking_tolerant_consumers() {
+    for (xml_list, json_list, applicable) in [
+        ("", "", true),
+        (
+            r#" AppliesTo="ComplexType""#,
+            r#", "$AppliesTo":["ComplexType"]"#,
+            true,
+        ),
+        (
+            r#" AppliesTo="Property ComplexType""#,
+            r#", "$AppliesTo":["Property","ComplexType"]"#,
+            true,
+        ),
+        (
+            r#" AppliesTo="Property""#,
+            r#", "$AppliesTo":["Property"]"#,
+            false,
+        ),
+        (
+            r#" AppliesTo="FutureTarget""#,
+            r#", "$AppliesTo":["FutureTarget"]"#,
+            false,
+        ),
+        (
+            r#" AppliesTo="FutureTarget ComplexType""#,
+            r#", "$AppliesTo":["FutureTarget","ComplexType"]"#,
+            true,
+        ),
+    ] {
+        let xml = format!(
+            r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><Term Name="Value" Type="Edm.String"{xml_list}/><ComplexType Name="Owner"><Annotation Term="N.Value" String="value"/></ComplexType></Schema></edmx:DataServices></edmx:Edmx>"#
+        );
+        let json = format!(
+            r#"{{"$Version":"4.01","N":{{"Value":{{"$Kind":"Term"{json_list}}},"Owner":{{"$Kind":"ComplexType","@N.Value":"value"}}}}}}"#
+        );
+        for profile in [P::Strict, P::Tolerant] {
+            for parsed in [
+                parser::from_xml_reader_with_profile(xml.as_bytes(), profile),
+                parser::from_json_reader_with_profile(json.as_bytes(), profile),
+            ] {
+                let model = Resolver::resolve_document(parsed.unwrap().edmx.unwrap()).unwrap();
+                let report = validator::validate_document_with_profile(&model, profile);
+                assert_eq!(
+                    report.is_valid(),
+                    profile == P::Tolerant || applicable,
+                    "{report:?}"
+                );
+                assert_eq!(
+                    report.annotations.len(),
+                    usize::from(!applicable),
+                    "{report:?}"
+                );
+                assert!(
+                    report
+                        .annotations
+                        .iter()
+                        .all(|d| d.issue == validator::AnnotationIssue::NotApplicable)
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn term_defaults_validate_primitive_lexical_forms() {
     for (ty, value, valid) in [
         ("Boolean", "true", true),
