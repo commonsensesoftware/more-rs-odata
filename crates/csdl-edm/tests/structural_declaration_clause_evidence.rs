@@ -12,6 +12,54 @@ fn json(body: &str) -> std::io::Result<CsdlDocument> {
     parser::from_json_reader_with_profile(source.as_bytes(), P::Strict)
 }
 
+#[test]
+fn json_properties_default_to_string_and_reject_invalid_type_values() {
+    for owner_kind in ["EntityType", "ComplexType"] {
+        for property in [
+            r#"{}"#,
+            r#"{"$Kind":"Property"}"#,
+            r#"{"$Type":"Edm.String"}"#,
+        ] {
+            let document = json(&format!(
+                r#""Owner":{{"$Kind":"{owner_kind}","Value":{property}}}"#
+            ))
+            .unwrap();
+            let element = &document.edmx.as_ref().unwrap().schemas[0].elements[0];
+            let properties = match element {
+                csdl_edm::csdl::SchemaElement::EntityType(t) => &t.properties,
+                csdl_edm::csdl::SchemaElement::ComplexType(t) => &t.properties,
+                _ => panic!("missing owner"),
+            };
+            assert_eq!(properties.len(), 1);
+            assert_eq!(properties[0].name, "Value");
+            #[cfg(all(feature = "resolver", feature = "validator"))]
+            {
+                let model =
+                    csdl_edm::resolver::Resolver::resolve_document(document.edmx.unwrap()).unwrap();
+                csdl_edm::validator::validate_document(&model).unwrap();
+                let properties = match model.schemas[0].elements[0].as_ref() {
+                    csdl_edm::edm::SchemaElement::EntityType(t) => t.properties.get().unwrap(),
+                    csdl_edm::edm::SchemaElement::ComplexType(t) => t.properties.get().unwrap(),
+                    _ => panic!("missing resolved owner"),
+                };
+                assert!(matches!(
+                    properties[0].ty,
+                    csdl_edm::edm::ResolvedType::Primitive(csdl_edm::edm::PrimitiveType::String)
+                ));
+            }
+        }
+        for ty in ["null", "true", "1", "[]", r#""""#, r#""String""#] {
+            assert!(
+                json(&format!(
+                    r#""Owner":{{"$Kind":"{owner_kind}","Value":{{"$Type":{ty}}}}}"#
+                ))
+                .is_err(),
+                "{ty}"
+            );
+        }
+    }
+}
+
 fn validate(document: CsdlDocument) {
     #[cfg(all(feature = "resolver", feature = "validator"))]
     {
