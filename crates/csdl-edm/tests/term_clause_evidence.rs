@@ -3,6 +3,72 @@
 use csdl_edm::{conformance::ValidationProfile as P, parser, resolver::Resolver, validator};
 
 #[test]
+fn specialized_terms_require_each_ancestor_on_the_same_target_and_qualifier() {
+    for qualifier in [None, Some("View")] {
+        // Each ancestor can be absent, match, use a different qualifier, or target another type.
+        for root in 0..4 {
+            for middle in 0..4 {
+                let mut owner_xml = String::new();
+                let mut other_xml = String::new();
+                let mut owner_json = String::new();
+                let mut other_json = String::new();
+                for (term, mode) in [("Root", root), ("Middle", middle), ("Leaf", 1)] {
+                    if mode == 0 {
+                        continue;
+                    }
+                    let q = if mode == 2 { Some("Other") } else { qualifier };
+                    let xml_q = q
+                        .map(|q| format!(r#" Qualifier="{q}""#))
+                        .unwrap_or_default();
+                    let json_q = q.map(|q| format!("#{q}")).unwrap_or_default();
+                    let xml = format!(r#"<Annotation Term="N.{term}"{xml_q} String="value"/>"#);
+                    let json = format!(r#", "@N.{term}{json_q}":"value""#);
+                    if mode == 3 {
+                        other_xml.push_str(&xml);
+                        other_json.push_str(&json);
+                    } else {
+                        owner_xml.push_str(&xml);
+                        owner_json.push_str(&json);
+                    }
+                }
+                let xml = format!(
+                    r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><Term Name="Root" Type="Edm.String"/><Term Name="Middle" Type="Edm.String" BaseTerm="N.Root"/><Term Name="Leaf" Type="Edm.String" BaseTerm="N.Middle"/><ComplexType Name="Owner">{owner_xml}</ComplexType><ComplexType Name="Other">{other_xml}</ComplexType></Schema></edmx:DataServices></edmx:Edmx>"#
+                );
+                let json = format!(
+                    r#"{{"$Version":"4.01","N":{{"Root":{{"$Kind":"Term"}},"Middle":{{"$Kind":"Term","$BaseTerm":"N.Root"}},"Leaf":{{"$Kind":"Term","$BaseTerm":"N.Middle"}},"Owner":{{"$Kind":"ComplexType"{owner_json}}},"Other":{{"$Kind":"ComplexType"{other_json}}}}}}}"#
+                );
+                for parsed in [
+                    parser::from_xml_reader_with_profile(xml.as_bytes(), P::Strict),
+                    parser::from_json_reader_with_profile(json.as_bytes(), P::Strict),
+                ] {
+                    let model = Resolver::resolve_document(parsed.unwrap().edmx.unwrap()).unwrap();
+                    validator::validate_document(&model).unwrap();
+                    let diagnostics = validator::validate_annotations(&model);
+                    let leaf_errors = diagnostics
+                        .iter()
+                        .filter(|d| d.term == "N.Leaf")
+                        .collect::<Vec<_>>();
+                    assert_eq!(
+                        leaf_errors.len(),
+                        usize::from(root != 1) + usize::from(middle != 1),
+                        "{diagnostics:?}"
+                    );
+                    assert!(
+                        leaf_errors
+                            .iter()
+                            .all(|d| d.issue == validator::AnnotationIssue::MissingBaseTerm),
+                        "{diagnostics:?}"
+                    );
+                    if root == 1 && middle == 1 {
+                        assert!(diagnostics.is_empty(), "{diagnostics:?}");
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn term_defaults_validate_primitive_lexical_forms() {
     for (ty, value, valid) in [
         ("Boolean", "true", true),
