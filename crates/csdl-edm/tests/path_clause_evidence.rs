@@ -3,6 +3,109 @@
 use csdl_edm::{conformance::ValidationProfile as P, parser, resolver::Resolver, validator};
 
 #[test]
+fn path_traversal_follows_chained_document_references_without_scope_leaks() {
+    let wrap = |references: &str, schema: &str| {
+        format!(
+            r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01">{references}<edmx:DataServices>{schema}</edmx:DataServices></edmx:Edmx>"#
+        )
+    };
+    let public_xml = wrap(
+        r#"<edmx:Reference Uri="hidden"><edmx:Include Namespace="Hidden"/></edmx:Reference>"#,
+        r#"<Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Public"><EntityType Name="Owner" Abstract="true"><NavigationProperty Name="Detail" Type="Hidden.Detail"/></EntityType></Schema>"#,
+    );
+    let hidden_xml = wrap(
+        r#"<edmx:Reference Uri="leaf"><edmx:Include Namespace="Leaf"/></edmx:Reference>"#,
+        r#"<Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Hidden"><EntityType Name="Detail" Abstract="true"><NavigationProperty Name="Leaf" Type="Leaf.Value"/></EntityType></Schema>"#,
+    );
+    let leaf_xml = wrap(
+        "",
+        r#"<Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Leaf"><EntityType Name="Value" Abstract="true"><Property Name="Name" Type="Edm.String"/></EntityType></Schema>"#,
+    );
+    let public_json = r#"{"$Version":"4.01","$Reference":{"hidden":{"$Include":[{"$Namespace":"Hidden"}]}},"Public":{"Owner":{"$Kind":"EntityType","$Abstract":true,"Detail":{"$Kind":"NavigationProperty","$Type":"Hidden.Detail","$Nullable":true}}}}"#;
+    let hidden_json = r#"{"$Version":"4.01","$Reference":{"leaf":{"$Include":[{"$Namespace":"Leaf"}]}},"Hidden":{"Detail":{"$Kind":"EntityType","$Abstract":true,"Leaf":{"$Kind":"NavigationProperty","$Type":"Leaf.Value","$Nullable":true}}}}"#;
+    let leaf_json = r#"{"$Version":"4.01","Leaf":{"Value":{"$Kind":"EntityType","$Abstract":true,"Name":{"$Nullable":true}}}}"#;
+    for (path, valid) in [
+        ("Detail/Leaf/Name", true),
+        ("Detail/Missing/Name", false),
+        ("Missing/Leaf/Name", false),
+        ("Detail/Leaf/Missing", false),
+        ("Detail/Hidden.Detail/Leaf/Name", false),
+        ("Detail/Leaf/Leaf.Value/Name", false),
+        ("/Leaf.Value/Name", false),
+    ] {
+        let root_xml = wrap(
+            r#"<edmx:Reference Uri="public"><edmx:Include Namespace="Public" Alias="P"/></edmx:Reference>"#,
+            &format!(
+                r#"<Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><Term Name="Value" Type="Edm.String"/><Annotations Target="P.Owner"><Annotation Term="N.Value"><Path>{path}</Path></Annotation></Annotations></Schema>"#
+            ),
+        );
+        let root_json = format!(
+            r#"{{"$Version":"4.01","$Reference":{{"public":{{"$Include":[{{"$Namespace":"Public","$Alias":"P"}}]}}}},"N":{{"Value":{{"$Kind":"Term","$Nullable":true}},"$Annotations":{{"P.Owner":{{"@N.Value":{{"$Path":"{path}"}}}}}}}}}}"#
+        );
+        for xml in [false, true] {
+            let parse = |source: &str| {
+                if xml {
+                    parser::from_xml_reader_with_profile(source.as_bytes(), P::Strict)
+                } else {
+                    parser::from_json_reader_with_profile(source.as_bytes(), P::Strict)
+                }
+                .unwrap()
+            };
+            let root = parse(if xml { &root_xml } else { &root_json });
+            let mut loaded = Vec::new();
+            let model = Resolver::resolve_with_loader(
+                root,
+                "https://example.test/root",
+                &mut |uri: &str| {
+                    loaded.push(uri.to_owned());
+                    let source = match uri {
+                        "https://example.test/public" => {
+                            if xml {
+                                public_xml.as_str()
+                            } else {
+                                public_json
+                            }
+                        }
+                        "https://example.test/hidden" => {
+                            if xml {
+                                hidden_xml.as_str()
+                            } else {
+                                hidden_json
+                            }
+                        }
+                        "https://example.test/leaf" => {
+                            if xml {
+                                leaf_xml.as_str()
+                            } else {
+                                leaf_json
+                            }
+                        }
+                        _ => panic!("unexpected reference {uri}"),
+                    };
+                    Ok(parse(source))
+                },
+            )
+            .unwrap();
+            assert_eq!(loaded.len(), 3);
+            validator::validate_document(&model).unwrap();
+            let diagnostics = validator::validate_annotations(&model);
+            assert_eq!(
+                diagnostics.is_empty(),
+                valid,
+                "xml={xml}, {path}: {diagnostics:?}"
+            );
+            assert_eq!(
+                diagnostics
+                    .iter()
+                    .any(|d| d.issue == validator::AnnotationIssue::InvalidExpressionPath),
+                !valid,
+                "{diagnostics:?}"
+            );
+        }
+    }
+}
+
+#[test]
 fn term_casts_validate_qualifiers_and_implicit_media_targets() {
     for media_entity in [false, true] {
         let mut cases = vec![
