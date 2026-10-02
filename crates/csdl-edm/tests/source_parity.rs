@@ -1,6 +1,28 @@
 use csdl_edm::{conformance::ValidationProfile, parser};
 
 #[test]
+fn strict_xml_limits_inline_url_references_to_expression_value_locations() {
+    for (body, valid) in [
+        (r#"<Annotation Term="N.Value"><Collection UrlRef="value"/></Annotation>"#, false),
+        (r#"<ComplexType Name="Owner"><Property Name="P" UrlRef="value"/></ComplexType>"#, false),
+        (r#"<Annotation Term="N.Value" UrlRef="value"/>"#, true),
+        (r#"<Annotation Term="N.Value"><LabeledElement Name="Label" UrlRef="value"/></Annotation>"#, true),
+        (r#"<Annotation Term="N.Value"><Record><PropertyValue Property="P" UrlRef="value"/></Record></Annotation>"#, true),
+    ] {
+        let xml = format!(r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N">{body}</Schema></edmx:DataServices></edmx:Edmx>"#);
+        let result = parser::from_xml_reader_with_profile(xml.as_bytes(), ValidationProfile::Strict);
+        assert_eq!(result.is_ok(), valid, "{body}: {result:?}");
+        if valid {
+            let expanded = xml.replace(" UrlRef=\"value\"/>", "><UrlRef><String>value</String></UrlRef></Annotation>");
+            if body.starts_with("<Annotation Term=\"N.Value\" UrlRef=") {
+                let expanded = parser::from_xml_reader_with_profile(expanded.as_bytes(), ValidationProfile::Strict).unwrap();
+                assert_eq!(result.unwrap(), expanded);
+            }
+        }
+    }
+}
+
+#[test]
 fn strict_xml_limits_inline_paths_to_expression_value_locations() {
     for attribute in ["Path", "PropertyPath", "NavigationPropertyPath", "AnnotationPath", "ModelElementPath"] {
         for (body, valid) in [

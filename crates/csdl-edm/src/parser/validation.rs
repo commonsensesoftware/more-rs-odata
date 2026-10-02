@@ -910,7 +910,8 @@ pub(super) fn attribute_allowed(name: &str, key: &str, json: bool) -> bool {
     match key {
         "Binary" | "Bool" | "Date" | "DateTimeOffset" | "Decimal" | "Duration"
         | "EnumMember" | "Float" | "Guid" | "Int" | "String" | "TimeOfDay"
-        | "PropertyPath" | "NavigationPropertyPath" | "AnnotationPath" | "ModelElementPath" if !json => {
+        | "PropertyPath" | "NavigationPropertyPath" | "AnnotationPath" | "ModelElementPath"
+        | "UrlRef" if !json => {
             matches!(name, "Annotation" | "PropertyValue" | "LabeledElement")
         }
         // Null has element notation only; it is not an unknown future attribute.
