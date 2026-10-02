@@ -766,8 +766,9 @@ impl Catalog {
             collection
                 || !matches!(
                     *t,
-                    "Edm.String" | "Edm.Boolean" | "Edm.Int32" | "Edm.Double"
+                    "Edm.String" | "Edm.Boolean" | "Edm.Int32"
                 )
+                    && !(*t == "Edm.Double" && map.get(key).is_some_and(Value::is_number))
         }) {
             let ty = self.preferred(ty);
             map.insert(
