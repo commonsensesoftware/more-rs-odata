@@ -7,6 +7,34 @@ fn xml(expression: &str) -> String {
 }
 
 #[test]
+fn xml_element_and_attribute_names_are_checked_before_extension_skipping() {
+    for (markup, valid) in [
+        ("<Future><1invalid/></Future>", false),
+        ("<Future><invalid?name/></Future>", false),
+        ("<Future><a:b:c/></Future>", false),
+        ("<Future><:invalid/></Future>", false),
+        (r#"<Future 1invalid="value"/>"#, false),
+        (r#"<Future invalid?name="value"/>"#, false),
+        (r#"<Future a:b:c="value"/>"#, false),
+        (r#"<Future :invalid="value"/>"#, false),
+        (
+            r#"<Future xmlns:x="urn:extension"><x:日本語 x:属性="value"/></Future>"#,
+            true,
+        ),
+        (r#"<Future><_name-1.0 data-value="value"/></Future>"#, true),
+    ] {
+        let source = xml("<Int>1</Int>").replace(
+            "<ComplexType Name=\"Kept\"/>",
+            &format!("{markup}<ComplexType Name=\"Kept\"/>"),
+        );
+        for profile in [P::Strict, P::Tolerant] {
+            let result = parser::from_xml_reader_with_report(source.as_bytes(), profile);
+            assert_eq!(result.is_ok(), valid, "{profile:?}: {markup}: {result:?}");
+        }
+    }
+}
+
+#[test]
 fn xml_processing_instruction_targets_require_nonreserved_xml_names() {
     for (target, valid) in [
         ("extension", true),

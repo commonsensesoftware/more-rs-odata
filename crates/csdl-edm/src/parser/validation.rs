@@ -196,10 +196,19 @@ pub(super) fn xml_source_with_diagnostics<R: io::BufRead>(
         }
         match event {
             Event::Start(ref e) | Event::Empty(ref e) => {
+                let name = e.name();
+                let name = reader.decoder().decode(name.as_ref()).map_err(io::Error::other)?;
+                if !xml_qualified_name(&name) {
+                    return Err(invalid("Invalid XML element name"));
+                }
                 // XML well-formedness errors cannot be recovered by dropping an
                 // annotation or skipping an unknown extension subtree.
                 for attr in e.attributes() {
                     let attr = attr.map_err(io::Error::other)?;
+                    let key = reader.decoder().decode(attr.key.as_ref()).map_err(io::Error::other)?;
+                    if !xml_qualified_name(&key) {
+                        return Err(invalid("Invalid XML attribute name"));
+                    }
                     if attr.value.contains(&b'<') {
                         return Err(invalid("Literal < is not allowed in XML attribute values"));
                     }
@@ -403,6 +412,13 @@ fn xml_name(value: &str) -> bool {
     chars.next().is_some_and(start) && chars.all(|c| {
         start(c) || matches!(c, '-' | '.' | '0'..='9' | '\u{B7}' | '\u{300}'..='\u{36F}' | '\u{203F}'..='\u{2040}')
     })
+}
+
+fn xml_qualified_name(value: &str) -> bool {
+    let mut parts = value.split(':');
+    parts.next().is_some_and(xml_name)
+        && parts.next().is_none_or(xml_name)
+        && parts.next().is_none()
 }
 
 fn validate_xml_declaration(raw: &str) -> io::Result<()> {
