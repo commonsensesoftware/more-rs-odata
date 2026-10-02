@@ -23,6 +23,30 @@ fn check_version(xml: &str, json: &str, version: &str, expected: bool) {
 }
 
 #[test]
+fn singleton_and_scalar_navigation_targets_have_versioned_key_requirements() {
+    for version in ["4.0", "4.01"] {
+        for key in [false, true] {
+            let xml_key = if key { r#"<Key><PropertyRef Name="Id"/></Key>"# } else { "" };
+            let json_key = if key { r#", "$Key":["Id"]"# } else { "" };
+            let target_xml = format!(r#"<EntityType Name="Target">{xml_key}<Property Name="Id" Type="Edm.Int32" Nullable="false"/></EntityType>"#);
+            let target_json = format!(r#""Target":{{"$Kind":"EntityType"{json_key},"Id":{{"$Type":"Edm.Int32","$Nullable":false}}}}"#);
+            check_version(
+                &format!(r#"{target_xml}<EntityContainer Name="Service"><Singleton Name="Current" Type="N.Target"/></EntityContainer>"#),
+                &format!(r#"{target_json},"Service":{{"$Kind":"EntityContainer","Current":{{"$Type":"N.Target"}}}}"#),
+                version, key || version == "4.01",
+            );
+            for contained in [false, true] {
+                check_version(
+                    &format!(r#"{target_xml}<EntityType Name="Owner"><Key><PropertyRef Name="Id"/></Key><Property Name="Id" Type="Edm.Int32" Nullable="false"/><NavigationProperty Name="Related" Type="N.Target" ContainsTarget="{contained}"/></EntityType>"#),
+                    &format!(r#"{target_json},"Owner":{{"$Kind":"EntityType","$Key":["Id"],"Id":{{"$Type":"Edm.Int32","$Nullable":false}},"Related":{{"$Kind":"NavigationProperty","$Type":"N.Target","$ContainsTarget":{contained}}}}}"#),
+                    version, key || version == "4.01",
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn key_primitive_types_nullability_and_collection_cardinality() {
     for ty in [
         "Boolean",
