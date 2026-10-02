@@ -4,6 +4,48 @@ use csdl_edm::{
 };
 
 #[test]
+fn collection_items_use_supplied_function_and_url_result_types() {
+    for (xml, json) in [
+        (
+            r#"<Apply Function="Client.value"/>"#,
+            r#"{"$Apply":[],"$Function":"Client.value"}"#,
+        ),
+        (
+            "<UrlRef><String>value</String></UrlRef>",
+            r#"{"$UrlRef":"value"}"#,
+        ),
+    ] {
+        for model in models_with_collection(
+            &format!("<Collection>{xml}</Collection>"),
+            &format!("[{json}]"),
+            true,
+        ) {
+            for (ty, collection, valid) in [
+                (PrimitiveType::Int32, false, true),
+                (PrimitiveType::String, false, false),
+                (PrimitiveType::Int32, true, false),
+            ] {
+                let returned = supplied(ty, collection);
+
+                let mut options = AnnotationValidationOptions::default();
+                options
+                    .url_result_types
+                    .insert("value".into(), returned.clone());
+                options.client_functions.insert(
+                    "Client.value".into(),
+                    vec![ClientFunctionSignature {
+                        parameters: vec![],
+                        return_type: returned,
+                    }],
+                );
+                let diagnostics = validate_annotations_with_options(&model, &options);
+                assert_eq!(diagnostics.is_empty(), valid, "{xml}: {diagnostics:?}");
+            }
+        }
+    }
+}
+
+#[test]
 fn url_reference_requires_a_scalar_string_operand() {
     for (xml, json, valid) in [
         ("<String>value</String>", r#""value""#, true),
@@ -83,11 +125,24 @@ fn supplied_client_functions_require_nonreserved_qualified_names() {
 }
 
 fn models(xml_expression: &str, json_expression: &str) -> Vec<DocumentModel> {
+    models_with_collection(xml_expression, json_expression, false)
+}
+
+fn models_with_collection(
+    xml_expression: &str,
+    json_expression: &str,
+    collection: bool,
+) -> Vec<DocumentModel> {
+    let ty = if collection {
+        "Collection(Edm.Int32)"
+    } else {
+        "Edm.Int32"
+    };
     let xml = format!(
-        r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><Term Name="Value" Type="Edm.Int32" Nullable="false"/><ComplexType Name="Owner"><Annotation Term="N.Value">{xml_expression}</Annotation></ComplexType></Schema></edmx:DataServices></edmx:Edmx>"#
+        r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><Term Name="Value" Type="{ty}" Nullable="false"/><ComplexType Name="Owner"><Annotation Term="N.Value">{xml_expression}</Annotation></ComplexType></Schema></edmx:DataServices></edmx:Edmx>"#
     );
     let json = format!(
-        r#"{{"$Version":"4.01","N":{{"Value":{{"$Kind":"Term","$Type":"Edm.Int32"}},"Owner":{{"$Kind":"ComplexType","@N.Value":{json_expression}}}}}}}"#
+        r#"{{"$Version":"4.01","N":{{"Value":{{"$Kind":"Term","$Type":"Edm.Int32","$Collection":{collection}}},"Owner":{{"$Kind":"ComplexType","@N.Value":{json_expression}}}}}}}"#
     );
     [
         parser::from_xml_reader_with_profile(xml.as_bytes(), P::Strict),

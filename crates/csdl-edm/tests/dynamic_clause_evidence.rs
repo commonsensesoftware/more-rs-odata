@@ -42,6 +42,21 @@ fn enum_and_type_definition_collection_items_use_resolved_types() {
 }
 
 #[test]
+fn path_collection_items_require_scalar_compatible_values() {
+    for (path, valid) in [("Count", true), ("Text", false), ("Counts", false), ("Missing", false)] {
+        let xml = format!(r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><Term Name="Value" Type="Collection(Edm.Int32)" Nullable="false"/><ComplexType Name="Owner"><Property Name="Count" Type="Edm.Int32" Nullable="false"/><Property Name="Text" Type="Edm.String"/><Property Name="Counts" Type="Collection(Edm.Int32)" Nullable="false"/><Annotation Term="N.Value"><Collection><Path>{path}</Path></Collection></Annotation></ComplexType></Schema></edmx:DataServices></edmx:Edmx>"#);
+        let json = format!(r#"{{"$Version":"4.01","N":{{"Value":{{"$Kind":"Term","$Type":"Edm.Int32","$Collection":true}},"Owner":{{"$Kind":"ComplexType","Count":{{"$Type":"Edm.Int32"}},"Text":{{"$Nullable":true}},"Counts":{{"$Type":"Edm.Int32","$Collection":true}},"@N.Value":[{{"$Path":"{path}"}}]}}}}}}"#);
+        for parsed in [parser::from_xml_reader_with_profile(xml.as_bytes(), P::Strict), parser::from_json_reader_with_profile(json.as_bytes(), P::Strict)] {
+            let model = Resolver::resolve_document(parsed.unwrap().edmx.unwrap()).unwrap();
+            validator::validate_document(&model).unwrap();
+            assert_eq!(model.schemas[0].annotations.get().unwrap().len(), 1);
+            let diagnostics = validator::validate_annotations(&model);
+            assert_eq!(diagnostics.is_empty(), valid, "{path}: {diagnostics:?}");
+        }
+    }
+}
+
+#[test]
 fn null_values_require_nullable_scalar_contexts() {
     for nullable in [false, true] {
         for collection in [false, true] {
@@ -345,6 +360,7 @@ fn labels_require_names_and_one_expression() {
 
 #[test]
 fn structured_collection_items_must_derive_from_the_expected_type() {
+  for entity in [false, true] {
     for (item_type, valid) in [
         ("N.Base", true),
         ("N.Derived", true),
@@ -357,6 +373,22 @@ fn structured_collection_items_must_derive_from_the_expected_type() {
         let json = format!(
             r##"{{"$Version":"4.01","N":{{"Base":{{"$Kind":"ComplexType"}},"Derived":{{"$Kind":"ComplexType","$BaseType":"N.Base"}},"Other":{{"$Kind":"ComplexType"}},"Value":{{"$Kind":"Term","$Type":"N.Base","$Collection":true}},"Owner":{{"$Kind":"ComplexType","@N.Value":[{{"@type":"#N.Base"}},{{"@type":"#{item_type}"}}]}}}}}}"##
         );
+        let mut xml = xml;
+        let mut json = json;
+        if entity {
+            for name in ["Base", "Derived", "Other"] {
+                xml = xml.replace(&format!("<ComplexType Name=\"{name}\""), &format!("<EntityType Name=\"{name}\""));
+                json = json.replace(&format!(r#""{name}":{{"$Kind":"ComplexType""#), &format!(r#""{name}":{{"$Kind":"EntityType""#));
+            }
+            for name in ["Base", "Other"] {
+                xml = xml.replace(&format!(r#"<EntityType Name="{name}"/>"#), &format!(r#"<EntityType Name="{name}"><Key><PropertyRef Name="ID"/></Key><Property Name="ID" Type="Edm.Int32" Nullable="false"/></EntityType>"#));
+                json = json.replace(&format!(r#""{name}":{{"$Kind":"EntityType"}}"#), &format!(r#""{name}":{{"$Kind":"EntityType","$Key":["ID"],"ID":{{"$Type":"Edm.Int32"}}}}"#));
+            }
+            for name in ["N.Base", item_type] {
+                xml = xml.replace(&format!(r#"<Record Type="{name}"/>"#), &format!(r#"<Record Type="{name}"><PropertyValue Property="ID" Int="1"/></Record>"#));
+                json = json.replace(&format!(r##"{{"@type":"#{name}"}}"##), &format!(r##"{{"@type":"#{name}","ID":1}}"##));
+            }
+        }
         for parsed in [
             parser::from_xml_reader_with_profile(xml.as_bytes(), P::Strict),
             parser::from_json_reader_with_profile(json.as_bytes(), P::Strict),
@@ -378,6 +410,7 @@ fn structured_collection_items_must_derive_from_the_expected_type() {
             assert_eq!(result.is_ok(), valid, "{result:?}: {item_type}");
         }
     }
+  }
 }
 
 #[test]
