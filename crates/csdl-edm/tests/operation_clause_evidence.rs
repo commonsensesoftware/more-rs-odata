@@ -20,6 +20,28 @@ fn check(xml: &str, json: &str, valid: bool) {
 }
 
 #[test]
+fn action_names_are_identifiers_and_do_not_collide_with_other_declarations() {
+    for (name, valid) in [("Run", true), ("_Run", true), ("Été", true), ("", false), ("1Run", false), ("N.Run", false), ("Bad Name", false)] {
+        check(&format!(r#"<Action Name="{name}"/>"#), &format!(r#""{name}":[{{"$Kind":"Action"}}]"#), valid);
+    }
+    for (name, valid) in [("Run", false), ("run", true), ("Other", true)] {
+        for (declaration_xml, declaration_json) in [
+            (format!(r#"<Term Name="{name}" Type="Edm.String"/>"#), format!(r#""{name}":{{"$Kind":"Term","$Type":"Edm.String"}}"#)),
+            (format!(r#"<Function Name="{name}"><ReturnType Type="Edm.String"/></Function>"#), format!(r#""{name}":[{{"$Kind":"Function","$ReturnType":{{"$Type":"Edm.String"}}}}]"#)),
+            (format!(r#"<EntityContainer Name="{name}"><ActionImport Name="Invoke" Action="N.Run"/></EntityContainer>"#), format!(r#""{name}":{{"$Kind":"EntityContainer","Invoke":{{"$Action":"N.Run"}}}}"#)),
+        ] {
+            check(&format!(r#"<Action Name="Run"/>{declaration_xml}"#), &format!(r#""Run":[{{"$Kind":"Action"}}],{declaration_json}"#), valid);
+        }
+    }
+    // A JSON operation array also cannot mix action and function overloads.
+    check(
+        r#"<Action Name="Run"/><Function Name="Run"><ReturnType Type="Edm.String"/></Function>"#,
+        r#""Run":[{"$Kind":"Action"},{"$Kind":"Function","$ReturnType":{"$Type":"Edm.String"}}]"#,
+        false,
+    );
+}
+
+#[test]
 fn operation_collection_encoding_preserves_resolved_multiplicity() {
     for kind in ["Action", "Function"] {
         for (json_collection, collection) in [
