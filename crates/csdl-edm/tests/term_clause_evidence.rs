@@ -3,6 +3,90 @@
 use csdl_edm::{conformance::ValidationProfile as P, parser, resolver::Resolver, validator};
 
 #[test]
+fn json_collection_terms_use_item_type_and_boolean_collection_control() {
+    for (control, expected_collection) in [
+        ("", false),
+        (r#", "$Collection":false"#, false),
+        (r#", "$Collection":true"#, true),
+    ] {
+        let source = format!(
+            r#"{{"$Version":"4.01","N":{{"Detail":{{"$Kind":"ComplexType"}},"Value":{{"$Kind":"Term","$Type":"N.Detail"{control}}}}}}}"#
+        );
+        let model = Resolver::resolve_document(
+            parser::from_json_reader_with_profile(source.as_bytes(), P::Strict)
+                .unwrap()
+                .edmx
+                .unwrap(),
+        )
+        .unwrap();
+        validator::validate_document(&model).unwrap();
+        let term = model.schemas[0]
+            .elements
+            .iter()
+            .find_map(|e| match e.as_ref() {
+                csdl_edm::edm::SchemaElement::Term(t) => Some(t),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(term.is_collection, expected_collection);
+        assert!(
+            matches!(term.ty(), Some(csdl_edm::edm::TermType::Complex(t)) if t.name == "Detail")
+        );
+    }
+    for (ty, control) in [
+        ("Collection(N.Detail)", "true"),
+        ("Collection(N.Detail)", "false"),
+        ("N.Detail", r#""true""#),
+        ("N.Detail", "1"),
+        ("N.Detail", "null"),
+        ("N.Detail", "[]"),
+    ] {
+        let source = format!(
+            r#"{{"$Version":"4.01","N":{{"Detail":{{"$Kind":"ComplexType"}},"Value":{{"$Kind":"Term","$Type":"{ty}","$Collection":{control}}}}}}}"#
+        );
+        assert!(
+            parser::from_json_reader_with_profile(source.as_bytes(), P::Strict).is_err(),
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn json_annotations_preserve_explicit_values_instead_of_using_term_defaults() {
+    use csdl_edm::expr::CsdlAnnotationExpression as E;
+    for (value, expected) in [
+        ("true", E::Bool(true)),
+        ("false", E::Bool(false)),
+        ("null", E::Null),
+    ] {
+        let source = format!(
+            r#"{{"$Version":"4.01","N":{{"Value":{{"$Kind":"Term","$Type":"Edm.Boolean","$Nullable":true,"$DefaultValue":true}},"Owner":{{"$Kind":"ComplexType","@N.Value":{value}}}}}}}"#
+        );
+        let model = Resolver::resolve_document(
+            parser::from_json_reader_with_profile(source.as_bytes(), P::Strict)
+                .unwrap()
+                .edmx
+                .unwrap(),
+        )
+        .unwrap();
+        validator::validate_document(&model).unwrap();
+        assert!(validator::validate_annotations(&model).is_empty());
+        let annotations = model.schemas[0].annotations.get().unwrap();
+        assert_eq!(annotations.len(), 1);
+        assert_eq!(annotations[0].expression.as_ref(), Some(&expected));
+    }
+    let source = r#"{"$Version":"4.01","N":{"Value":{"$Kind":"Term","$Type":"Edm.Boolean","$DefaultValue":true},"Owner":{"$Kind":"ComplexType"}}}"#;
+    let model = Resolver::resolve_document(
+        parser::from_json_reader_with_profile(source.as_bytes(), P::Strict)
+            .unwrap()
+            .edmx
+            .unwrap(),
+    )
+    .unwrap();
+    assert!(model.schemas[0].annotations.get().unwrap().is_empty());
+}
+
+#[test]
 fn specialized_terms_require_each_ancestor_on_the_same_target_and_qualifier() {
     for qualifier in [None, Some("View")] {
         // Each ancestor can be absent, match, use a different qualifier, or target another type.
