@@ -217,8 +217,8 @@ pub(super) fn xml_source_with_diagnostics<R: io::BufRead>(
                         let (namespace, local) = reader.resolver().resolve_attribute(attr.key);
                         let namespace = match namespace {
                             ResolveResult::Unknown(_) => return Err(invalid("Undeclared XML attribute namespace prefix")),
-                            ResolveResult::Unbound => Vec::new(),
-                            ResolveResult::Bound(namespace) => namespace.as_ref().to_vec(),
+                            ResolveResult::Unbound => String::new(),
+                            ResolveResult::Bound(namespace) => normalized_xml_namespace(namespace.as_ref(), reader.decoder())?,
                         };
                         if !expanded_attributes.insert((namespace, local.as_ref().to_vec())) {
                             return Err(invalid("Duplicate expanded XML attribute name"));
@@ -262,7 +262,10 @@ pub(super) fn xml_source_with_diagnostics<R: io::BufRead>(
                 let (ns, local) = reader.resolver().resolve_element(e.name());
                 let name = std::str::from_utf8(local.as_ref()).map_err(io::Error::other)?;
                 let expected = if wrapper(name) { EDMX } else { EDM };
-                let bound = matches!(&ns, ResolveResult::Bound(n) if n.as_ref() == expected);
+                let bound = match &ns {
+                    ResolveResult::Bound(n) => normalized_xml_namespace(n.as_ref(), reader.decoder())?.as_bytes() == expected,
+                    _ => false,
+                };
                 let known = declaration(name) || expression(name);
                 if !bound || !known {
                     if let Some((start_depth, offset, stack_len, term)) = annotation.take() {
@@ -438,6 +441,17 @@ fn xml_name(value: &str) -> bool {
     chars.next().is_some_and(start) && chars.all(|c| {
         start(c) || matches!(c, '-' | '.' | '0'..='9' | '\u{B7}' | '\u{300}'..='\u{36F}' | '\u{203F}'..='\u{2040}')
     })
+}
+
+fn normalized_xml_namespace(value: &[u8], decoder: quick_xml::encoding::Decoder) -> io::Result<String> {
+    let attribute = quick_xml::events::attributes::Attribute {
+        key: quick_xml::name::QName(b"xmlns"),
+        value: std::borrow::Cow::Borrowed(value),
+    };
+    attribute
+        .decoded_and_normalized_value(quick_xml::XmlVersion::Implicit1_0, decoder)
+        .map(|value| value.into_owned())
+        .map_err(io::Error::other)
 }
 
 fn xml_qualified_name(value: &str) -> bool {

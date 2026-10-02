@@ -7,6 +7,32 @@ fn xml(expression: &str) -> String {
 }
 
 #[test]
+fn xml_namespace_identity_uses_decoded_attribute_values() {
+    let source = xml("<Int>1</Int>")
+        .replace("/ns/edmx", "/ns/edm&#120;")
+        .replace("/ns/edm\"", "/ns/ed&#109;\"");
+    for profile in [P::Strict, P::Tolerant] {
+        let report = parser::from_xml_reader_with_report(source.as_bytes(), profile).unwrap();
+        assert!(report.diagnostics.is_empty());
+        assert_eq!(
+            report.document.edmx.unwrap().schemas[0].annotations.len(),
+            1
+        );
+    }
+    for (second_namespace, valid) in [("urn:&#111;ne", false), ("urn:tw&#111;", true)] {
+        let source = xml("<Int>1</Int>").replace("<ComplexType Name=\"Kept\"/>", &format!(r#"<Future xmlns:a="urn:one" xmlns:b="{second_namespace}" a:value="1" b:value="2"/><ComplexType Name="Kept"/>"#));
+        for profile in [P::Strict, P::Tolerant] {
+            let result = parser::from_xml_reader_with_report(source.as_bytes(), profile);
+            assert_eq!(
+                result.is_ok(),
+                valid,
+                "{profile:?}: {second_namespace}: {result:?}"
+            );
+        }
+    }
+}
+
+#[test]
 fn xml_reserved_namespace_bindings_are_enforced_in_skipped_extensions() {
     for (attributes, valid) in [
         (
