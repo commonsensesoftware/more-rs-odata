@@ -201,6 +201,10 @@ pub(super) fn xml_source_with_diagnostics<R: io::BufRead>(
                 if !xml_qualified_name(&name) {
                     return Err(invalid("Invalid XML element name"));
                 }
+                if matches!(reader.resolver().resolve_element(e.name()).0, ResolveResult::Unknown(_)) {
+                    return Err(invalid("Undeclared XML element namespace prefix"));
+                }
+                let mut expanded_attributes = std::collections::HashSet::new();
                 // XML well-formedness errors cannot be recovered by dropping an
                 // annotation or skipping an unknown extension subtree.
                 for attr in e.attributes() {
@@ -208,6 +212,17 @@ pub(super) fn xml_source_with_diagnostics<R: io::BufRead>(
                     let key = reader.decoder().decode(attr.key.as_ref()).map_err(io::Error::other)?;
                     if !xml_qualified_name(&key) {
                         return Err(invalid("Invalid XML attribute name"));
+                    }
+                    if key != "xmlns" && !key.starts_with("xmlns:") {
+                        let (namespace, local) = reader.resolver().resolve_attribute(attr.key);
+                        let namespace = match namespace {
+                            ResolveResult::Unknown(_) => return Err(invalid("Undeclared XML attribute namespace prefix")),
+                            ResolveResult::Unbound => Vec::new(),
+                            ResolveResult::Bound(namespace) => namespace.as_ref().to_vec(),
+                        };
+                        if !expanded_attributes.insert((namespace, local.as_ref().to_vec())) {
+                            return Err(invalid("Duplicate expanded XML attribute name"));
+                        }
                     }
                     if attr.value.contains(&b'<') {
                         return Err(invalid("Literal < is not allowed in XML attribute values"));

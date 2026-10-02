@@ -7,6 +7,36 @@ fn xml(expression: &str) -> String {
 }
 
 #[test]
+fn xml_namespace_bindings_and_expanded_attribute_names_are_checked_before_skipping() {
+    for (markup, valid) in [
+        ("<Future><missing:Element/></Future>", false),
+        (r#"<Future missing:attribute="value"/>"#, false),
+        (
+            r#"<Future xmlns:a="urn:one" xmlns:b="urn:one" a:value="1" b:value="2"/>"#,
+            false,
+        ),
+        (
+            r#"<Future xmlns:a="urn:one" xmlns:b="urn:two" a:value="1" b:value="2"/>"#,
+            true,
+        ),
+        (r#"<Future xmlns:a="urn:one" value="1" a:value="2"/>"#, true),
+        (
+            r#"<Future xmlns:a="urn:one"><a:Element a:value="1"/></Future>"#,
+            true,
+        ),
+    ] {
+        let source = xml("<Int>1</Int>").replace(
+            "<ComplexType Name=\"Kept\"/>",
+            &format!("{markup}<ComplexType Name=\"Kept\"/>"),
+        );
+        for profile in [P::Strict, P::Tolerant] {
+            let result = parser::from_xml_reader_with_report(source.as_bytes(), profile);
+            assert_eq!(result.is_ok(), valid, "{profile:?}: {markup}: {result:?}");
+        }
+    }
+}
+
+#[test]
 fn xml_element_and_attribute_names_are_checked_before_extension_skipping() {
     for (markup, valid) in [
         ("<Future><1invalid/></Future>", false),
