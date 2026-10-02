@@ -115,6 +115,66 @@ fn xml(body: &str) -> String {
     )
 }
 
+#[cfg(all(feature = "resolver", feature = "validator"))]
+#[test]
+fn external_annotation_targets_resolve_members_and_reject_missing_segments() {
+    use csdl_edm::{
+        resolver::Resolver,
+        validator::{self, AnnotationIssue},
+    };
+    let declarations_xml = r#"<Term Name="Note" Type="Edm.String"/><TypeDefinition Name="Code" UnderlyingType="Edm.String"/><EnumType Name="Choice"><Member Name="One"/></EnumType><ComplexType Name="Detail"><Property Name="Text" Type="Edm.String"/></ComplexType><EntityType Name="Entity"><Property Name="Detail" Type="N.Detail"/><NavigationProperty Name="Related" Type="N.Entity"/></EntityType><Function Name="Call"><Parameter Name="arg" Type="Edm.String"/><ReturnType Type="Edm.String"/></Function><EntityContainer Name="Service"><Singleton Name="Current" Type="N.Entity"/><FunctionImport Name="Invoke" Function="N.Call"/></EntityContainer>"#;
+    let declarations_json = r#""Note":{"$Kind":"Term"},"Code":{"$Kind":"TypeDefinition","$UnderlyingType":"Edm.String"},"Choice":{"$Kind":"EnumType","One":0},"Detail":{"$Kind":"ComplexType","Text":{}},"Entity":{"$Kind":"EntityType","Detail":{"$Type":"N.Detail"},"Related":{"$Kind":"NavigationProperty","$Type":"N.Entity"}},"Call":[{"$Kind":"Function","$Parameter":[{"$Name":"arg"}],"$ReturnType":{}}],"Service":{"$Kind":"EntityContainer","Current":{"$Type":"N.Entity"},"Invoke":{"$Function":"N.Call"}}"#;
+    for (target, valid) in [
+        ("N.Note", true),
+        ("N.Code", true),
+        ("N.Choice", true),
+        ("N.Choice/One", true),
+        ("N.Detail", true),
+        ("N.Detail/Text", true),
+        ("N.Entity", true),
+        ("N.Entity/Detail", true),
+        ("N.Entity/Detail/Text", true),
+        ("N.Entity/Related", true),
+        ("N.Call(Edm.String)", true),
+        ("N.Call(Edm.String)/arg", true),
+        ("N.Call(Edm.String)/$ReturnType", true),
+        ("N.Service", true),
+        ("N.Service/Current", true),
+        ("N.Service/Invoke", true),
+        ("N.Missing", false),
+        ("N.Choice/Missing", false),
+        ("N.Detail/Missing", false),
+        ("N.Entity/Detail/Missing", false),
+        ("N.Call(Edm.String)/missing", false),
+        ("N.Call(Edm.Int32)", false),
+        ("N.Service/Missing", false),
+    ] {
+        let source_xml = xml(&format!(
+            r#"{declarations_xml}<Annotations Target="{target}"><Annotation Term="N.Note" String="value"/></Annotations>"#
+        ));
+        let source_json = format!(
+            r#"{{"$Version":"4.01","N":{{{declarations_json},"$Annotations":{{"{target}":{{"@N.Note":"value"}}}}}}}}"#
+        );
+        for document in [
+            parser::from_xml_reader_with_profile(source_xml.as_bytes(), P::Strict).unwrap(),
+            parser::from_json_reader_with_profile(source_json.as_bytes(), P::Strict).unwrap(),
+        ] {
+            let model = Resolver::resolve_document(document.edmx.unwrap()).unwrap();
+            assert_eq!(model.schemas[0].annotations.get().unwrap().len(), 1);
+            let diagnostics = validator::validate_annotations(&model);
+            assert_eq!(diagnostics.is_empty(), valid, "{target}: {diagnostics:?}");
+            if !valid {
+                assert!(
+                    diagnostics
+                        .iter()
+                        .any(|d| d.issue == AnnotationIssue::UnresolvedTarget),
+                    "{target}: {diagnostics:?}"
+                );
+            }
+        }
+    }
+}
+
 #[test]
 fn xml_annotations_require_a_term_and_allow_an_optional_qualifier() {
     for (attributes, valid) in [
