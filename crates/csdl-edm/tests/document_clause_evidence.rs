@@ -11,6 +11,55 @@ fn json(reference: &str) -> String {
 }
 
 #[test]
+fn document_versions_require_supported_strings_and_survive_output() {
+    for version in [
+        "4.0", "4.01", "4", "4.00", "4.1", "3.0", "5.0", "", " 4.01 ",
+    ] {
+        let source_xml = xml("").replace("Version=\"4.01\"", &format!("Version=\"{version}\""));
+        let source_json = format!(r#"{{"$Version":"{version}","Local":{{}}}}"#);
+        for result in [
+            parser::from_xml_reader_with_profile(source_xml.as_bytes(), P::Strict),
+            parser::from_json_reader_with_profile(source_json.as_bytes(), P::Strict),
+        ] {
+            let valid = matches!(version, "4.0" | "4.01");
+            assert_eq!(result.is_ok(), valid, "{version}: {result:?}");
+            if let Ok(document) = result {
+                assert_eq!(
+                    document.edmx.as_ref().unwrap().version.as_deref(),
+                    Some(version)
+                );
+                for format in [csdl_edm::CsdlFormat::Xml, csdl_edm::CsdlFormat::Json] {
+                    let mut bytes = Vec::new();
+                    document
+                        .write_as_with_profile(&mut bytes, format, P::Strict)
+                        .unwrap();
+                    let parsed = match format {
+                        csdl_edm::CsdlFormat::Xml => {
+                            parser::from_xml_reader_with_profile(bytes.as_slice(), P::Strict)
+                        }
+                        csdl_edm::CsdlFormat::Json => {
+                            parser::from_json_reader_with_profile(bytes.as_slice(), P::Strict)
+                        }
+                    }
+                    .unwrap();
+                    assert_eq!(parsed.edmx.unwrap().version.as_deref(), Some(version));
+                }
+            }
+        }
+    }
+    let missing_xml = xml("").replace(" Version=\"4.01\"", "");
+    assert!(parser::from_xml_reader_with_profile(missing_xml.as_bytes(), P::Strict).is_err());
+    for source in [
+        r#"{"Local":{}}"#,
+        r#"{"$Version":4.01,"Local":{}}"#,
+        r#"{"$Version":null,"Local":{}}"#,
+        r#"{"$Version":true,"Local":{}}"#,
+    ] {
+        assert!(parser::from_json_reader_with_profile(source.as_bytes(), P::Strict).is_err());
+    }
+}
+
+#[test]
 fn xml_references_require_uri_and_at_least_one_include_kind() {
     for (reference, valid) in [
         (
