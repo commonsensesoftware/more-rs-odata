@@ -6,38 +6,45 @@ use csdl_edm::{
 };
 
 #[test]
-fn full_metadata_types_dynamic_open_record_constants() {
-    let xml = r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><ComplexType Name="Open" OpenType="true"/><Term Name="Row" Type="N.Open"/><Annotation Term="N.Row"><Record><PropertyValue Property="Date" Date="2026-10-02"/><PropertyValue Property="Amount" Decimal="1.25"/><PropertyValue Property="Dates"><Collection><Date>2026-10-02</Date></Collection></PropertyValue></Record></Annotation></Schema></edmx:DataServices></edmx:Edmx>"#;
-    let json = r##"{"$Version":"4.01","N":{"Open":{"$Kind":"ComplexType","$OpenType":true},"Row":{"$Kind":"Term","$Type":"N.Open"},"@N.Row":{"Date":"2026-10-02","Date@type":"#Edm.Date","Amount":1.25,"Amount@type":"#Edm.Decimal","Dates":["2026-10-02"],"Dates@type":"#Collection(Edm.Date)"}}}"##;
+fn full_and_minimal_metadata_type_dynamic_open_record_constants() {
+    let xml = r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><ComplexType Name="Open" OpenType="true"/><Term Name="Row" Type="N.Open"/><Annotation Term="N.Row"><Record><PropertyValue Property="Text" String="value"/><PropertyValue Property="Enabled" Bool="true"/><PropertyValue Property="Date" Date="2026-10-02"/><PropertyValue Property="Amount" Decimal="1.25"/><PropertyValue Property="Dates"><Collection><Date>2026-10-02</Date></Collection></PropertyValue></Record></Annotation></Schema></edmx:DataServices></edmx:Edmx>"#;
+    let json = r##"{"$Version":"4.01","N":{"Open":{"$Kind":"ComplexType","$OpenType":true},"Row":{"$Kind":"Term","$Type":"N.Open"},"@N.Row":{"Text":"value","Enabled":true,"Date":"2026-10-02","Date@type":"#Edm.Date","Amount":1.25,"Amount@type":"#Edm.Decimal","Dates":["2026-10-02"],"Dates@type":"#Collection(Edm.Date)"}}}"##;
     for document in [
         parser::from_xml_reader_with_profile(xml.as_bytes(), P::Strict).unwrap(),
         parser::from_json_reader_with_profile(json.as_bytes(), P::Strict).unwrap(),
     ] {
-        let mut bytes = Vec::new();
-        document
-            .write_as_with_options(
-                &mut bytes,
-                CsdlFormat::Json,
-                &SerializationOptions {
-                    metadata: MetadataLevel::Full,
-                    ..Default::default()
-                },
-            )
-            .unwrap();
-        let output: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        let row = &output["N"]["@N.Row"];
-        assert_eq!(row["Date@type"], "#Edm.Date");
-        assert_eq!(row["Amount@type"], "#Edm.Decimal");
-        assert_eq!(row["Dates@type"], "#Collection(Edm.Date)");
-        let parsed = parser::from_json_reader_with_profile(bytes.as_slice(), P::Strict).unwrap();
-        #[cfg(all(feature = "resolver", feature = "validator"))]
-        {
-            let model =
-                csdl_edm::resolver::Resolver::resolve_document(parsed.edmx.unwrap()).unwrap();
-            assert!(csdl_edm::validator::validate_annotations(&model).is_empty());
+        for metadata in [MetadataLevel::Full, MetadataLevel::Minimal] {
+            let mut bytes = Vec::new();
+            document
+                .write_as_with_options(
+                    &mut bytes,
+                    CsdlFormat::Json,
+                    &SerializationOptions {
+                        metadata,
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+            let output: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            let row = &output["N"]["@N.Row"];
+            assert_eq!(row["Text"], "value");
+            assert_eq!(row["Enabled"], true);
+            assert!(row.get("Text@type").is_none());
+            assert!(row.get("Enabled@type").is_none());
+            assert_eq!(row["Date@type"], "#Edm.Date");
+            assert_eq!(row["Amount@type"], "#Edm.Decimal");
+            assert_eq!(row["Dates@type"], "#Collection(Edm.Date)");
+            let parsed =
+                parser::from_json_reader_with_profile(bytes.as_slice(), P::Strict).unwrap();
+            #[cfg(all(feature = "resolver", feature = "validator"))]
+            {
+                let model =
+                    csdl_edm::resolver::Resolver::resolve_document(parsed.edmx.unwrap()).unwrap();
+                assert!(csdl_edm::validator::validate_annotations(&model).is_empty());
+            }
+            #[cfg(not(all(feature = "resolver", feature = "validator")))]
+            let _ = parsed;
         }
-        #[cfg(not(all(feature = "resolver", feature = "validator")))]
-        let _ = parsed;
     }
 }
 

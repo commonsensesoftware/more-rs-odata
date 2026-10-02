@@ -602,9 +602,10 @@ impl Catalog {
                 for p in properties {
                     if let Some(e) = &p.value {
                         let inferred = self.expression_type(e, ns);
-                        let expected = ty
+                        let declared = ty
                             .as_ref()
-                            .and_then(|t| self.property_type(t, &p.property, 0))
+                            .and_then(|t| self.property_type(t, &p.property, 0));
+                        let expected = declared.clone()
                             .or_else(|| inferred.as_ref().map(|(ty, _)| ty.clone()));
                         map.insert(
                             p.property.clone(),
@@ -616,6 +617,7 @@ impl Catalog {
                             expected.as_deref(),
                             matches!(e, E::Collection(_))
                                 || inferred.as_ref().is_some_and(|(_, collection)| *collection),
+                            declared.is_none(),
                             options,
                         );
                         self.annotations(&mut map, &p.annotations, ns, options, &p.property)?;
@@ -741,9 +743,12 @@ impl Catalog {
         key: &str,
         ty: Option<&str>,
         collection: bool,
+        dynamic_property: bool,
         options: &SerializationOptions,
     ) {
-        if options.metadata != MetadataLevel::Full {
+        if options.metadata != MetadataLevel::Full
+            && !(dynamic_property && options.metadata == MetadataLevel::Minimal)
+        {
             return;
         }
         // A record may specify a derived type. Its property/annotation control
@@ -811,6 +816,7 @@ impl Catalog {
                 &key,
                 expected.as_deref(),
                 self.terms.get(&term).is_some_and(|t| t.is_collection),
+                false,
                 options,
             );
             self.annotations(map, &a.annotations, ns, options, &key)?;
