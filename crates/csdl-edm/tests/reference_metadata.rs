@@ -86,6 +86,51 @@ fn loader_observes_alias_resolved_schema_version_before_retrieval() {
 }
 
 #[test]
+fn schema_version_hints_require_the_core_term_without_a_qualifier() {
+    struct Loader {
+        expected: Option<&'static str>,
+        inspected: bool,
+    }
+    impl DocumentLoader for Loader {
+        fn inspect_reference(&mut self, request: ReferenceRequest<'_>) -> Result<(), String> {
+            assert_eq!(request.absolute_uri, "https://example.test/types");
+            assert_eq!(request.schema_version, self.expected);
+            self.inspected = true;
+            Ok(())
+        }
+        fn load(&mut self, uri: &str) -> Result<CsdlDocument, String> {
+            assert!(self.inspected);
+            assert_eq!(uri, "https://example.test/types");
+            Ok(doc(r#"{"$Version":"4.01","Public":{}}"#))
+        }
+    }
+    for (term, qualifier, expected) in [
+        (None, None, None),
+        (Some("Core.SchemaVersion"), None, Some("2026-10")),
+        (Some("Core.SchemaVersion"), Some("View"), None),
+        (Some("Other.SchemaVersion"), None, None),
+    ] {
+        let xml_annotation = term.map(|term| {
+            let qualifier = qualifier.map(|q| format!(r#" Qualifier="{q}""#)).unwrap_or_default();
+            format!(r#"<Annotation xmlns="http://docs.oasis-open.org/odata/ns/edm" Term="{term}"{qualifier} String="2026-10"/>"#)
+        }).unwrap_or_default();
+        let json_annotation = term.map(|term| {
+            let qualifier = qualifier.map(|q| format!("#{q}")).unwrap_or_default();
+            format!(r#", "@{term}{qualifier}":"2026-10""#)
+        }).unwrap_or_default();
+        let xml = format!(r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:Reference Uri="types"><edmx:Include Namespace="Public"/>{xml_annotation}</edmx:Reference><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Org.OData.Core.V1" Alias="Core"><Term Name="SchemaVersion" Type="Edm.String"/></Schema><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Other"><Term Name="SchemaVersion" Type="Edm.String"/></Schema></edmx:DataServices></edmx:Edmx>"#);
+        let json = format!(r#"{{"$Version":"4.01","$Reference":{{"types":{{"$Include":[{{"$Namespace":"Public"}}]{json_annotation}}}}},"Org.OData.Core.V1":{{"$Alias":"Core","SchemaVersion":{{"$Kind":"Term"}}}},"Other":{{"SchemaVersion":{{"$Kind":"Term"}}}}}}"#);
+        for document in [parser::from_xml_reader_with_profile(xml.as_bytes(), ValidationProfile::Strict).unwrap(), parser::from_json_reader_with_profile(json.as_bytes(), ValidationProfile::Strict).unwrap()] {
+            let mut loader = Loader { expected, inspected: false };
+            let model = Resolver::resolve_with_loader(document, "https://example.test/root", &mut loader).unwrap();
+            assert!(loader.inspected);
+            validator::validate_document(&model).unwrap();
+            assert!(validator::validate_annotations(&model).is_empty());
+        }
+    }
+}
+
+#[test]
 fn structural_cast_paths_cannot_use_hidden_loaded_namespaces() {
     let external = doc(
         r#"{"$Version":"4.01","Public":{"E":{"$Kind":"EntityType","Data":{"$Type":"Hidden.C"}}},"Hidden":{"C":{"$Kind":"ComplexType"},"E":{"$Kind":"EntityType","$BaseType":"Public.E","Nav":{"$Kind":"NavigationProperty","$Type":"Public.E"}}}}"#,
