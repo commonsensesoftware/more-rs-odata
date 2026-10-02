@@ -1,6 +1,99 @@
 use csdl_edm::{conformance::ValidationProfile as P, parser};
 
 #[test]
+fn json_annotation_values_are_retained_as_constant_or_dynamic_expressions() {
+    for (value, kind) in [
+        ("null", "Null"),
+        ("true", "Bool"),
+        ("1", "Int"),
+        ("1.5", "Float"),
+        (r#""text""#, "String"),
+        ("[]", "Collection"),
+        ("{}", "Record"),
+        (r#"{"Name":"value"}"#, "Record"),
+        (r#"{"$Path":"Name"}"#, "Path"),
+        (r#"{"$PropertyPath":"Name"}"#, "PropertyPath"),
+        (
+            r#"{"$NavigationPropertyPath":"Nav"}"#,
+            "NavigationPropertyPath",
+        ),
+        (r#"{"$AnnotationPath":"@N.Label"}"#, "AnnotationPath"),
+        (r#"{"$ModelElementPath":"Name"}"#, "ModelElementPath"),
+        (r#"{"$Not":true}"#, "Not"),
+        (r#"{"$Neg":1}"#, "Neg"),
+        (r#"{"$If":[true,1,2]}"#, "If"),
+        (r#"{"$Apply":["abc"],"$Function":"odata.length"}"#, "Apply"),
+        (r#"{"$Cast":1,"$Type":"Edm.Int32"}"#, "Cast"),
+        (r#"{"$IsOf":1,"$Type":"Edm.Int32"}"#, "IsOf"),
+        (r#"{"$Name":"Label","$LabeledElement":1}"#, "LabeledElement"),
+        (
+            r#"{"$LabeledElementReference":"N.Label"}"#,
+            "LabeledElementReference",
+        ),
+        (r#"{"$UrlRef":"value"}"#, "UrlRef"),
+    ] {
+        let source = format!(r#"{{"$Version":"4.01","N":{{"@N.Value":{value}}}}}"#);
+        for profile in [P::Strict, P::Tolerant] {
+            let report = parser::from_json_reader_with_report(source.as_bytes(), profile).unwrap();
+            assert!(report.diagnostics.is_empty());
+            let schema = &report.document.edmx.as_ref().unwrap().schemas[0];
+            assert_eq!(schema.annotations.len(), 1);
+            assert_eq!(
+                schema.annotations[0]
+                    .expression
+                    .as_ref()
+                    .unwrap()
+                    .kind_name(),
+                kind
+            );
+        }
+    }
+    for operator in [
+        "And", "Or", "Eq", "Ne", "Gt", "Ge", "Lt", "Le", "Has", "In", "Add", "Sub", "Mul", "Div",
+        "DivBy", "Mod",
+    ] {
+        let source = format!(r#"{{"$Version":"4.01","N":{{"@N.Value":{{"${operator}":[1,2]}}}}}}"#);
+        let document = parser::from_json_reader_with_profile(source.as_bytes(), P::Strict).unwrap();
+        assert_eq!(
+            document.edmx.unwrap().schemas[0].annotations[0]
+                .expression
+                .as_ref()
+                .unwrap()
+                .kind_name(),
+            operator
+        );
+    }
+}
+
+#[test]
+fn malformed_json_expression_shapes_reject_or_recover_the_whole_annotation() {
+    for value in [
+        r#"{"$Future":1}"#,
+        r#"{"$Path":null}"#,
+        r#"{"$Path":true}"#,
+        r#"{"$Path":[]}"#,
+        r#"{"$Add":[1]}"#,
+        r#"{"$If":[true]}"#,
+        r#"{"$Path":"Name","$Not":true}"#,
+        r#"[{"$Future":1}]"#,
+        r#"{"Name":{"$Future":1}}"#,
+    ] {
+        let source = format!(
+            r#"{{"$Version":"4.01","N":{{"@N.Value":{value},"Kept":{{"$Kind":"ComplexType"}}}}}}"#
+        );
+        assert!(
+            parser::from_json_reader_with_report(source.as_bytes(), P::Strict).is_err(),
+            "{value}"
+        );
+        let report = parser::from_json_reader_with_report(source.as_bytes(), P::Tolerant).unwrap();
+        assert_eq!(report.diagnostics.len(), 1, "{value}");
+        let schema = &report.document.edmx.as_ref().unwrap().schemas[0];
+        assert!(schema.annotations.is_empty(), "{value}");
+        assert_eq!(schema.elements.len(), 1);
+    }
+}
+
+#[test]
 fn json_operation_annotations_survive_parsing_without_resolving() {
     for kind in ["Action", "Function"] {
         let source = format!(
