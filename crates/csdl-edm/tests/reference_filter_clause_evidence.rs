@@ -12,6 +12,84 @@ fn xml(references: &str, schemas: &str) -> String {
 }
 
 #[test]
+fn reference_uris_use_document_identity_and_xml_base_precedence() {
+    for (reference, expected) in [
+        ("types", "https://example.test/models/types"),
+        ("../types", "https://example.test/types"),
+        ("./vocab/../types", "https://example.test/models/types"),
+        ("/vocab/types", "https://example.test/vocab/types"),
+        ("https://other.test/types", "https://other.test/types"),
+        ("urn:example:types", "urn:example:types"),
+    ] {
+        let source_xml = xml(
+            &format!(
+                r#"<edmx:Reference Uri="{reference}"><edmx:Include Namespace="Types"/></edmx:Reference>"#
+            ),
+            r#"<Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Root"/>"#,
+        );
+        let source_json = format!(
+            r#"{{"$Version":"4.01","$Reference":{{"{reference}":{{"$Include":[{{"$Namespace":"Types"}}]}}}},"Root":{{}}}}"#
+        );
+        for document in [
+            parser::from_xml_reader_with_profile(source_xml.as_bytes(), P::Strict).unwrap(),
+            parser::from_json_reader_with_profile(source_json.as_bytes(), P::Strict).unwrap(),
+        ] {
+            resolve_reference(document, expected);
+        }
+    }
+    for (document_base, reference_base, reference, expected) in [
+        ("../vocab/", "", "types", "https://example.test/vocab/types"),
+        (
+            "../vocab/",
+            "v1/",
+            "types",
+            "https://example.test/vocab/v1/types",
+        ),
+        (
+            "../vocab/",
+            "https://other.test/v2/",
+            "types",
+            "https://other.test/v2/types",
+        ),
+        (
+            "../vocab/",
+            "v1/",
+            "https://third.test/types",
+            "https://third.test/types",
+        ),
+    ] {
+        let source = xml(&format!(r#"<edmx:Reference xml:base="{reference_base}" Uri="{reference}"><edmx:Include Namespace="Types"/></edmx:Reference>"#), r#"<Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Root"/>"#).replace(r#"Version="4.01""#, &format!(r#"Version="4.01" xml:base="{document_base}""#));
+        resolve_reference(
+            parser::from_xml_reader_with_profile(source.as_bytes(), P::Strict).unwrap(),
+            expected,
+        );
+    }
+
+    fn resolve_reference(document: csdl_edm::CsdlDocument, expected: &str) {
+        let external = parser::from_json_reader_with_profile(
+            br#"{"$Version":"4.01","Types":{}}"#.as_slice(),
+            P::Strict,
+        )
+        .unwrap();
+        let mut calls = 0;
+        let model = Resolver::resolve_with_loader(
+            document,
+            "https://example.test/models/root",
+            &mut |uri: &str| {
+                calls += 1;
+                assert_eq!(uri, expected);
+                Ok(external.clone())
+            },
+        )
+        .unwrap();
+        assert_eq!(calls, 1);
+        assert_eq!(model.referenced_schemas.len(), 1);
+        assert_eq!(model.referenced_schemas[0].namespace, "Types");
+        csdl_edm::validator::validate_document(&model).unwrap();
+    }
+}
+
+#[test]
 fn schema_namespaces_cannot_be_split_across_reference_documents() {
     for split in [false, true] {
         for json_format in [false, true] {
