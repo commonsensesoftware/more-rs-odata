@@ -2,6 +2,35 @@
 use csdl_edm::{conformance::ValidationProfile as P, parser, resolver::Resolver, validator};
 
 #[test]
+fn label_references_preserve_the_defining_context_type_and_multiplicity() {
+    for source_collection in [false, true] {
+        for target_collection in [false, true] {
+            for target_type in ["Edm.Int32", "Edm.String"] {
+                let source_type = if source_collection { "Collection(Edm.Int32)" } else { "Edm.Int32" };
+                let target_xml_type = if target_collection { format!("Collection({target_type})") } else { target_type.into() };
+                let xml = format!(r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><Term Name="Definition" Type="{source_type}"/><Term Name="Value" Type="{target_xml_type}"/><ComplexType Name="Source"><Property Name="Data" Type="{source_type}" Nullable="false"/><Annotation Term="N.Definition"><LabeledElement Name="Shared"><Path>Data</Path></LabeledElement></Annotation></ComplexType><ComplexType Name="Destination"><Property Name="Data" Type="Edm.String"/><Annotation Term="N.Value"><LabeledElementReference>N.Shared</LabeledElementReference></Annotation></ComplexType></Schema></edmx:DataServices></edmx:Edmx>"#);
+                let json = format!(r#"{{"$Version":"4.01","N":{{"Definition":{{"$Kind":"Term","$Type":"Edm.Int32","$Collection":{source_collection}}},"Value":{{"$Kind":"Term","$Type":"{target_type}","$Collection":{target_collection}}},"Source":{{"$Kind":"ComplexType","Data":{{"$Type":"Edm.Int32","$Collection":{source_collection}}},"@N.Definition":{{"$Name":"Shared","$LabeledElement":{{"$Path":"Data"}}}}}},"Destination":{{"$Kind":"ComplexType","Data":{{"$Nullable":true}},"@N.Value":{{"$LabeledElementReference":"N.Shared"}}}}}}}}"#);
+                for parsed in [parser::from_xml_reader_with_profile(xml.as_bytes(), P::Strict), parser::from_json_reader_with_profile(json.as_bytes(), P::Strict)] {
+                    let model = Resolver::resolve_document(parsed.unwrap().edmx.unwrap()).unwrap();
+                    validator::validate_document(&model).unwrap();
+                    assert_eq!(model.schemas[0].annotations.get().unwrap().len(), 2);
+                    let diagnostics = validator::validate_annotations(&model);
+                    let valid = source_collection == target_collection && target_type == "Edm.Int32";
+                    assert_eq!(diagnostics.is_empty(), valid, "source_collection={source_collection}, target_collection={target_collection}, {target_type}: {diagnostics:?}");
+                    assert!(diagnostics.iter().all(|d| d.term == "N.Value"), "{diagnostics:?}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn cyclic_label_references_are_diagnosed_without_recursing_forever() {
+    check_type(r#"<LabeledElement Name="Self"><LabeledElementReference>N.Self</LabeledElementReference></LabeledElement>"#, r#"{"$Name":"Self","$LabeledElement":{"$LabeledElementReference":"N.Self"}}"#, "Edm.Int64", false, false);
+    check_type(r#"<Collection><LabeledElement Name="First"><LabeledElementReference>N.Second</LabeledElementReference></LabeledElement><LabeledElement Name="Second"><LabeledElementReference>N.First</LabeledElementReference></LabeledElement></Collection>"#, r#"[{"$Name":"First","$LabeledElement":{"$LabeledElementReference":"N.Second"}},{"$Name":"Second","$LabeledElement":{"$LabeledElementReference":"N.First"}}]"#, "Edm.Int64", true, false);
+}
+
+#[test]
 fn dynamic_collection_items_must_match_the_element_type() {
     for (xml, json, valid) in [
         ("<Add><Int>1</Int><Int>2</Int></Add>", r#"{"$Add":[1,2]}"#, true),
