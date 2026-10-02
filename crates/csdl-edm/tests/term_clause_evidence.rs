@@ -2,6 +2,69 @@
 
 use csdl_edm::{conformance::ValidationProfile as P, parser, resolver::Resolver, validator};
 
+#[test]
+fn term_defaults_validate_primitive_lexical_forms() {
+    for (ty, value, valid) in [
+        ("Boolean", "true", true),
+        ("Boolean", "false", true),
+        ("Boolean", "True", false),
+        ("Boolean", "1", false),
+        ("Byte", "255", true),
+        ("Byte", "256", false),
+        ("SByte", "-128", true),
+        ("SByte", "-129", false),
+        ("Int16", "32767", true),
+        ("Int16", "32768", false),
+        ("Int32", "-2147483648", true),
+        ("Int32", "-2147483649", false),
+        ("Int64", "9223372036854775807", true),
+        ("Int64", "9223372036854775808", false),
+        ("Int64", "1.0", false),
+        ("Single", "INF", true),
+        ("Single", "inf", false),
+        ("Double", "-1.25e2", true),
+        ("Double", "NaN", true),
+        ("Double", "nan", false),
+        ("Decimal", "12", true),
+        ("Decimal", "abc", false),
+        ("Binary", "AA==", true),
+        ("Binary", "AB==", false),
+        ("Guid", "01234567-89ab-cdef-0123-456789abcdef", true),
+        ("Guid", "01234567-89ab-cdef-0123-456789abcdeg", false),
+        ("Date", "2024-02-29", true),
+        ("Date", "2023-02-29", false),
+        ("DateTimeOffset", "2024-02-29T12:00:00Z", true),
+        ("DateTimeOffset", "2024-02-29T12:00:00", false),
+        ("TimeOfDay", "23:59:59", true),
+        ("TimeOfDay", "24:00:00", false),
+        ("Duration", "P1DT2H", true),
+        ("Duration", "P", false),
+    ] {
+        check(
+            &format!(r#"<Term Name="Value" Type="Edm.{ty}" DefaultValue="{value}"/>"#),
+            &format!(r#""Value":{{"$Kind":"Term","$Type":"Edm.{ty}","$DefaultValue":"{value}"}}"#),
+            valid,
+        );
+    }
+}
+
+#[test]
+fn string_term_defaults_decode_xml_attribute_escapes() {
+    let xml = r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N"><Term Name="Value" Type="Edm.String" DefaultValue=" &quot;&amp;&lt;&gt;&apos;&#9;&#10;&#13;日本語 "/></Schema></edmx:DataServices></edmx:Edmx>"#;
+    let json = r#"{"$Version":"4.01","N":{"Value":{"$Kind":"Term","$DefaultValue":" \"&<>'\t\n\r日本語 "}}}"#;
+    for parsed in [
+        parser::from_xml_reader_with_profile(xml.as_bytes(), P::Strict),
+        parser::from_json_reader_with_profile(json.as_bytes(), P::Strict),
+    ] {
+        let model = Resolver::resolve_document(parsed.unwrap().edmx.unwrap()).unwrap();
+        validator::validate_document(&model).unwrap();
+        let csdl_edm::edm::SchemaElement::Term(term) = model.schemas[0].elements[0].as_ref() else {
+            panic!("expected term");
+        };
+        assert_eq!(term.default_value.as_deref(), Some(" \"&<>'\t\n\r日本語 "));
+    }
+}
+
 fn check(xml: &str, json: &str, valid: bool) {
     let xml = format!(
         r#"<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.01"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="N">{xml}</Schema></edmx:DataServices></edmx:Edmx>"#
